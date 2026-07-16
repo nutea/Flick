@@ -124,6 +124,7 @@ jobs:
           $env:FLICK_PACKAGED_SMOKE = '1'
           $env:FLICK_SMOKE_REPORT = $reportPath
           $env:FLICK_STARTUP_DIAGNOSTICS = '1'
+          $startupLog = Join-Path $env:APPDATA 'flick\startup.log'
           $process = Start-Process `
             -FilePath 'build\win-unpacked\flick.exe' `
             -PassThru
@@ -136,7 +137,6 @@ jobs:
             }
           }
           if (-not (Test-Path $reportPath)) {
-            $startupLog = Join-Path $env:APPDATA 'flick\startup.log'
             if (Test-Path $startupLog) {
               Write-Host '--- Flick startup.log ---'
               Get-Content $startupLog -Raw
@@ -148,6 +148,10 @@ jobs:
           }
           $report = Get-Content $reportPath -Raw | ConvertFrom-Json
           $report | ConvertTo-Json -Depth 5
+          if (-not $report.secure -and (Test-Path $startupLog)) {
+            Write-Host '--- Flick startup.log ---'
+            Get-Content $startupLog -Raw
+          }
           if (
             -not $report.secure -or
             -not $report.packaged -or

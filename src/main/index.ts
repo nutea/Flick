@@ -59,10 +59,13 @@ class App {
   onReady() {
     const readyFunction = async () => {
       try {
+        writeStartupLog('ready initialization started');
         await warmupDevSubAppServers();
+        writeStartupLog('sub-app server initialization completed');
         registerCdwhereIpc();
         void checkVersion();
         await localConfig.init();
+        writeStartupLog('local configuration initialized');
         const config = await localConfig.getConfig();
         if (!config.perf.common.guide) {
           guide().init();
@@ -70,6 +73,7 @@ class App {
           localConfig.setConfig(config);
         }
         this.createWindow();
+        writeStartupLog('main window created');
         const mainWindow = this.windowCreator.getWindow();
         API.init(mainWindow);
         const shouldShowForSmoke =
@@ -80,6 +84,7 @@ class App {
           mainWindow.focus();
         }
         this.tray = await createTray(() => this.windowCreator.getWindow());
+        writeStartupLog('tray created');
         registerHotKey(this.windowCreator.getWindow());
         this.systemPlugins.triggerReadyHooks(
           Object.assign(electron, {
