@@ -19,6 +19,12 @@
     "paths": {
       "@/*": [
         "src/*"
+      ],
+      "flick-native": [
+        "packages/flick-native/src/index.ts"
+      ],
+      "flick-native/*": [
+        "packages/flick-native/src/*"
       ]
     },
     "lib": [
