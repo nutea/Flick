@@ -29,7 +29,8 @@ pnpm-debug.log*
 /dist
 .gitnexus
 .codex-logs/
-packages/flick-native/dist/
+packages/flick-native/dist/**/*.d.ts
+packages/flick-native/dist/**/*.map
 packages/flick-native/native/target/
 packages/flick-native/native/flick_native.node
 .test-build/
