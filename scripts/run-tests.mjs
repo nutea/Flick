@@ -26,8 +26,8 @@ await build({
   external: ['better-sqlite3', 'electron', 'webdav'],
 });
 
-const electron = path.join(root, 'node_modules', '.bin', 'electron');
-const result = spawnSync(electron, ['--test', outfile], {
+const electronExecutable = require('electron');
+const result = spawnSync(electronExecutable, ['--test', outfile], {
   cwd: root,
   env: { ...process.env, ELECTRON_RUN_AS_NODE: '1' },
   stdio: 'inherit',
