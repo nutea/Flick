@@ -125,12 +125,19 @@ jobs:
           $env:FLICK_SMOKE_REPORT = $reportPath
           $process = Start-Process `
             -FilePath 'build\win-unpacked\flick.exe' `
-            -PassThru `
-            -Wait
-          if ($process.ExitCode -ne 0) {
-            throw "Packaged Flick smoke process exited with $($process.ExitCode)"
+            -PassThru
+          $deadline = (Get-Date).AddSeconds(45)
+          while ((Get-Date) -lt $deadline -and -not (Test-Path $reportPath)) {
+            Start-Sleep -Milliseconds 500
+            $process.Refresh()
+            if ($process.HasExited) {
+              break
+            }
           }
           if (-not (Test-Path $reportPath)) {
+            if (-not $process.HasExited) {
+              Stop-Process -Id $process.Id -Force
+            }
             throw 'Packaged Flick did not create its smoke report'
           }
           $report = Get-Content $reportPath -Raw | ConvertFrom-Json
@@ -142,6 +149,13 @@ jobs:
             $report.arch -ne 'x64'
           ) {
             throw 'Packaged Flick smoke report failed validation'
+          }
+          if (-not $process.WaitForExit(15000)) {
+            Stop-Process -Id $process.Id -Force
+            throw 'Packaged Flick created a report but did not exit cleanly'
+          }
+          if ($process.ExitCode -ne 0) {
+            throw "Packaged Flick smoke process exited with $($process.ExitCode)"
           }
 
       - name: Publish GitHub Release
