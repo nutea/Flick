@@ -7,7 +7,7 @@ const path = nodeRequire('path');
 const os = nodeRequire('os');
 const { shell } = nodeRequire('electron');
 const flickApi =
-  typeof window !== 'undefined' ? (window as any).flick ?? null : null;
+  typeof window !== 'undefined' ? ((window as any).flick ?? null) : null;
 
 const filePath = path.resolve(
   'C:\\ProgramData\\Microsoft\\Windows\\Start Menu\\Programs'

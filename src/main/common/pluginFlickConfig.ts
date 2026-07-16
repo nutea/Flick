@@ -7,6 +7,19 @@ export const PLUGIN_UI_SETTINGS_FILE = 'flick-plugin-ui-settings.json';
 
 /** 不读写文件的系统插件（无独立包目录、无对应 market name） */
 const SKIP_NAMES = new Set(['flick-system-super-panel']);
+const PLUGIN_NAME_RE = /^(?:@[a-z0-9][a-z0-9._-]*\/)?[a-z0-9][a-z0-9._-]*$/i;
+
+export function isValidPluginFlickConfigName(name: unknown): name is string {
+  return (
+    typeof name === 'string' &&
+    name.length > 0 &&
+    name.length <= 214 &&
+    name !== '__proto__' &&
+    name !== 'constructor' &&
+    name !== 'prototype' &&
+    PLUGIN_NAME_RE.test(name)
+  );
+}
 
 export type PluginFlickConfig = {
   autoDetach?: boolean;
@@ -43,7 +56,12 @@ function parseStoreFile(parsed: unknown): SettingsMap {
   }
   const out: SettingsMap = {};
   for (const [k, v] of Object.entries(parsed as Record<string, unknown>)) {
-    if (v && typeof v === 'object' && !Array.isArray(v)) {
+    if (
+      isValidPluginFlickConfigName(k) &&
+      v &&
+      typeof v === 'object' &&
+      !Array.isArray(v)
+    ) {
       out[k] = cloneRow(v);
     }
   }
@@ -73,7 +91,7 @@ function saveStore(map: SettingsMap): void {
 }
 
 export function readPluginFlickConfigSync(name: string): PluginFlickConfig {
-  if (!name || SKIP_NAMES.has(name)) return {};
+  if (!isValidPluginFlickConfigName(name) || SKIP_NAMES.has(name)) return {};
   const map = loadStore();
   if (Object.prototype.hasOwnProperty.call(map, name)) {
     const row = map[name];
@@ -86,7 +104,7 @@ export function writePluginFlickConfigSync(
   name: string,
   patch: Partial<PluginFlickConfig>
 ): boolean {
-  if (!name || SKIP_NAMES.has(name)) return false;
+  if (!isValidPluginFlickConfigName(name) || SKIP_NAMES.has(name)) return false;
   try {
     const map = loadStore();
     const prev = map[name] || {};

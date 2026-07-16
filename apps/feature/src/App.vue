@@ -1,11 +1,7 @@
 <template>
   <div class="main-container">
     <div class="left-menu">
-      <a-menu
-        @select="({ key }) => changeMenu(key)"
-        :selectedKeys="active"
-        mode="vertical"
-      >
+      <a-menu @select="onMenuSelect" :selectedKeys="active" mode="vertical">
         <a-menu-item key="finder">
           <template #icon>
             <StarOutlined style="font-size: 16px" />
@@ -58,7 +54,7 @@
           <template #icon>
             <a-avatar :size="32">
               <template #icon>
-                <img :src="perf.custom.logo" />
+                <img :src="featureImageUrl(perf.custom.logo)" />
               </template>
             </a-avatar>
           </template>
@@ -100,9 +96,11 @@
           : 'more'
       "
     >
-      <keep-alive>
-        <router-view />
-      </keep-alive>
+      <router-view v-slot="{ Component }">
+        <keep-alive>
+          <component :is="Component" />
+        </keep-alive>
+      </router-view>
     </div>
   </div>
 </template>
@@ -125,6 +123,7 @@ import {
 } from '@ant-design/icons-vue';
 import { useStore } from 'vuex';
 import localConfig from '@/confOp';
+import { featureImageUrl } from '@/utils/imageUrl';
 
 const store = useStore();
 const router = useRouter();
@@ -136,6 +135,8 @@ const changeMenu = (key: any) => {
   // Vue Router 4：无前导 / 的字符串会按相对路径解析，统一用绝对 path
   router.push({ path: `/${key}` });
 };
+
+const onMenuSelect = ({ key }: { key: string | number }) => changeMenu(key);
 
 window.flick.onPluginEnter(({ code }: { code: string }) => {
   const routeAliases: Record<string, string> = {

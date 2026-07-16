@@ -72,7 +72,7 @@ export async function warmupDevSubAppServers(): Promise<void> {
   servingByPort = new Map();
   ports.forEach((p, i) => servingByPort!.set(p, results[i]));
 
-  // 仅 superx 的 node 包 panel-window 需读 process.env，无法用主进程模块；detach/guide 走 shouldOpenSubAppShellDevTools + devSubAppHttpUrl 即可
+  // SuperX 的 node 包通过此 URL 连接 Vite；是否打开 DevTools 使用独立显式开关。
   if (servingByPort.get(DEV_APP_PORTS.superxWeb)) {
     process.env.FLICK_SUPERX_PANEL_DEV_URL = `http://${DEV_APP_HOST}:${DEV_APP_PORTS.superxWeb}/main.html`;
   } else {
@@ -81,18 +81,10 @@ export async function warmupDevSubAppServers(): Promise<void> {
 }
 
 /**
- * guide/detach 等主进程壳页：electron-vite 会话或端口探测到任一子项目 Vite 时打开 DevTools（不必再为各子项目单独设 FLICK_*_DEV_URL）。
+ * guide/detach 等壳页仅在显式请求时打开 DevTools，避免正常调试启动被多个工具窗抢焦点。
  */
 export function shouldOpenSubAppShellDevTools(): boolean {
-  if (
-    process.env.NODE_ENV === 'development' ||
-    Boolean(process.env.VITE_DEV_SERVER_URL) ||
-    Boolean(process.env.ELECTRON_RENDERER_URL)
-  ) {
-    return true;
-  }
-  if (Boolean(process.env.FLICK_SUPERX_PANEL_DEV_URL)) return true;
-  return servingByPort != null && [...servingByPort.values()].some(Boolean);
+  return process.env.FLICK_OPEN_SUBAPP_DEVTOOLS === '1';
 }
 
 export function isDevAppPortServing(port: number): boolean {

@@ -2,6 +2,7 @@ type RevisionId = string;
 
 // todo 附件和索引
 export interface Doc<T> {
+  [key: string]: unknown;
   _id: string;
   data: T;
   _rev?: RevisionId;
@@ -13,6 +14,7 @@ export interface DocRes {
   ok: boolean;
   rev: RevisionId;
   _id: string;
+  _rev?: RevisionId;
   data?: any;
 }
 

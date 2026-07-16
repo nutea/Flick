@@ -45,11 +45,9 @@ class App {
     // 系统托盘
     if (commonConst.macOS()) {
       macBeforeOpen();
-      if (commonConst.production() && !app.isInApplicationsFolder()) {
-        app.moveToApplicationsFolder();
-      } else {
-        app.dock.hide();
-      }
+      // Installation is handled by the DMG. Moving the running bundle here can
+      // invalidate resource paths while Electron is still starting up.
+      app.dock?.hide();
     } else {
       app.disableHardwareAcceleration();
     }
@@ -74,6 +72,13 @@ class App {
         this.createWindow();
         const mainWindow = this.windowCreator.getWindow();
         API.init(mainWindow);
+        const shouldShowForSmoke =
+          (!app.isPackaged && process.env.FLICK_STARTUP_SHOW === '1') ||
+          (app.isPackaged && process.env.FLICK_PACKAGED_SMOKE === '1');
+        if (shouldShowForSmoke && !mainWindow.isDestroyed()) {
+          mainWindow.show();
+          mainWindow.focus();
+        }
         this.tray = await createTray(() => this.windowCreator.getWindow());
         registerHotKey(this.windowCreator.getWindow());
         this.systemPlugins.triggerReadyHooks(

@@ -67,24 +67,38 @@ if (result.status !== 0) {
   process.exit(result.status ?? 1);
 }
 
-const sourceDll = path.join(nativeRoot, 'target', profile, 'flick_native.dll');
+const nativeArtifactName =
+  process.platform === 'win32'
+    ? 'flick_native.dll'
+    : process.platform === 'darwin'
+      ? 'libflick_native.dylib'
+      : 'libflick_native.so';
+const sourceNativeArtifact = path.join(
+  nativeRoot,
+  'target',
+  profile,
+  nativeArtifactName
+);
 const targetNode = path.join(nativeRoot, 'flick_native.node');
 
-if (!existsSync(sourceDll)) {
-  console.error(`[flick-native] expected native artifact not found: ${sourceDll}`);
+if (!existsSync(sourceNativeArtifact)) {
+  console.error(
+    `[flick-native] expected native artifact not found: ${sourceNativeArtifact}`
+  );
   process.exit(1);
 }
 
 mkdirSync(path.dirname(targetNode), { recursive: true });
 try {
-  copyFileSync(sourceDll, targetNode);
+  copyFileSync(sourceNativeArtifact, targetNode);
 } catch (error) {
   if (
     error &&
     typeof error === 'object' &&
     'code' in error &&
     (error.code === 'EBUSY' || error.code === 'EPERM') &&
-    existsSync(targetNode)
+    existsSync(targetNode) &&
+    profile !== 'release'
   ) {
     console.warn(
       `[flick-native] native addon is currently locked, keeping existing file at ${targetNode}`

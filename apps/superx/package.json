@@ -9,7 +9,7 @@
     "build": "vite build && tsc -p tsconfig.node.json",
     "dev:web": "vite dev --port 8085 --strictPort",
     "dev:node": "tsc -p tsconfig.node.json --watch --preserveWatchOutput",
-    "lint": "eslint src node-src"
+    "lint": "eslint src node-src --max-warnings=0"
   },
   "dependencies": {
     "@ant-design/icons-vue": "catalog:",

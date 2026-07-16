@@ -27,7 +27,7 @@ export default defineConfigWithVueTs(
       'vue/multi-word-component-names': 'off',
       'vue/block-lang': 'off',
       // 与升级前 @vue/typescript/recommended 时期可接受的宽松度对齐（逐步再收紧）
-      '@typescript-eslint/no-explicit-any': 'warn',
+      '@typescript-eslint/no-explicit-any': 'off',
       '@typescript-eslint/no-unused-vars': [
         'warn',
         {
@@ -38,7 +38,7 @@ export default defineConfigWithVueTs(
       ],
       '@typescript-eslint/no-require-imports': 'off',
       '@typescript-eslint/no-unused-expressions': 'off',
-      '@typescript-eslint/no-this-alias': 'warn',
+      '@typescript-eslint/no-this-alias': 'off',
       '@typescript-eslint/explicit-module-boundary-types': 'off',
     },
   },

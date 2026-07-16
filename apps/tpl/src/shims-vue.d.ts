@@ -7,4 +7,6 @@ declare module '*.vue' {
 
 interface Window {
   flick: any;
+  require: (id: string) => any;
+  exports: Record<string, any>;
 }

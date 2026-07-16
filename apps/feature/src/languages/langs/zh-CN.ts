@@ -175,7 +175,8 @@ export default {
         llmExtraHeadersPh: '例如 {"HTTP-Referer":"https://example.com"}',
         switchNeedConfig: '请先配置并保存翻译 API',
         translateMaxCharsTitle: '翻译字数上限',
-        translateMaxCharsDesc: '选中文本超过该字符数（按 UTF-16 长度计）时不发起翻译。',
+        translateMaxCharsDesc:
+          '选中文本超过该字符数（按 UTF-16 长度计）时不发起翻译。',
         autoTranslateLabel: '超级面板自动翻译',
         autoTranslateDesc: '开启后，选中文本时会在超级面板中自动请求翻译结果。',
         on: '开',

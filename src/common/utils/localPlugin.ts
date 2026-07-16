@@ -1,20 +1,14 @@
 import path from 'path';
 import fs from 'fs';
-import http from 'http';
 import https from 'https';
 import { PluginHandler } from '@/core';
 import { PLUGIN_INSTALL_DIR as baseDir } from '@/common/constans/main';
 import API from '@/main/common/api';
 
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
 declare const __static: string;
 
 const configPath = path.join(baseDir, './flick-local-plugin.json');
-const BUILTIN_SUPER_PANEL_PKG = path.join(
-  __static,
-  'superx',
-  'package.json'
-);
+const BUILTIN_SUPER_PANEL_PKG = path.join(__static, 'superx', 'package.json');
 
 function ensureBuiltinSuperPanelInList(): void {
   try {
@@ -59,7 +53,7 @@ function pluginDiskRoot(pluginName: string): string {
 }
 
 function isHttpUrl(v: unknown): v is string {
-  return typeof v === 'string' && /^https?:\/\//i.test(v.trim());
+  return typeof v === 'string' && /^https:\/\//i.test(v.trim());
 }
 
 function isFileUrl(v: unknown): v is string {
@@ -100,16 +94,16 @@ function downloadToFile(
   redirects = 0
 ): Promise<void> {
   return new Promise((resolve, reject) => {
-    const client = url.startsWith('https://') ? https : http;
+    const parsed = new URL(url);
+    if (parsed.protocol !== 'https:') {
+      reject(new Error('Only HTTPS plugin assets are allowed'));
+      return;
+    }
+    const client = https;
     const req = client.get(url, (res) => {
       const status = res.statusCode || 0;
       const location = res.headers.location;
-      if (
-        status >= 300 &&
-        status < 400 &&
-        location &&
-        redirects < 5
-      ) {
+      if (status >= 300 && status < 400 && location && redirects < 5) {
         const next = new URL(location, url).toString();
         res.resume();
         resolve(downloadToFile(next, dest, redirects + 1));
@@ -120,7 +114,23 @@ function downloadToFile(
         reject(new Error(`HTTP_${status}`));
         return;
       }
+      const maxBytes = 2 * 1024 * 1024;
+      const contentLength = Number(res.headers['content-length'] || 0);
+      if (contentLength > maxBytes) {
+        res.resume();
+        reject(new Error('Plugin asset exceeds 2 MB'));
+        return;
+      }
       const ws = fs.createWriteStream(dest);
+      let received = 0;
+      res.on('data', (chunk: Buffer) => {
+        received += chunk.length;
+        if (received > maxBytes) {
+          req.destroy(new Error('Plugin asset exceeds 2 MB'));
+          ws.destroy();
+          fs.rmSync(dest, { force: true });
+        }
+      });
       res.pipe(ws);
       ws.on('finish', () => resolve());
       ws.on('error', reject);
@@ -250,6 +260,10 @@ let pluginInstance;
 
 global.LOCAL_PLUGINS = {
   PLUGINS: [],
+  async upgradePlugin(name) {
+    if (!pluginInstance) throw new Error('Plugin manager is unavailable');
+    await pluginInstance.upgrade(name);
+  },
   async downloadPlugin(plugin) {
     await pluginInstance.install([plugin.name], { isDev: plugin.isDev });
     if (plugin.isDev) {

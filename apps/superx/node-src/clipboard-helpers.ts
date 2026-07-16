@@ -1,7 +1,7 @@
 import { randomUUID } from 'crypto';
 
 /** Electron Clipboard 子集，避免依赖 electron 类型包 */
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
+
 type ClipboardApi = any;
 
 type FileEntry =
@@ -24,7 +24,8 @@ export function getFilePathFromClipboard(clipboard: ClipboardApi): FileEntry[] {
         clipboard
           .read('NSFilenamesPboardType')
           .match(/<string>.*<\/string>/g)
-          ?.map((item: string) => item.replace(/<string>|<\/string>/g, '')) || [];
+          ?.map((item: string) => item.replace(/<string>|<\/string>/g, '')) ||
+        [];
     } else {
       const clipboardImage = clipboard.readImage('clipboard');
       if (!clipboardImage.isEmpty()) {
@@ -76,9 +77,7 @@ export function getFilePathFromClipboard(clipboard: ClipboardApi): FileEntry[] {
       } else {
         const buf = clipboard.readBuffer('FileNameW');
         filePath = [
-          buf
-            .toString('ucs2')
-            .replace(RegExp(String.fromCharCode(0), 'g'), ''),
+          buf.toString('ucs2').replace(RegExp(String.fromCharCode(0), 'g'), ''),
         ].filter(Boolean);
       }
     }
@@ -102,8 +101,13 @@ export function snapshotClipboard(clipboard: ClipboardApi): ClipboardSnap {
   return { text, pathStr, hasImage };
 }
 
-export function clipboardSnapsEqual(a: ClipboardSnap, b: ClipboardSnap): boolean {
-  return a.text === b.text && a.pathStr === b.pathStr && a.hasImage === b.hasImage;
+export function clipboardSnapsEqual(
+  a: ClipboardSnap,
+  b: ClipboardSnap
+): boolean {
+  return (
+    a.text === b.text && a.pathStr === b.pathStr && a.hasImage === b.hasImage
+  );
 }
 
 function snapUnchanged(a: ClipboardSnap, b: ClipboardSnap): boolean {
@@ -111,7 +115,10 @@ function snapUnchanged(a: ClipboardSnap, b: ClipboardSnap): boolean {
 }
 
 /** 从当前剪贴板解析为面板用的 text / fileUrl（路径优先） */
-export function readClipboardPayload(clipboard: ClipboardApi): { text: string; fileUrl: string } {
+export function readClipboardPayload(clipboard: ClipboardApi): {
+  text: string;
+  fileUrl: string;
+} {
   const text = clipboard.readText('clipboard') || '';
   const raw = getFilePathFromClipboard(clipboard)[0];
   let fileUrl = '';
@@ -148,7 +155,6 @@ export async function getSelectedContent(
  * 高 DPI（如 125%～200%）下二次换算，导致窗口相对鼠标严重偏移（例如看似顶-left 对在指针旁）。
  */
 export function getPos(
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
   _screen: any,
   point: { x: number; y: number },
   _isMacOS: boolean

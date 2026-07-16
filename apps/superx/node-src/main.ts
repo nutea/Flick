@@ -1,4 +1,6 @@
 import * as os from 'os';
+import * as fs from 'fs';
+import * as path from 'path';
 import createPanelWindow from './panel-window';
 import type { ClipboardSnap } from './clipboard-helpers';
 import {
@@ -49,10 +51,11 @@ const SUPER_PANEL_TOP_CURSOR_GAP_PX = 12;
 type TriggerButton = (typeof BTN)[keyof typeof BTN];
 
 function isMouseTrigger(s: string): boolean {
-  return Object.values(SP_MOUSE).includes(s as (typeof SP_MOUSE)[keyof typeof SP_MOUSE]);
+  return Object.values(SP_MOUSE).includes(
+    s as (typeof SP_MOUSE)[keyof typeof SP_MOUSE]
+  );
 }
 
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
 type FlickCtx = any;
 
 function createPlugin() {
@@ -79,7 +82,8 @@ function createPlugin() {
 
   return {
     async onReady(ctx: FlickCtx) {
-      const { clipboard, screen, globalShortcut, API, ipcMain } = ctx;
+      const { clipboard, screen, globalShortcut, API, ipcMain, nativeImage } =
+        ctx;
 
       const panelInstance = createPanelWindow(ctx);
       panelInstance.init();
@@ -116,21 +120,54 @@ function createPlugin() {
           win.hide();
         }
 
-        // eslint-disable-next-line @typescript-eslint/no-explicit-any
         const localPlugins = (global as any).LOCAL_PLUGINS.getLocalPlugins();
+
+        let selectedFileIsDirectory = false;
+        let selectedFileDataUrl = '';
+        if (typeof copyResult.fileUrl === 'string' && copyResult.fileUrl) {
+          const selectedPath = copyResult.fileUrl.replace(/^file:\/\//, '');
+          try {
+            const stat = fs.statSync(selectedPath);
+            selectedFileIsDirectory = stat.isDirectory();
+            if (
+              stat.isFile() &&
+              stat.size <= 20 * 1024 * 1024 &&
+              /\.(png|jpe?g|gif|webp)$/i.test(path.extname(selectedPath))
+            ) {
+              selectedFileDataUrl = nativeImage
+                .createFromPath(selectedPath)
+                .toDataURL();
+            }
+          } catch {
+            /* selected application/window paths are not always filesystem items */
+          }
+        }
 
         const cursor = getPos(screen, { x, y }, isMacOS);
 
         const placePanelAtCursor = () => {
-          if (!win || (typeof win.isDestroyed === 'function' && win.isDestroyed())) return;
+          if (
+            !win ||
+            (typeof win.isDestroyed === 'function' && win.isDestroyed())
+          )
+            return;
           const bounds = win.getBounds();
           let left = Math.round(cursor.x - bounds.width / 2);
           let top = Math.round(cursor.y + SUPER_PANEL_TOP_CURSOR_GAP_PX);
           try {
-            const disp = screen.getDisplayNearestPoint({ x: cursor.x, y: cursor.y });
+            const disp = screen.getDisplayNearestPoint({
+              x: cursor.x,
+              y: cursor.y,
+            });
             const wa = disp.workArea;
-            left = Math.max(wa.x, Math.min(left, wa.x + wa.width - bounds.width));
-            top = Math.max(wa.y, Math.min(top, wa.y + wa.height - bounds.height));
+            left = Math.max(
+              wa.x,
+              Math.min(left, wa.x + wa.width - bounds.width)
+            );
+            top = Math.max(
+              wa.y,
+              Math.min(top, wa.y + wa.height - bounds.height)
+            );
           } catch {
             /* ignore clamp if display API fails */
           }
@@ -145,7 +182,11 @@ function createPlugin() {
             resolve();
           }, ms);
           const onApplied = (event: { sender: { id: number } }) => {
-            if (!win || (typeof win.isDestroyed === 'function' && win.isDestroyed())) return;
+            if (
+              !win ||
+              (typeof win.isDestroyed === 'function' && win.isDestroyed())
+            )
+              return;
             if (event.sender.id !== win.webContents.id) return;
             clearTimeout(timer);
             ipcMain.removeListener('superPanel-content-applied', onApplied);
@@ -155,6 +196,8 @@ function createPlugin() {
           win.webContents.send('trigger-super-panel', {
             ...copyResult,
             optionPlugin: localPlugins,
+            selectedFileIsDirectory,
+            selectedFileDataUrl,
           });
         });
 
@@ -165,6 +208,34 @@ function createPlugin() {
         win.focus();
         win.setVisibleOnAllWorkspaces(false, { visibleOnFullScreen: true });
         win.show();
+
+        if (process.env.FLICK_SUPER_PANEL_SMOKE === '1') {
+          const result = await win.webContents.executeJavaScript(`({
+            bridgeAvailable: typeof window.superPanel === 'object',
+            nodeRequireType: typeof window.require,
+            renderedText: document.body.innerText.slice(0, 300)
+          })`);
+          const preferences = win.webContents.getLastWebPreferences();
+          const secure =
+            result.bridgeAvailable === true &&
+            result.nodeRequireType === 'undefined' &&
+            preferences.contextIsolation === true &&
+            preferences.nodeIntegration === false &&
+            preferences.sandbox === true &&
+            preferences.webSecurity === true;
+          const report = { secure, preferences, result };
+          if (secure) {
+            console.info(
+              '[flick-system-super-panel] smoke passed:',
+              JSON.stringify(report)
+            );
+          } else {
+            console.error(
+              '[flick-system-super-panel] smoke failed:',
+              JSON.stringify(report)
+            );
+          }
+        }
       };
 
       let isFirstRegister = true;
@@ -244,11 +315,19 @@ function createPlugin() {
         keyboardRegisterTimer = setTimeout(() => {
           keyboardRegisterTimer = null;
           try {
-            globalShortcut.register(superPanelHotKey, () => {
+            const registered = globalShortcut.register(superPanelHotKey, () => {
               void showSuperPanel('keyboard');
             });
+            if (!registered) {
+              console.warn(
+                `[flick-system-super-panel] shortcut is unavailable: ${superPanelHotKey}`
+              );
+            }
           } catch (err) {
-            console.warn('[flick-system-super-panel] globalShortcut.register failed:', err);
+            console.warn(
+              '[flick-system-super-panel] globalShortcut.register failed:',
+              err
+            );
           }
         }, delayMs);
       };
@@ -257,9 +336,16 @@ function createPlugin() {
         void register();
       };
 
-      (globalThis as typeof globalThis & { __superPanelReregister?: () => void }).__superPanelReregister =
-        scheduleRegister;
+      (
+        globalThis as typeof globalThis & {
+          __superPanelReregister?: () => void;
+        }
+      ).__superPanelReregister = scheduleRegister;
       await register();
+
+      if (!ctx.app?.isPackaged && process.env.FLICK_SUPER_PANEL_SMOKE === '1') {
+        setTimeout(() => void showSuperPanel('keyboard'), 1400);
+      }
     },
   };
 }

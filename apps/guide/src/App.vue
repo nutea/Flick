@@ -2,24 +2,45 @@
   <div class="guide-container">
     <div class="step0" v-show="step === 0">
       <div class="title">您好，我叫 Flick</div>
-      <div class="desc">快捷键 <span class="down-line">Alt + R</span> 可以快速打开我</div>
+      <div class="desc">
+        快捷键
+        <span class="down-line">Alt + R</span>
+        可以快速打开我
+      </div>
       <div class="img-container">
         <img class="img" src="./assets/img.png" />
         <div class="info">
-          <svg class="top-icon" focusable="false" aria-hidden="true" viewBox="0 0 24 24" data-testid="NorthIcon"><path d="m5 9 1.41 1.41L11 5.83V22h2V5.83l4.59 4.59L19 9l-7-7-7 7z"></path></svg>
+          <svg
+            class="top-icon"
+            focusable="false"
+            aria-hidden="true"
+            viewBox="0 0 24 24"
+            data-testid="NorthIcon"
+          >
+            <path
+              d="m5 9 1.41 1.41L11 5.83V22h2V5.83l4.59 4.59L19 9l-7-7-7 7z"
+            ></path>
+          </svg>
           点击 logo 进入插件市场
         </div>
       </div>
     </div>
     <div class="step0 step1" v-show="step === 1">
       <div class="title">选择需要的插件安装</div>
-      <div class="desc">基于 <span class="down-line">npm</span> 的插件包管理，像小程序一样，用完即走</div>
+      <div class="desc">
+        基于
+        <span class="down-line">npm</span>
+        的插件包管理，像小程序一样，用完即走
+      </div>
       <div class="img-container">
         <img class="img" src="./assets/img_1.png" />
       </div>
     </div>
     <div class="step0" v-show="step === 2">
-      <div class="title"><span class="down-line">关键字</span>搜索应用和插件</div>
+      <div class="title">
+        <span class="down-line">关键字</span>
+        搜索应用和插件
+      </div>
       <div class="desc">搜索框内输入关键字可以搜索安装的应用和插件</div>
       <div class="img-container">
         <img class="img" src="./assets/img_2.png" />
@@ -27,7 +48,11 @@
     </div>
     <div class="step0 step1" v-show="step === 3">
       <div class="title">完全开源免费，支持内网部署</div>
-      <div class="desc">进入插件市场的 <span class="down-line">账户与设置</span> 菜单，进行内网部署设置</div>
+      <div class="desc">
+        进入插件市场的
+        <span class="down-line">账户与设置</span>
+        菜单，进行内网部署设置
+      </div>
       <div class="img-container">
         <img class="img" src="./assets/img_3.png" />
       </div>
@@ -36,7 +61,9 @@
       <div></div>
       <div class="step">
         <span class="step-num">{{ step + 1 }} / 4</span>
-        <div class="button" @click="netStep">{{ step + 1 === 4 ? '完成' : '下一步' }}</div>
+        <div class="button" @click="netStep">
+          {{ step + 1 === 4 ? '完成' : '下一步' }}
+        </div>
       </div>
     </div>
   </div>
@@ -46,16 +73,12 @@
 import { ref } from 'vue';
 
 const step = ref(0);
-const { ipcRenderer } = window.require('electron');
-
 const netStep = () => {
   if (step.value >= 3) {
-    return ipcRenderer.send('guide:service', { type: 'close' });
+    return window.guide.close();
   }
   step.value = step.value + 1;
-}
-
-
+};
 </script>
 
 <style lang="less">

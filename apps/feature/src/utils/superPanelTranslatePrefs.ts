@@ -30,12 +30,14 @@ export const LEGACY_TRANSLATE_FLAT_KEYS = [
 ] as const;
 
 function coerceProvider(raw: unknown): SuperPanelTranslateProvider {
-  if (raw === 'anthropic_messages' || raw === 'youdao_openapi') return 'openai_chat';
+  if (raw === 'anthropic_messages' || raw === 'youdao_openapi')
+    return 'openai_chat';
   return 'openai_chat';
 }
 
 function parseMaxTokens(raw: unknown): number {
-  if (typeof raw === 'number' && Number.isFinite(raw) && raw > 0) return Math.floor(raw);
+  if (typeof raw === 'number' && Number.isFinite(raw) && raw > 0)
+    return Math.floor(raw);
   const n = parseInt(String(raw ?? '1024'), 10);
   return Number.isFinite(n) && n > 0 ? n : 1024;
 }
@@ -67,7 +69,9 @@ export function emptyProfile(id: string, name: string): TranslateProfile {
   };
 }
 
-export function normalizeTranslateProfile(raw: unknown): TranslateProfile | null {
+export function normalizeTranslateProfile(
+  raw: unknown
+): TranslateProfile | null {
   if (!raw || typeof raw !== 'object') return null;
   const o = raw as Record<string, unknown>;
   const id = String(o.id || '').trim();
@@ -81,7 +85,8 @@ export function normalizeTranslateProfile(raw: unknown): TranslateProfile | null
     llmModel: String(o.llmModel ?? ''),
     llmSystemPrompt: String(o.llmSystemPrompt ?? ''),
     llmExtraHeaders: String(o.llmExtraHeaders ?? ''),
-    anthropicApiVersion: String(o.anthropicApiVersion ?? '2023-06-01').trim() || '2023-06-01',
+    anthropicApiVersion:
+      String(o.anthropicApiVersion ?? '2023-06-01').trim() || '2023-06-01',
     anthropicMaxTokens: parseMaxTokens(o.anthropicMaxTokens),
   };
 }
@@ -104,12 +109,15 @@ function profileFromFlatDoc(data: Record<string, unknown>): TranslateProfile {
     llmModel: String(data.llmModel ?? ''),
     llmSystemPrompt: String(data.llmSystemPrompt ?? ''),
     llmExtraHeaders: String(data.llmExtraHeaders ?? ''),
-    anthropicApiVersion: String(data.anthropicApiVersion ?? '2023-06-01').trim() || '2023-06-01',
+    anthropicApiVersion:
+      String(data.anthropicApiVersion ?? '2023-06-01').trim() || '2023-06-01',
     anthropicMaxTokens: parseMaxTokens(data.anthropicMaxTokens),
   };
 }
 
-export function loadProfilesFromDoc(data: Record<string, unknown> | undefined): {
+export function loadProfilesFromDoc(
+  data: Record<string, unknown> | undefined
+): {
   profiles: TranslateProfile[];
   activeProfileId: string | null;
 } {
@@ -122,7 +130,8 @@ export function loadProfilesFromDoc(data: Record<string, unknown> | undefined): 
       .filter((x): x is TranslateProfile => x != null);
     if (!profiles.length) return { profiles: [], activeProfileId: null };
     const want = String(data.activeTranslateProfileId || '').trim();
-    const activeProfileId = want && profiles.some((p) => p.id === want) ? want : profiles[0].id;
+    const activeProfileId =
+      want && profiles.some((p) => p.id === want) ? want : profiles[0].id;
     return { profiles, activeProfileId };
   }
 

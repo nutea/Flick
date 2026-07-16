@@ -36,16 +36,14 @@ export default {
         importFail: 'Import failed',
         exportErrors: {
           NO_PLUGIN_NAME: 'No plugin selected',
-          NO_PLUGINS:
-            'Nothing to export (built-in plugins are not included)',
+          NO_PLUGINS: 'Nothing to export (built-in plugins are not included)',
           PLUGIN_NOT_FOUND: 'Plugin not found',
           NO_PLUGIN_FILES:
             'Plugin folders are missing. Reinstall from the market first.',
           UNKNOWN: 'Export failed',
         },
         importErrors: {
-          INVALID_BUNDLE:
-            'Invalid bundle (use a zip exported by Flick)',
+          INVALID_BUNDLE: 'Invalid bundle (use a zip exported by Flick)',
           NOTHING_IMPORTED: 'No plugin folders found inside the bundle',
           UNKNOWN: 'Import failed',
         },
@@ -150,7 +148,8 @@ export default {
         required: 'Set a keyboard combo or choose a mouse trigger.',
         save: 'Save',
         saveOk: 'Saved',
-        saveDevHint: 'Save inside the Flick plugin environment (ignore in dev).',
+        saveDevHint:
+          'Save inside the Flick plugin environment (ignore in dev).',
         translateConfigHint:
           'Save multiple profiles. Fill URL, API key, and model before enabling auto-translate.',
         translateSectionProfiles: 'Profiles',

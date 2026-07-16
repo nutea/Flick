@@ -14,6 +14,36 @@ const path = nodeRequire('path');
 const { ipcRenderer } = nodeRequire('electron');
 const spawn = nodeRequire('cross-spawn');
 
+const PACKAGE_NAME_RE = /^(?:@[a-z0-9][a-z0-9._-]*\/)?[a-z0-9][a-z0-9._-]*$/i;
+
+function normalizeRegistry(value: unknown): string {
+  try {
+    const parsed = new URL(String(value || ''));
+    if (parsed.protocol === 'https:' || parsed.protocol === 'http:') {
+      return parsed.toString();
+    }
+  } catch {
+    /* fall through */
+  }
+  return 'https://registry.npmmirror.com/';
+}
+
+function assertRegistryPackageName(name: string): void {
+  if (!PACKAGE_NAME_RE.test(name)) {
+    throw new Error(`Invalid npm plugin package name: ${name}`);
+  }
+}
+
+function assertLocalPluginPath(pluginPath: string): void {
+  const resolved = path.resolve(pluginPath);
+  if (
+    !path.isAbsolute(pluginPath) ||
+    !fs.existsSync(path.join(resolved, 'package.json'))
+  ) {
+    throw new Error(`Invalid local plugin path: ${pluginPath}`);
+  }
+}
+
 fixPath();
 
 /**
@@ -62,7 +92,7 @@ class AdapterHandler {
     } catch (e) {
       // ignore
     }
-    this.registry = register || 'https://registry.npmmirror.com/';
+    this.registry = normalizeRegistry(register);
   }
 
   async upgrade(name: string): Promise<void> {
@@ -119,6 +149,10 @@ class AdapterHandler {
 
   // 安装并启动插件
   async install(adapters: Array<string>, options: { isDev: boolean }) {
+    for (const adapter of adapters) {
+      if (options.isDev) assertLocalPluginPath(adapter);
+      else assertRegistryPackageName(adapter);
+    }
     const installCmd = options.isDev ? 'link' : 'install';
     // 安装
     await this.execCommand(installCmd, adapters);
@@ -130,6 +164,7 @@ class AdapterHandler {
    * @memberof AdapterHandler
    */
   async update(...adapters: string[]) {
+    adapters.forEach(assertRegistryPackageName);
     await this.execCommand('update', adapters);
   }
 
@@ -140,6 +175,7 @@ class AdapterHandler {
    * @memberof AdapterHandler
    */
   async uninstall(adapters: string[], options: { isDev: boolean }) {
+    adapters.forEach(assertRegistryPackageName);
     const installCmd = options.isDev ? 'unlink' : 'uninstall';
     await this.execCommand(installCmd, adapters, {
       timeoutMs: 120000,

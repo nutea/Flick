@@ -1,5 +1,4 @@
 import fs from 'fs';
-import path from 'path';
 
 import type { WebDAVClient } from 'webdav';
 
@@ -53,7 +52,7 @@ export default class WebDav {
     });
   }
 
-  async uploadSqliteFile(dbFile: string): Promise<void> {
+  async uploadSqliteFile(db: DB): Promise<void> {
     let client: WebDAVClient;
     try {
       client = await this.clientPromise;
@@ -78,19 +77,16 @@ export default class WebDav {
       return;
     }
 
-    if (!fs.existsSync(dbFile)) {
+    if (!fs.existsSync(db.dbFile)) {
       new Notification({
         title: '导出失败',
-        body: `本地数据库文件不存在: ${dbFile}`,
+        body: `本地数据库文件不存在: ${db.dbFile}`,
       }).show();
       return;
     }
 
     try {
-      // SQLite's main file is always in a recoverable state on its own (WAL
-      // data lives in `-wal`/`-shm` alongside it), so a straight `readFile`
-      // produces a snapshot the remote side can reopen without our help.
-      const buffer = await fs.promises.readFile(dbFile);
+      const buffer = await db.exportSnapshot();
       await client.putFileContents(this.sqlitePath, buffer, {
         overwrite: true,
       });
@@ -137,37 +133,7 @@ export default class WebDav {
         ? data
         : Buffer.from(data as ArrayBuffer);
 
-      db.close();
-
-      const target = db.dbFile;
-      const rollback = `${target}.bak-${Date.now()}`;
-      try {
-        if (fs.existsSync(target)) fs.renameSync(target, rollback);
-        await fs.promises.mkdir(path.dirname(target), { recursive: true });
-        await fs.promises.writeFile(target, buffer);
-
-        // The old install's WAL / shared-memory companions are meaningless
-        // against a freshly-written main file. Clear them so SQLite rebuilds
-        // them on the next open.
-        for (const suffix of ['-wal', '-shm']) {
-          try {
-            fs.unlinkSync(`${target}${suffix}`);
-          } catch {
-            /* ignore */
-          }
-        }
-      } catch (e) {
-        if (fs.existsSync(rollback) && !fs.existsSync(target)) {
-          try {
-            fs.renameSync(rollback, target);
-          } catch {
-            /* ignore */
-          }
-        }
-        throw e;
-      }
-
-      db.init();
+      await db.restoreSnapshot(buffer);
 
       new Notification({
         title: '导入成功',

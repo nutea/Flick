@@ -9,6 +9,7 @@ import {
   screen,
   shell,
   IpcMainEvent,
+  IpcMainInvokeEvent,
 } from 'electron';
 import fs from 'fs';
 import { screenCapture } from '@/core';
@@ -20,14 +21,12 @@ import {
   PLUGIN_INSTALL_DIR as baseDir,
 } from '@/common/constans/main';
 import getCopyFiles from '@/common/utils/getCopyFiles';
-import common from '@/common/utils/commonConst';
 
 import mainInstance from '../index';
 import { runner, detach } from '../browsers';
 import DBInstance from './db';
 import getWinPosition from './getWinPosition';
 import path from 'path';
-import commonConst from '@/common/utils/commonConst';
 import { copyFilesToWindowsClipboard } from './windowsClipboard';
 import {
   exportPluginBundle,
@@ -77,7 +76,111 @@ const detachInstance = detach();
 /** 与超级面板插件 node main、feature 设置页 dbStorage._id 一致 */
 const SUPER_PANEL_HOTKEY_STORE_ID = 'flick-system-super-panel-store';
 
+const ALLOWED_IPC_METHODS = new Set<string>([
+  'addLocalStartPlugin',
+  'copyFile',
+  'copyImage',
+  'copyText',
+  'dbAllDocs',
+  'dbBulkDocs',
+  'dbDump',
+  'dbGet',
+  'dbGetAttachment',
+  'dbGetAttachmentType',
+  'dbImport',
+  'dbPostAttachment',
+  'dbPut',
+  'dbRemove',
+  'detachInputChange',
+  'detachPlugin',
+  'getCopyFiles',
+  'getFeatures',
+  'getFileIcon',
+  'getLocalId',
+  'getPath',
+  'getPluginInfo',
+  'hideMainWindow',
+  'loadPlugin',
+  'launchApp',
+  'openPlugin',
+  'openPluginDevTools',
+  'pluginExportBundle',
+  'pluginImportBundle',
+  'removeFeature',
+  'removeLocalStartPlugin',
+  'removePlugin',
+  'removeSubInput',
+  'screenCapture',
+  'sendPluginSomeKeyDownEvent',
+  'sendSubInputChangeEvent',
+  'setExpendHeight',
+  'setFeature',
+  'setSubInput',
+  'setSubInputValue',
+  'shellBeep',
+  'shellShowItemInFolder',
+  'showMainWindow',
+  'showNotification',
+  'showOpenDialog',
+  'showSaveDialog',
+  'simulateKeyboardTap',
+  'subInputBlur',
+  'upgradePlugin',
+  'windowMoving',
+]);
+
 class API extends DBInstance {
+  public getPluginInfo({
+    data,
+  }: {
+    data?: { pluginName?: unknown; pluginPath?: unknown };
+  }) {
+    const pluginName =
+      typeof data?.pluginName === 'string' ? data.pluginName.trim() : '';
+    const pluginPath =
+      typeof data?.pluginPath === 'string' ? data.pluginPath.trim() : '';
+    if (!pluginName || !pluginPath || !path.isAbsolute(pluginPath)) {
+      throw new Error('Plugin metadata path is invalid');
+    }
+    const resolved = path.resolve(pluginPath);
+    const allowedRoots = [path.resolve(__static), path.resolve(baseDir)];
+    if (
+      !allowedRoots.some(
+        (root) => resolved === root || resolved.startsWith(`${root}${path.sep}`)
+      )
+    ) {
+      throw new Error('Plugin metadata path is outside an allowed directory');
+    }
+    const stat = fs.statSync(resolved);
+    if (!stat.isFile() || stat.size > 1024 * 1024) {
+      throw new Error('Plugin metadata file is invalid');
+    }
+    return JSON.parse(fs.readFileSync(resolved, 'utf8'));
+  }
+
+  public async upgradePlugin({ data }: { data?: { name?: unknown } }) {
+    const name = typeof data?.name === 'string' ? data.name.trim() : '';
+    if (!/^(?:@[a-z0-9][a-z0-9._-]*\/)?[a-z0-9][a-z0-9._-]*$/i.test(name)) {
+      throw new Error('Plugin package name is invalid');
+    }
+    const manager = (global as any).LOCAL_PLUGINS;
+    if (!manager || typeof manager.upgradePlugin !== 'function') {
+      throw new Error('Plugin manager is unavailable');
+    }
+    await manager.upgradePlugin(name);
+    return true;
+  }
+
+  public async launchApp({ data }: { data?: { path?: unknown } }) {
+    const target = typeof data?.path === 'string' ? data.path.trim() : '';
+    if (!target || !path.isAbsolute(target) || !fs.existsSync(target)) {
+      throw new Error('Application path is invalid or no longer exists');
+    }
+    const error = await shell.openPath(target);
+    if (error) throw new Error(error);
+    return true;
+  }
+
   public async dbPut(arg: any) {
     const result = await super.dbPut(arg);
     const doc = arg?.data?.data;
@@ -123,30 +226,27 @@ class API extends DBInstance {
         };
       }
     );
-    ipcMain.handle(
-      'flick:set-plugin-flick-config',
-      (_e, payload: unknown) => {
-        const p = payload as {
-          name?: string;
-          pluginName?: string;
-          autoDetach?: boolean;
-          detachAlwaysShowSearch?: boolean;
-        };
-        const id =
-          typeof p?.name === 'string'
-            ? p.name
-            : typeof p?.pluginName === 'string'
-              ? p.pluginName
-              : '';
-        if (!id) return false;
-        const patch: Record<string, boolean> = {};
-        if (typeof p.autoDetach === 'boolean') patch.autoDetach = p.autoDetach;
-        if (typeof p.detachAlwaysShowSearch === 'boolean')
-          patch.detachAlwaysShowSearch = p.detachAlwaysShowSearch;
-        if (!Object.keys(patch).length) return false;
-        return writePluginFlickConfigSync(id, patch);
-      }
-    );
+    ipcMain.handle('flick:set-plugin-flick-config', (_e, payload: unknown) => {
+      const p = payload as {
+        name?: string;
+        pluginName?: string;
+        autoDetach?: boolean;
+        detachAlwaysShowSearch?: boolean;
+      };
+      const id =
+        typeof p?.name === 'string'
+          ? p.name
+          : typeof p?.pluginName === 'string'
+            ? p.pluginName
+            : '';
+      if (!id) return false;
+      const patch: Record<string, boolean> = {};
+      if (typeof p.autoDetach === 'boolean') patch.autoDetach = p.autoDetach;
+      if (typeof p.detachAlwaysShowSearch === 'boolean')
+        patch.detachAlwaysShowSearch = p.detachAlwaysShowSearch;
+      if (!Object.keys(patch).length) return false;
+      return writePluginFlickConfigSync(id, patch);
+    });
     ipcMain.handle(
       'flick:flip-plugin-auto-detach',
       (_e, pluginName: unknown) => {
@@ -167,13 +267,12 @@ class API extends DBInstance {
     );
     ipcMain.handle(
       'flick:detach-adjust-plugin-zoom',
-      (_e, payload: unknown) => {
-        const p = payload as { action?: string; winId?: number };
-        if (typeof p?.winId !== 'number') return false;
+      (event, payload: unknown) => {
+        const p = payload as { action?: string };
         return this.detachAdjustPluginZoom(
-          { data: { action: p.action }, winId: p.winId },
+          { data: { action: p.action } },
           mainWindow,
-          undefined
+          event
         );
       }
     );
@@ -192,15 +291,21 @@ class API extends DBInstance {
     } catch {
       /* 首次启动 */
     }
-    ipcMain.handle('msg-trigger-async', async (_event, arg) => {
-      const window = arg.winId ? BrowserWindow.fromId(arg.winId) : mainWindow;
-      return this[arg.type](arg, window, undefined);
-    });
+    ipcMain.handle('msg-trigger-async', async (_event, arg) =>
+      this.dispatchIpc(arg, mainWindow)
+    );
     // 响应 preload.js 事件
     ipcMain.on('msg-trigger', async (event, arg) => {
-      const window = arg.winId ? BrowserWindow.fromId(arg.winId) : mainWindow;
-      const data = await this[arg.type](arg, window, event);
-      event.returnValue = data;
+      try {
+        event.returnValue = await this.dispatchIpc(arg, mainWindow, event);
+      } catch (error) {
+        console.error('[ipc] msg-trigger rejected:', error);
+        event.returnValue = {
+          error: true,
+          message:
+            error instanceof Error ? error.message : 'IPC request failed',
+        };
+      }
       // event.sender.send(`msg-back-${arg.type}`, data);
     });
     // 按 ESC 退出插件
@@ -209,6 +314,25 @@ class API extends DBInstance {
     );
     // 设置主窗口的 show/hide 事件监听
     this.setupMainWindowHooks(mainWindow);
+  }
+
+  private dispatchIpc(
+    arg: unknown,
+    mainWindow: BrowserWindow,
+    event?: IpcMainEvent
+  ): unknown | Promise<unknown> {
+    if (!arg || typeof arg !== 'object') {
+      throw new TypeError('IPC payload must be an object');
+    }
+    const type = (arg as { type?: unknown }).type;
+    if (typeof type !== 'string' || !ALLOWED_IPC_METHODS.has(type)) {
+      throw new Error(`IPC method is not allowed: ${String(type)}`);
+    }
+    const method = (this as unknown as Record<string, unknown>)[type];
+    if (typeof method !== 'function') {
+      throw new Error(`IPC method is unavailable: ${type}`);
+    }
+    return method.call(this, arg, mainWindow, event);
   }
 
   private setupMainWindowHooks(mainWindow: BrowserWindow) {
@@ -224,10 +348,22 @@ class API extends DBInstance {
   }
 
   public getCurrentWindow = (window, e) => {
-    let originWindow = BrowserWindow.fromWebContents(e.sender);
-    if (originWindow !== window)
-      originWindow = detachInstance.getWindow() ?? null;
-    return originWindow;
+    if (!e?.sender || e.sender.isDestroyed?.()) return null;
+    const directWindow = BrowserWindow.fromWebContents(e.sender);
+    if (directWindow && !directWindow.isDestroyed()) return directWindow;
+
+    for (const candidate of BrowserWindow.getAllWindows()) {
+      if (candidate.isDestroyed()) continue;
+      const browserView = candidate.getBrowserView();
+      if (
+        browserView?.webContents &&
+        !browserView.webContents.isDestroyed() &&
+        browserView.webContents.id === e.sender.id
+      ) {
+        return candidate;
+      }
+    }
+    return null;
   };
 
   public __EscapeKeyDown = (event, input, window) => {
@@ -246,13 +382,24 @@ class API extends DBInstance {
   };
 
   public windowMoving({ data: { mouseX, mouseY, width, height } }, window, e) {
+    const geometry = [mouseX, mouseY, width, height].map(Number);
+    if (geometry.some((value) => !Number.isFinite(value))) return false;
+    const [safeMouseX, safeMouseY, rawWidth, rawHeight] = geometry;
+    const safeWidth = Math.max(240, Math.min(4096, Math.round(rawWidth)));
+    const safeHeight = Math.max(60, Math.min(2160, Math.round(rawHeight)));
     const { x, y } = screen.getCursorScreenPoint();
     const originWindow = this.getCurrentWindow(window, e);
-    if (!originWindow) return;
-    const nx = x - mouseX;
-    const ny = y - mouseY;
-    originWindow.setContentBounds({ x: nx, y: ny, width, height });
+    if (!originWindow) return false;
+    const nx = Math.round(x - safeMouseX);
+    const ny = Math.round(y - safeMouseY);
+    originWindow.setContentBounds({
+      x: nx,
+      y: ny,
+      width: safeWidth,
+      height: safeHeight,
+    });
     getWinPosition.setPosition(nx, ny);
+    return true;
   }
 
   public async loadPlugin({ data: plugin }, window) {
@@ -413,13 +560,16 @@ void window.loadPlugin(${JSON.stringify(plugin)});`
       if (tplHttp) plugin.tplPath = tplHttp;
     }
     if (plugin.name === 'flick-system-feature') {
-      plugin.logo = plugin.logo || `file://${__static}/logo.png`;
+      plugin.logo = plugin.logo || `image://${__static}/logo.png`;
       plugin.indexPath = `file://${__static}/feature/index.html`;
       const featureHttp = devSubAppHttpUrl(DEV_APP_PORTS.feature, '/');
       if (featureHttp) plugin.indexPath = featureHttp;
     } else if (plugin.name === 'flick-system-super-panel') {
       plugin.indexPath = `file://${path.join(__static, 'superx', 'main.html')}`;
-      const superxHttp = devSubAppHttpUrl(DEV_APP_PORTS.superxWeb, '/main.html');
+      const superxHttp = devSubAppHttpUrl(
+        DEV_APP_PORTS.superxWeb,
+        '/main.html'
+      );
       if (superxHttp) plugin.indexPath = superxHttp;
     } else if (!plugin.indexPath) {
       const pluginPath = path.resolve(baseDir, 'node_modules', plugin.name);
@@ -571,7 +721,7 @@ void window.loadPlugin(${JSON.stringify(plugin)});`
   public detachAdjustPluginZoom(
     arg: { data?: { action?: string }; winId?: number },
     _mainWindow: BrowserWindow,
-    event?: IpcMainEvent
+    event?: IpcMainEvent | IpcMainInvokeEvent
   ) {
     const { data, winId } = arg;
     const w = winId
@@ -942,7 +1092,6 @@ void window.loadPlugin(${JSON.stringify(plugin)});`
     }
     const result = await importPluginBundle(filePaths[0]);
     if (result.ok) {
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
       (global as any).LOCAL_PLUGINS?.reloadPluginsFromDisk?.();
     }
     return result;

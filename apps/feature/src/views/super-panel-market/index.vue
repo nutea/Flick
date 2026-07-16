@@ -27,65 +27,65 @@
               autocomplete="off"
               @finish="onSave"
             >
-            <a-form-item
-              :label="$t('feature.superPanelShortcut.triggerType')"
-              name="triggerType"
-            >
-              <a-select
-                v-model:value="triggerSelect"
-                class="trigger-select"
-                @change="onTriggerTypeChange"
+              <a-form-item
+                :label="$t('feature.superPanelShortcut.triggerType')"
+                name="triggerType"
               >
-                <a-select-option value="keyboard">
-                  {{ $t('feature.superPanelShortcut.modeKeyboard') }}
-                </a-select-option>
-                <a-select-option :value="SP_MOUSE.MIDDLE">
-                  {{ $t('feature.superPanelShortcut.modeMouseMiddle') }}
-                </a-select-option>
-                <a-select-option :value="SP_MOUSE.LONG_LEFT">
-                  {{ $t('feature.superPanelShortcut.modeLongLeft') }}
-                </a-select-option>
-                <a-select-option :value="SP_MOUSE.LONG_RIGHT">
-                  {{ $t('feature.superPanelShortcut.modeLongRight') }}
-                </a-select-option>
-                <a-select-option :value="SP_MOUSE.LONG_MIDDLE">
-                  {{ $t('feature.superPanelShortcut.modeLongMiddle') }}
-                </a-select-option>
-              </a-select>
-            </a-form-item>
-            <a-form-item
-              v-show="triggerSelect === 'keyboard'"
-              :label="$t('feature.superPanelShortcut.hotkeyLabel')"
-              name="superPanelHotKey"
-              :rules="[
-                {
-                  required: true,
-                  message: $t('feature.superPanelShortcut.required'),
-                },
-              ]"
-            >
-              <a-input
-                :value="form.superPanelHotKey"
-                read-only
-                autocomplete="off"
-                class="shortcut-input"
-                :placeholder="$t('feature.superPanelShortcut.captureHint')"
-                @focus="onShortcutFocus"
-                @blur="onShortcutBlur"
-                @keydown.capture="onShortcutInputBlock"
-                @paste.prevent
-                @drop.prevent
-                @compositionstart.prevent
-                @compositionupdate.prevent
-                @compositionend.prevent
-              />
-            </a-form-item>
-            <a-form-item>
-              <a-button type="primary" html-type="submit">
-                {{ $t('feature.superPanelShortcut.save') }}
-              </a-button>
-            </a-form-item>
-          </a-form>
+                <a-select
+                  v-model:value="triggerSelect"
+                  class="trigger-select"
+                  @change="onTriggerTypeChange"
+                >
+                  <a-select-option value="keyboard">
+                    {{ $t('feature.superPanelShortcut.modeKeyboard') }}
+                  </a-select-option>
+                  <a-select-option :value="SP_MOUSE.MIDDLE">
+                    {{ $t('feature.superPanelShortcut.modeMouseMiddle') }}
+                  </a-select-option>
+                  <a-select-option :value="SP_MOUSE.LONG_LEFT">
+                    {{ $t('feature.superPanelShortcut.modeLongLeft') }}
+                  </a-select-option>
+                  <a-select-option :value="SP_MOUSE.LONG_RIGHT">
+                    {{ $t('feature.superPanelShortcut.modeLongRight') }}
+                  </a-select-option>
+                  <a-select-option :value="SP_MOUSE.LONG_MIDDLE">
+                    {{ $t('feature.superPanelShortcut.modeLongMiddle') }}
+                  </a-select-option>
+                </a-select>
+              </a-form-item>
+              <a-form-item
+                v-show="triggerSelect === 'keyboard'"
+                :label="$t('feature.superPanelShortcut.hotkeyLabel')"
+                name="superPanelHotKey"
+                :rules="[
+                  {
+                    required: true,
+                    message: $t('feature.superPanelShortcut.required'),
+                  },
+                ]"
+              >
+                <a-input
+                  :value="form.superPanelHotKey"
+                  read-only
+                  autocomplete="off"
+                  class="shortcut-input"
+                  :placeholder="$t('feature.superPanelShortcut.captureHint')"
+                  @focus="onShortcutFocus"
+                  @blur="onShortcutBlur"
+                  @keydown.capture="onShortcutInputBlock"
+                  @paste.prevent
+                  @drop.prevent
+                  @compositionstart.prevent
+                  @compositionupdate.prevent
+                  @compositionend.prevent
+                />
+              </a-form-item>
+              <a-form-item>
+                <a-button type="primary" html-type="submit">
+                  {{ $t('feature.superPanelShortcut.save') }}
+                </a-button>
+              </a-form-item>
+            </a-form>
           </div>
         </template>
 
@@ -104,24 +104,34 @@
               </div>
               <div class="translate-profile-card">
                 <div class="translate-profile-row">
-                  <span class="translate-profile-label">{{
-                    $t('feature.superPanelShortcut.profileSelect')
-                  }}</span>
+                  <span class="translate-profile-label">
+                    {{ $t('feature.superPanelShortcut.profileSelect') }}
+                  </span>
                   <a-select
                     :value="selectedProfileId"
                     class="profile-select"
                     :disabled="translateProfiles.length === 0"
-                    :placeholder="$t('feature.superPanelShortcut.translateProfilesEmpty')"
+                    :placeholder="
+                      $t('feature.superPanelShortcut.translateProfilesEmpty')
+                    "
                     @change="onProfileSelectChange"
                   >
-                    <a-select-option v-for="p in translateProfiles" :key="p.id" :value="p.id">
+                    <a-select-option
+                      v-for="p in translateProfiles"
+                      :key="p.id"
+                      :value="p.id"
+                    >
                       {{ p.name }}
                     </a-select-option>
                   </a-select>
                   <div class="translate-profile-actions">
-                    <a-button @click="onAddProfile">{{ $t('feature.superPanelShortcut.addProfile') }}</a-button>
+                    <a-button @click="onAddProfile">
+                      {{ $t('feature.superPanelShortcut.addProfile') }}
+                    </a-button>
                     <a-popconfirm
-                      :title="$t('feature.superPanelShortcut.deleteProfileConfirm')"
+                      :title="
+                        $t('feature.superPanelShortcut.deleteProfileConfirm')
+                      "
                       @confirm="onDeleteProfile"
                     >
                       <a-button danger :disabled="!selectedProfileId">
@@ -143,29 +153,49 @@
                   <div class="translate-section-title">
                     {{ $t('feature.superPanelShortcut.translateSectionApi') }}
                   </div>
-                  <a-form-item :label="$t('feature.superPanelShortcut.translateProvider')">
+                  <a-form-item
+                    :label="$t('feature.superPanelShortcut.translateProvider')"
+                  >
                     <a-select
                       v-model:value="translateForm.translateProvider"
                       class="translate-provider-select"
                     >
                       <a-select-option value="openai_chat">
-                        {{ $t('feature.superPanelShortcut.providerOpenaiChat') }}
+                        {{
+                          $t('feature.superPanelShortcut.providerOpenaiChat')
+                        }}
                       </a-select-option>
                     </a-select>
                   </a-form-item>
-                  <a-form-item :label="$t('feature.superPanelShortcut.profileName')">
-                    <a-input v-model:value="translateForm.profileName" autocomplete="off" />
-                  </a-form-item>
-                  <a-form-item :label="$t('feature.superPanelShortcut.llmBaseUrl')">
+                  <a-form-item
+                    :label="$t('feature.superPanelShortcut.profileName')"
+                  >
                     <a-input
-                      v-model:value="translateForm.llmBaseUrl"
-                      :placeholder="$t('feature.superPanelShortcut.llmBaseUrlPh')"
+                      v-model:value="translateForm.profileName"
+                      autocomplete="off"
                     />
                   </a-form-item>
-                  <a-form-item :label="$t('feature.superPanelShortcut.llmApiKey')">
-                    <a-input-password v-model:value="translateForm.llmApiKey" autocomplete="off" />
+                  <a-form-item
+                    :label="$t('feature.superPanelShortcut.llmBaseUrl')"
+                  >
+                    <a-input
+                      v-model:value="translateForm.llmBaseUrl"
+                      :placeholder="
+                        $t('feature.superPanelShortcut.llmBaseUrlPh')
+                      "
+                    />
                   </a-form-item>
-                  <a-form-item :label="$t('feature.superPanelShortcut.llmModel')">
+                  <a-form-item
+                    :label="$t('feature.superPanelShortcut.llmApiKey')"
+                  >
+                    <a-input-password
+                      v-model:value="translateForm.llmApiKey"
+                      autocomplete="off"
+                    />
+                  </a-form-item>
+                  <a-form-item
+                    :label="$t('feature.superPanelShortcut.llmModel')"
+                  >
                     <a-input v-model:value="translateForm.llmModel" />
                   </a-form-item>
                   <div class="translate-test-row">
@@ -177,13 +207,21 @@
 
                 <div class="translate-section translate-section-prompt">
                   <div class="translate-section-title">
-                    {{ $t('feature.superPanelShortcut.translateSectionPrompt') }}
+                    {{
+                      $t('feature.superPanelShortcut.translateSectionPrompt')
+                    }}
                   </div>
-                  <a-form-item :label="$t('feature.superPanelShortcut.llmSystemPrompt')">
+                  <a-form-item
+                    :label="$t('feature.superPanelShortcut.llmSystemPrompt')"
+                  >
                     <a-collapse ghost class="system-prompt-builtin-collapse">
                       <a-collapse-panel
                         key="builtin"
-                        :header="$t('feature.superPanelShortcut.systemPromptBuiltinCollapse')"
+                        :header="
+                          $t(
+                            'feature.superPanelShortcut.systemPromptBuiltinCollapse'
+                          )
+                        "
                       >
                         <pre class="system-prompt-builtin-pre">{{
                           DEFAULT_TRANSLATE_SYSTEM_PROMPT
@@ -194,7 +232,9 @@
                       v-model:value="translateForm.llmSystemPrompt"
                       :rows="4"
                       class="system-prompt-textarea"
-                      :placeholder="$t('feature.superPanelShortcut.llmSystemPromptPh')"
+                      :placeholder="
+                        $t('feature.superPanelShortcut.llmSystemPromptPh')
+                      "
                     />
                     <a-button
                       type="default"
@@ -202,14 +242,20 @@
                       class="system-prompt-fill-btn"
                       @click="applyBuiltinSystemPrompt"
                     >
-                      {{ $t('feature.superPanelShortcut.systemPromptFillBuiltin') }}
+                      {{
+                        $t('feature.superPanelShortcut.systemPromptFillBuiltin')
+                      }}
                     </a-button>
                   </a-form-item>
-                  <a-form-item :label="$t('feature.superPanelShortcut.llmExtraHeaders')">
+                  <a-form-item
+                    :label="$t('feature.superPanelShortcut.llmExtraHeaders')"
+                  >
                     <a-textarea
                       v-model:value="translateForm.llmExtraHeaders"
                       :rows="2"
-                      :placeholder="$t('feature.superPanelShortcut.llmExtraHeadersPh')"
+                      :placeholder="
+                        $t('feature.superPanelShortcut.llmExtraHeadersPh')
+                      "
                     />
                   </a-form-item>
                 </div>
@@ -217,10 +263,19 @@
 
               <div class="translate-section translate-section-behavior">
                 <div class="translate-section-title">
-                  {{ $t('feature.superPanelShortcut.translateSectionBehavior') }}
+                  {{
+                    $t('feature.superPanelShortcut.translateSectionBehavior')
+                  }}
                 </div>
-                <a-form layout="vertical" class="translate-form translate-form-behavior">
-                  <a-form-item :label="$t('feature.superPanelShortcut.translateMaxCharsTitle')">
+                <a-form
+                  layout="vertical"
+                  class="translate-form translate-form-behavior"
+                >
+                  <a-form-item
+                    :label="
+                      $t('feature.superPanelShortcut.translateMaxCharsTitle')
+                    "
+                  >
                     <a-input-number
                       v-model:value="translateMaxChars"
                       :min="1"
@@ -228,27 +283,39 @@
                       class="translate-max-chars-input"
                     />
                     <div class="translate-max-chars-hint">
-                      {{ $t('feature.superPanelShortcut.translateMaxCharsDesc') }}
+                      {{
+                        $t('feature.superPanelShortcut.translateMaxCharsDesc')
+                      }}
                     </div>
                   </a-form-item>
                   <div class="translate-auto-row">
                     <div class="translate-auto-text">
                       <div class="translate-auto-label">
-                        {{ $t('feature.superPanelShortcut.autoTranslateLabel') }}
+                        {{
+                          $t('feature.superPanelShortcut.autoTranslateLabel')
+                        }}
                       </div>
                       <div class="translate-auto-desc">
                         {{ $t('feature.superPanelShortcut.autoTranslateDesc') }}
                       </div>
                     </div>
                     <a-tooltip
-                      :title="translateSwitchDisabled ? $t('feature.superPanelShortcut.switchNeedConfig') : ''"
+                      :title="
+                        translateSwitchDisabled
+                          ? $t('feature.superPanelShortcut.switchNeedConfig')
+                          : ''
+                      "
                     >
                       <span class="switch-wrap">
                         <a-switch
                           v-model:checked="translateForm.autoTranslate"
                           :disabled="translateSwitchDisabled"
-                          :checked-children="$t('feature.superPanelShortcut.on')"
-                          :un-checked-children="$t('feature.superPanelShortcut.off')"
+                          :checked-children="
+                            $t('feature.superPanelShortcut.on')
+                          "
+                          :un-checked-children="
+                            $t('feature.superPanelShortcut.off')
+                          "
                         />
                       </span>
                     </a-tooltip>
@@ -300,15 +367,27 @@ const SP_MOUSE = {
 } as const;
 
 function getFlick() {
-  return (window as unknown as { flick?: { dbStorage: { getItem: (k: string) => string | null; setItem: (k: string, v: string) => void } } }).flick;
+  return (
+    window as unknown as {
+      flick?: {
+        dbStorage: {
+          getItem: (k: string) => string | null;
+          setItem: (k: string, v: string) => void;
+        };
+      };
+    }
+  ).flick;
 }
 
 const initialRaw =
   getFlick()?.dbStorage.getItem(SUPER_PANEL_HOTKEY_DB_ID) || 'Ctrl+W';
-const initialPref =
-  (window as unknown as {
-    flick?: { db?: { get: (id: string) => { data?: Record<string, unknown> } | null } };
-  }).flick?.db?.get(SUPER_PANEL_PREF_DB_ID) || { data: {} };
+const initialPref = (
+  window as unknown as {
+    flick?: {
+      db?: { get: (id: string) => { data?: Record<string, unknown> } | null };
+    };
+  }
+).flick?.db?.get(SUPER_PANEL_PREF_DB_ID) || { data: {} };
 
 const lastKeyboardCombo = ref(
   initialRaw.startsWith('flick:sp:') ? 'Ctrl+W' : initialRaw
@@ -359,12 +438,17 @@ function clampTranslateMaxChars(n: unknown): number {
   return 2000;
 }
 
-const loadedProfiles = loadProfilesFromDoc(initialPref?.data as Record<string, unknown> | undefined);
+const loadedProfiles = loadProfilesFromDoc(
+  initialPref?.data as Record<string, unknown> | undefined
+);
 const translateProfiles = ref<TranslateProfile[]>(loadedProfiles.profiles);
 const selectedProfileId = ref<string | null>(loadedProfiles.activeProfileId);
 
 const translateMaxChars = ref(
-  clampTranslateMaxChars((initialPref?.data as Record<string, unknown> | undefined)?.translateMaxChars)
+  clampTranslateMaxChars(
+    (initialPref?.data as Record<string, unknown> | undefined)
+      ?.translateMaxChars
+  )
 );
 
 const translateForm = reactive<TranslateEditorForm>({
@@ -408,10 +492,13 @@ function commitEditorToProfiles() {
 const initialWantOn = initialPref?.data?.autoTranslate !== false;
 desiredAutoTranslate.value = initialWantOn;
 if (selectedProfileId.value) {
-  const p = translateProfiles.value.find((x) => x.id === selectedProfileId.value);
+  const p = translateProfiles.value.find(
+    (x) => x.id === selectedProfileId.value
+  );
   applyEditorFromProfile(p ?? null);
 }
-translateForm.autoTranslate = initialWantOn && isTranslateConfigured(translateForm);
+translateForm.autoTranslate =
+  initialWantOn && isTranslateConfigured(translateForm);
 
 const translateSwitchDisabled = computed(
   () => !translateForm.profileId || !isTranslateConfigured(translateForm)
@@ -502,9 +589,13 @@ async function onTestConnection() {
       return;
     }
     if (r.ok) {
-      message.success(`${t('feature.superPanelShortcut.testConnectionOk')}: ${r.message}`);
+      message.success(
+        `${t('feature.superPanelShortcut.testConnectionOk')}: ${r.message}`
+      );
     } else {
-      message.error(`${t('feature.superPanelShortcut.testConnectionFail')}: ${r.message}`);
+      message.error(
+        `${t('feature.superPanelShortcut.testConnectionFail')}: ${r.message}`
+      );
     }
   } finally {
     testLoading.value = false;
@@ -621,7 +712,12 @@ function applyBuiltinSystemPrompt() {
 
 function onSaveTranslate() {
   const flick = getFlick() as unknown as {
-    db?: { get: (id: string) => { _id?: string; _rev?: string; data?: unknown } | null; put: (doc: unknown) => unknown };
+    db?: {
+      get: (
+        id: string
+      ) => { _id?: string; _rev?: string; data?: unknown } | null;
+      put: (doc: unknown) => unknown;
+    };
   };
   if (!flick?.db) {
     message.warning(t('feature.superPanelShortcut.saveDevHint'));
@@ -657,7 +753,8 @@ function onSaveTranslate() {
     }
     selectedProfileId.value = activeId;
     const active = profilesOut.find((p) => p.id === activeId);
-    autoTranslate = !!desiredAutoTranslate.value && !!active && isTranslateConfigured(active);
+    autoTranslate =
+      !!desiredAutoTranslate.value && !!active && isTranslateConfigured(active);
   }
 
   oldData.translateProfiles = profilesOut;
@@ -895,7 +992,8 @@ function onSaveTranslate() {
     line-height: 1.5;
     white-space: pre-wrap;
     word-break: break-word;
-    font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+    font-family:
+      ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
     color: var(--color-text-content);
     background: var(--color-input-hover);
     border: 1px solid var(--color-border-light);

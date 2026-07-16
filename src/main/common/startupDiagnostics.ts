@@ -5,7 +5,11 @@ import { app, dialog } from 'electron';
 let installed = false;
 
 function diagnosticsEnabled(): boolean {
-  return !app.isPackaged || !!process.env.ELECTRON_RENDERER_URL;
+  return (
+    !app.isPackaged ||
+    !!process.env.ELECTRON_RENDERER_URL ||
+    process.env.FLICK_STARTUP_DIAGNOSTICS === '1'
+  );
 }
 
 function logFilePath(): string | null {
@@ -45,10 +49,15 @@ export function writeStartupLog(label: string, error?: unknown): void {
   }
 }
 
-export function showStartupError(title: string, message: string, error?: unknown): void {
+export function showStartupError(
+  title: string,
+  message: string,
+  error?: unknown
+): void {
   writeStartupLog(`${title}: ${message}`, error);
   try {
-    const detail = error == null ? message : `${message}\n\n${stringifyError(error)}`;
+    const detail =
+      error == null ? message : `${message}\n\n${stringifyError(error)}`;
     dialog.showErrorBox(title, detail);
   } catch {
     /* ignore dialog failures */
@@ -61,11 +70,18 @@ export function installProcessErrorHandlers(): void {
   installed = true;
 
   process.on('uncaughtException', (error) => {
-    showStartupError('Flick Startup Error', 'Main process crashed during startup.', error);
+    showStartupError(
+      'Flick Startup Error',
+      'Main process crashed during startup.',
+      error
+    );
   });
 
   process.on('unhandledRejection', (reason) => {
-    showStartupError('Flick Startup Error', 'Unhandled promise rejection during startup.', reason);
+    showStartupError(
+      'Flick Startup Error',
+      'Unhandled promise rejection during startup.',
+      reason
+    );
   });
 }
-

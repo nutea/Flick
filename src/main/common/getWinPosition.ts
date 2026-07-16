@@ -1,8 +1,5 @@
 import { screen } from 'electron';
-import {
-  WINDOW_HEIGHT,
-  WINDOW_WIDTH,
-} from '@/common/constans/common';
+import { WINDOW_HEIGHT, WINDOW_WIDTH } from '@/common/constans/common';
 
 const winPosition = {
   x: 0,

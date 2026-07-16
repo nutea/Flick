@@ -1,11 +1,15 @@
 declare global {
-  // eslint-disable-next-line no-var
   var __static: string;
 
   interface GlobalThis {
     __static: string;
   }
+
+  namespace Electron {
+    interface BrowserView {
+      inDetach?: boolean;
+    }
+  }
 }
 
 export {};
-

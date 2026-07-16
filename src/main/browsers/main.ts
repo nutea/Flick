@@ -1,5 +1,6 @@
 import { app, BrowserWindow, protocol, nativeTheme } from 'electron';
 import path from 'path';
+import { pathToFileURL } from 'url';
 // import versonHandler from '../common/versionHandler';
 import localConfig from '@/main/common/initLocalConfig';
 import {
@@ -12,7 +13,8 @@ import {
   showStartupError,
   writeStartupLog,
 } from '@/main/common/startupDiagnostics';
-// eslint-disable-next-line @typescript-eslint/no-var-requires
+import { secureWebContentsNavigation } from '@/main/common/navigationSecurity';
+
 require('@electron/remote/main').initialize();
 
 export default () => {
@@ -25,7 +27,7 @@ export default () => {
 
   const init = () => {
     createWindow();
-    // eslint-disable-next-line @typescript-eslint/no-var-requires
+
     require('@electron/remote/main').enable(win.webContents);
   };
 
@@ -42,25 +44,25 @@ export default () => {
       skipTaskbar: commonConst.macOS(),
       backgroundColor: nativeTheme.shouldUseDarkColors ? '#1c1c28' : '#fff',
       webPreferences: {
-        webSecurity: false,
+        webSecurity: true,
         backgroundThrottling: false,
         contextIsolation: false,
-        webviewTag: true,
-        nodeIntegration: true,
+        sandbox: false,
+        webviewTag: false,
+        nodeIntegration: false,
+        navigateOnDragDrop: false,
         preload: path.join(__dirname, '../../preload/index.js'),
         spellcheck: false,
       },
     });
     const devServerUrl = process.env.ELECTRON_RENDERER_URL;
-    if (devServerUrl) {
-      // Load the url of the dev server if in development mode
-      void win.loadURL(devServerUrl);
-    } else {
-      // 主进程在 dist/main/chunks 下时 __dirname 多一层，不能用相对 chunks 的 ../renderer
-      void win.loadFile(
-        path.join(app.getAppPath(), 'dist', 'renderer', 'index.html')
-      );
-    }
+    const targetUrl = devServerUrl
+      ? devServerUrl
+      : pathToFileURL(
+          path.join(app.getAppPath(), 'dist', 'renderer', 'index.html')
+        ).toString();
+    secureWebContentsNavigation(win.webContents, targetUrl);
+    void win.loadURL(targetUrl);
     protocol.interceptFileProtocol('image', (req, callback) => {
       const url = req.url.substr(8);
       callback(decodeURI(url));
@@ -81,29 +83,24 @@ export default () => {
       }
     );
 
-    win.webContents.on(
-      'console-message',
-      (_event, level, message, line, sourceId) => {
-        if (!process.env.ELECTRON_RENDERER_URL && app.isPackaged) {
-          return;
-        }
-        if (
-          typeof sourceId === 'string' &&
-          sourceId.startsWith('devtools://')
-        ) {
-          return;
-        }
-        if (level < 2) {
-          return;
-        }
-        writeStartupLog('main window console-message', {
-          level,
-          message,
-          line,
-          sourceId,
-        });
+    win.webContents.on('console-message', (details) => {
+      const { level, message, lineNumber, sourceId } = details;
+      if (!process.env.ELECTRON_RENDERER_URL && app.isPackaged) {
+        return;
       }
-    );
+      if (typeof sourceId === 'string' && sourceId.startsWith('devtools://')) {
+        return;
+      }
+      if (level !== 'warning' && level !== 'error') {
+        return;
+      }
+      writeStartupLog('main window console-message', {
+        level,
+        message,
+        line: lineNumber,
+        sourceId,
+      });
+    });
 
     win.webContents.on('render-process-gone', (_event, details) => {
       showStartupError(
@@ -115,6 +112,38 @@ export default () => {
 
     win.webContents.once('did-finish-load', () => {
       writeStartupLog('main window finished load');
+      if (process.env.FLICK_MAIN_SMOKE === '1') {
+        const preferences = win.webContents.getLastWebPreferences();
+        void win.webContents
+          .executeJavaScript(
+            `(() => {
+            const denied = (name) => {
+              try { window.require(name); return false; } catch { return true; }
+            };
+            return {
+              flickBridge: !!window.flick,
+              pathFacade: typeof window.require('path').join === 'function',
+              childProcessDenied: denied('child_process'),
+              fsExtraDenied: denied('fs-extra')
+            };
+          })()`
+          )
+          .then((result) => {
+            const secure =
+              preferences.nodeIntegration === false &&
+              preferences.webviewTag === false &&
+              result?.flickBridge === true &&
+              result?.pathFacade === true &&
+              result?.childProcessDenied === true &&
+              result?.fsExtraDenied === true;
+            const payload = { secure, preferences, result };
+            if (secure) console.log('[flick-main] smoke passed:', payload);
+            else console.error('[flick-main] smoke failed:', payload);
+          })
+          .catch((error) =>
+            console.error('[flick-main] smoke failed to execute:', error)
+          );
+      }
     });
 
     win.on('show', () => {

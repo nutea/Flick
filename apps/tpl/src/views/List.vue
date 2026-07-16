@@ -10,16 +10,25 @@
         <img v-if="item.icon" class="icon" :src="item.icon" />
         <div class="content">
           <div class="title">{{ item.title }}</div>
-          <div class="desc">{{ decodeURIComponent(item.description) }}</div>
+          <div class="desc">
+            {{ decodeURIComponent(item.description || '') }}
+          </div>
         </div>
       </div>
     </div>
   </div>
 </template>
 <script setup lang="ts">
-import { useRoute } from "vue-router";
-import { ref, onBeforeUnmount, watch } from "vue";
-const { ipcRenderer } = window.require("electron");
+import { useRoute } from 'vue-router';
+import { ref, onBeforeUnmount, watch } from 'vue';
+const { ipcRenderer } = window.require('electron');
+
+interface ListItem {
+  icon?: string;
+  title?: string;
+  description?: string;
+  [key: string]: unknown;
+}
 
 const route = useRoute();
 
@@ -28,49 +37,57 @@ const itemMaxNum = 10;
 const defaultHeight = 60;
 
 const { code, type, payload } = route.params;
-const current = window.exports[code];
+const current: any = window.exports[String(code)];
 window.flick.setExpendHeight(defaultHeight);
 
-const lists = ref([]);
+const lists = ref<ListItem[]>([]);
 watch([lists], () => {
-  const height = lists.value.length > itemMaxNum ? itemMaxNum * itemHeight : itemHeight * lists.value.length
+  const height =
+    lists.value.length > itemMaxNum
+      ? itemMaxNum * itemHeight
+      : itemHeight * lists.value.length;
   window.flick.setExpendHeight(defaultHeight + height);
 });
 current.args.enter &&
-  current.args.enter({ code: code, type, payload }, (result) => {
+  current.args.enter({ code: code, type, payload }, (result: ListItem[]) => {
     lists.value = result;
   });
 
 const currentSelect = ref(0);
-ipcRenderer.on(`changeCurrent`, (e, result) => {
+ipcRenderer.on('changeCurrent', (_e: unknown, result: number) => {
   if (
     currentSelect.value + result > lists.value.length - 1 ||
-    lists.value + result < 0
+    currentSelect.value + result < 0
   ) {
     return;
   }
   currentSelect.value = currentSelect.value + result;
 });
-window.flick.setSubInput(({ text }) => {
+window.flick.setSubInput(({ text }: { text: string }) => {
   current.args.search &&
-    current.args.search({ code, type: "", payload: [] }, text, (result) => {
-      lists.value = result || [];
-    });
-}, "搜索");
+    current.args.search(
+      { code, type: '', payload: [] },
+      text,
+      (result: ListItem[]) => {
+        lists.value = result || [];
+      }
+    );
+}, '搜索');
 
-const select = (item) => {
-  current.args.select && current.args.select({code, type: '', payload: [] }, item);
+const select = (item: ListItem) => {
+  current.args.select &&
+    current.args.select({ code, type: '', payload: [] }, item);
 };
 
-const onKeydownAction = (e) => {
-  if (e.code === "Enter") {
+const onKeydownAction = (e: KeyboardEvent) => {
+  if (e.code === 'Enter') {
     return select(lists.value[currentSelect.value]);
   }
   let index = 0;
-  if (e.code === "ArrowDown") {
+  if (e.code === 'ArrowDown') {
     index = 1;
   }
-  if (e.code === "ArrowUp") {
+  if (e.code === 'ArrowUp') {
     index = -1;
   }
   if (!lists.value.length) return;
@@ -82,12 +99,11 @@ const onKeydownAction = (e) => {
   currentSelect.value = currentSelect.value + index;
 };
 
-window.addEventListener("keydown", onKeydownAction);
+window.addEventListener('keydown', onKeydownAction);
 
 onBeforeUnmount(() => {
-  window.removeEventListener("keydown", onKeydownAction);
+  window.removeEventListener('keydown', onKeydownAction);
 });
-
 </script>
 <style>
 .options {

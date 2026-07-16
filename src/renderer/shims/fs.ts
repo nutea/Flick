@@ -1,7 +1,3 @@
-const fsMod =
-  (window as any).require?.('fs') ||
-  // eslint-disable-next-line @typescript-eslint/no-var-requires
-  require('fs');
+const fsMod = (window as any).require?.('fs') || require('fs');
 
 export default fsMod;
-

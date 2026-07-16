@@ -14,11 +14,10 @@
           class="error-content"
           sub-title="哎呀，暂时还没有安装任何插件！"
         >
-          <template #icon>
-            <Vue3Lottie :animationData="emptyJson" :height="240" :width="240" />
-          </template>
           <template #extra>
-            <a-button @click="gotoFinder" key="console" type="primary">去插件市场看看吧</a-button>
+            <a-button @click="gotoFinder" key="console" type="primary">
+              去插件市场看看吧
+            </a-button>
           </template>
         </a-result>
       </div>
@@ -82,7 +81,7 @@
             >
               <div
                 class="desc-item"
-                v-if="item.cmds.filter(cmd => !cmd.label).length > 0"
+                v-if="item.cmds.filter((cmd) => !cmd.label).length > 0"
               >
                 <div>{{ item.explain }}</div>
                 <template :key="cmd" v-for="cmd in item.cmds">
@@ -91,7 +90,9 @@
                     :class="{ executable: !cmd.label }"
                   >
                     <template #overlay>
-                      <a-menu @click="({key}) => handleMenuClick(key, item, cmd)">
+                      <a-menu
+                        @click="({ key }) => handleMenuClick(key, item, cmd)"
+                      >
                         <a-menu-item key="open">
                           <CaretRightOutlined />
                           运行
@@ -134,7 +135,6 @@ import {
 import { message } from 'ant-design-vue';
 import { useI18n } from 'vue-i18n';
 
-import emptyJson from '@/assets/lottie/empty.json';
 import { buildPluginLaunchPayload } from '@/utils/pluginLaunchPayload';
 
 const { t } = useI18n();
@@ -165,7 +165,11 @@ const exportBundle = async () => {
     if (!res?.ok) {
       const errKey = `feature.installed.exportErrors.${res.error || 'UNKNOWN'}`;
       const errTxt = t(errKey);
-      message.error(errTxt !== errKey ? errTxt : res?.error || t('feature.installed.exportFail'));
+      message.error(
+        errTxt !== errKey
+          ? errTxt
+          : res?.error || t('feature.installed.exportFail')
+      );
       return;
     }
     message.success(
@@ -187,7 +191,11 @@ const importBundle = async () => {
     if (!res?.ok) {
       const errKey = `feature.installed.importErrors.${res.error || 'UNKNOWN'}`;
       const errTxt = t(errKey);
-      message.error(errTxt !== errKey ? errTxt : res?.error || t('feature.installed.importFail'));
+      message.error(
+        errTxt !== errKey
+          ? errTxt
+          : res?.error || t('feature.installed.importFail')
+      );
       return;
     }
     const n = res.imported?.length || 0;
@@ -206,7 +214,9 @@ const importBundle = async () => {
       });
     }
     if (res.skipped?.length) {
-      message.warning(t('feature.installed.importSkipped', { names: res.skipped.join(', ') }));
+      message.warning(
+        t('feature.installed.importSkipped', { names: res.skipped.join(', ') })
+      );
     }
     await updateLocalPlugin();
   } finally {
@@ -236,15 +246,15 @@ const superPanelPlugins = ref(
 );
 
 const handleMenuClick = (key, item, cmd) => {
-  if(key === 'open') {
+  if (key === 'open') {
     openPlugin({
       feature: item,
       cmd,
     });
   } else if (key === 'add') {
-    addCmdToSuperPanel({cmd, code: item.code});
+    addCmdToSuperPanel({ cmd, code: item.code });
   } else {
-    removePluginToSuperPanel({cmd, name: item.name})
+    removePluginToSuperPanel({ cmd, name: item.name });
   }
 };
 
@@ -256,7 +266,9 @@ const addCmdToSuperPanel = ({ cmd, code }) => {
   });
   if (!plugin) return;
   superPanelPlugins.value.data.push(plugin);
-  const { rev } = window.flick.db.put(JSON.parse(JSON.stringify(superPanelPlugins.value)));
+  const { rev } = window.flick.db.put(
+    JSON.parse(JSON.stringify(superPanelPlugins.value))
+  );
   superPanelPlugins.value._rev = rev;
 };
 
@@ -290,11 +302,7 @@ const openPlugin = ({ cmd, feature }) => {
     cmd,
   });
   if (!payload) return;
-  window.flick.openPlugin(
-    JSON.parse(
-      JSON.stringify(payload)
-    )
-  );
+  window.flick.openPlugin(JSON.parse(JSON.stringify(payload)));
 };
 
 const deletePlugin = async (plugin) => {

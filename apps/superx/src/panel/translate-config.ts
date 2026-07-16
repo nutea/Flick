@@ -37,7 +37,9 @@ export function defaultTranslatePrefs(): SuperPanelTranslatePrefs {
   };
 }
 
-export function isTranslateConfigured(p: SuperPanelTranslatePrefs | undefined | null): boolean {
+export function isTranslateConfigured(
+  p: SuperPanelTranslatePrefs | undefined | null
+): boolean {
   if (!p) return false;
   return !!(
     String(p.llmBaseUrl || '').trim() &&
@@ -47,17 +49,21 @@ export function isTranslateConfigured(p: SuperPanelTranslatePrefs | undefined | 
 }
 
 function coerceProvider(raw: unknown): SuperPanelTranslateProvider {
-  if (raw === 'anthropic_messages' || raw === 'youdao_openapi') return 'openai_chat';
+  if (raw === 'anthropic_messages' || raw === 'youdao_openapi')
+    return 'openai_chat';
   return 'openai_chat';
 }
 
 function parseMaxTokens(raw: unknown): number {
-  if (typeof raw === 'number' && Number.isFinite(raw) && raw > 0) return Math.floor(raw);
+  if (typeof raw === 'number' && Number.isFinite(raw) && raw > 0)
+    return Math.floor(raw);
   const n = parseInt(String(raw ?? '1024'), 10);
   return Number.isFinite(n) && n > 0 ? n : 1024;
 }
 
-export function normalizeTranslateProfile(raw: unknown): TranslateProfile | null {
+export function normalizeTranslateProfile(
+  raw: unknown
+): TranslateProfile | null {
   if (!raw || typeof raw !== 'object') return null;
   const o = raw as Record<string, unknown>;
   const id = String(o.id || '').trim();
@@ -71,7 +77,8 @@ export function normalizeTranslateProfile(raw: unknown): TranslateProfile | null
     llmModel: String(o.llmModel ?? ''),
     llmSystemPrompt: String(o.llmSystemPrompt ?? ''),
     llmExtraHeaders: String(o.llmExtraHeaders ?? ''),
-    anthropicApiVersion: String(o.anthropicApiVersion ?? '2023-06-01').trim() || '2023-06-01',
+    anthropicApiVersion:
+      String(o.anthropicApiVersion ?? '2023-06-01').trim() || '2023-06-01',
     anthropicMaxTokens: parseMaxTokens(o.anthropicMaxTokens),
   };
 }
@@ -89,19 +96,27 @@ export function profileToPrefs(p: TranslateProfile): SuperPanelTranslatePrefs {
   };
 }
 
-function legacyFlatToPrefs(data: Record<string, unknown> | undefined | null): SuperPanelTranslatePrefs {
+function legacyFlatToPrefs(
+  data: Record<string, unknown> | undefined | null
+): SuperPanelTranslatePrefs {
   if (!data) return {};
   return {
     translateProvider: coerceProvider(data.translateProvider),
     llmBaseUrl: data.llmBaseUrl != null ? String(data.llmBaseUrl) : undefined,
     llmApiKey: data.llmApiKey != null ? String(data.llmApiKey) : undefined,
     llmModel: data.llmModel != null ? String(data.llmModel) : undefined,
-    llmSystemPrompt: data.llmSystemPrompt != null ? String(data.llmSystemPrompt) : undefined,
-    llmExtraHeaders: data.llmExtraHeaders != null ? String(data.llmExtraHeaders) : undefined,
+    llmSystemPrompt:
+      data.llmSystemPrompt != null ? String(data.llmSystemPrompt) : undefined,
+    llmExtraHeaders:
+      data.llmExtraHeaders != null ? String(data.llmExtraHeaders) : undefined,
     anthropicApiVersion:
-      data.anthropicApiVersion != null ? String(data.anthropicApiVersion) : undefined,
+      data.anthropicApiVersion != null
+        ? String(data.anthropicApiVersion)
+        : undefined,
     anthropicMaxTokens:
-      typeof data.anthropicMaxTokens === 'number' ? data.anthropicMaxTokens : undefined,
+      typeof data.anthropicMaxTokens === 'number'
+        ? data.anthropicMaxTokens
+        : undefined,
   };
 }
 
@@ -129,7 +144,10 @@ function parseExtraHeaders(raw: string | undefined): Record<string, string> {
     const parsed = JSON.parse(raw) as unknown;
     if (parsed && typeof parsed === 'object' && !Array.isArray(parsed)) {
       return Object.fromEntries(
-        Object.entries(parsed as Record<string, unknown>).map(([k, v]) => [k, String(v)])
+        Object.entries(parsed as Record<string, unknown>).map(([k, v]) => [
+          k,
+          String(v),
+        ])
       );
     }
   } catch {
@@ -164,7 +182,14 @@ function extractTextContent(content: unknown): string {
 }
 
 function extractTextFromObject(obj: PlainObject): string {
-  const directKeys = ['content', 'text', 'output_text', 'answer', 'response', 'completion'];
+  const directKeys = [
+    'content',
+    'text',
+    'output_text',
+    'answer',
+    'response',
+    'completion',
+  ];
   for (const key of directKeys) {
     const value = obj[key];
     const text = extractTextContent(value);
@@ -234,7 +259,10 @@ function llmTextToPanelJsonString(content: string): string {
       basic?: { explains?: string[]; phonetic?: string };
       translation?: string[];
     };
-    if (parsed && (parsed.translation?.length || parsed.basic?.explains?.length)) {
+    if (
+      parsed &&
+      (parsed.translation?.length || parsed.basic?.explains?.length)
+    ) {
       return JSON.stringify(parsed);
     }
   } catch {
@@ -248,7 +276,9 @@ function shouldTranslateToEnglish(word: string): boolean {
 }
 
 function buildTranslateUserPrompt(word: string): string {
-  const targetLanguage = shouldTranslateToEnglish(word) ? 'English' : 'Simplified Chinese';
+  const targetLanguage = shouldTranslateToEnglish(word)
+    ? 'English'
+    : 'Simplified Chinese';
   return [
     `Translate the following text into ${targetLanguage}.`,
     'Return ONLY valid JSON with the shape {"translation":["main translation text"]}.',
@@ -261,7 +291,10 @@ function buildTranslateUserPrompt(word: string): string {
   ].join('\n');
 }
 
-async function fetchOpenAiCompatible(word: string, prefs: SuperPanelTranslatePrefs): Promise<string> {
+async function fetchOpenAiCompatible(
+  word: string,
+  prefs: SuperPanelTranslatePrefs
+): Promise<string> {
   const baseUrl = String(prefs.llmBaseUrl || '').trim();
   const apiKey = String(prefs.llmApiKey || '').trim();
   const model = String(prefs.llmModel || '').trim();
@@ -286,14 +319,16 @@ async function fetchOpenAiCompatible(word: string, prefs: SuperPanelTranslatePre
     max_completion_tokens: 1024,
   };
 
-  const res = await fetch(baseUrl, {
-    method: 'POST',
+  const res = await window.superPanel.requestTranslation({
+    url: baseUrl,
     headers,
     body: JSON.stringify(body),
   });
-  const text = await res.text();
+  const text = res.text;
   if (!res.ok) {
-    return JSON.stringify({ translation: [`Error: HTTP ${res.status}: ${text.slice(0, 400)}`] });
+    return JSON.stringify({
+      translation: [`Error: HTTP ${res.status}: ${text.slice(0, 400)}`],
+    });
   }
   let content = '';
   try {
@@ -310,7 +345,9 @@ async function fetchOpenAiCompatible(word: string, prefs: SuperPanelTranslatePre
     content = text.trim();
   }
   if (!content) {
-    return JSON.stringify({ translation: ['Error: Empty response from model.'] });
+    return JSON.stringify({
+      translation: ['Error: Empty response from model.'],
+    });
   }
   return llmTextToPanelJsonString(content);
 }

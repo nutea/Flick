@@ -1,6 +1,5 @@
 import { PLUGIN_INSTALL_DIR as baseDir } from '@/common/constans/renderer';
 import { toRaw } from 'vue';
-import commonConst from '@/common/utils/commonConst';
 
 const path = window.require('path');
 
@@ -22,18 +21,18 @@ export default function pluginClickEvent({
   };
   // 模板文件
   if (!plugin.main) {
-    pluginDist.tplPath = commonConst.dev()
+    pluginDist.tplPath = import.meta.env.DEV
       ? 'http://localhost:8083/'
       : `file://${__static}/tpl/index.html`;
   }
   // 插件市场
   if (plugin.name === 'flick-system-feature') {
-    pluginDist.indexPath = commonConst.dev()
+    pluginDist.indexPath = import.meta.env.DEV
       ? 'http://localhost:8081/'
       : `file://${__static}/feature/index.html`;
   }
   if (plugin.name === 'flick-system-super-panel') {
-    pluginDist.indexPath = commonConst.dev()
+    pluginDist.indexPath = import.meta.env.DEV
       ? 'http://localhost:8085/main.html'
       : `file://${path.join(__static, 'superx', 'main.html')}`;
   }

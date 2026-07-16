@@ -39,18 +39,23 @@ export default () => {
   systemPlugins.forEach((plugin) => {
     if (fs.existsSync(plugin.indexPath)) {
       try {
-        // eslint-disable-next-line @typescript-eslint/no-var-requires
         const pluginModule = (require(plugin.indexPath) as any)();
         // @ts-ignore
         hooks.onReady.push(async (ctx) => {
           try {
             await pluginModule.onReady(ctx);
           } catch (e) {
-            console.error(`[flick] system plugin onReady failed [${plugin.name}]:`, e);
+            console.error(
+              `[flick] system plugin onReady failed [${plugin.name}]:`,
+              e
+            );
           }
         });
       } catch (e) {
-        console.error(`[flick] failed to load system plugin [${plugin.name}]:`, e);
+        console.error(
+          `[flick] failed to load system plugin [${plugin.name}]:`,
+          e
+        );
       }
     }
   });

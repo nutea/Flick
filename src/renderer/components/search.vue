@@ -25,20 +25,13 @@
       ref="mainInput"
       class="main-input"
       @input="(e) => changeValue(e)"
-      @keydown.left="(e) => keydownEvent(e, 'left')"
-      @keydown.right="(e) => keydownEvent(e, 'right')"
-      @keydown.down="(e) => keydownEvent(e, 'down')"
-      @keydown.tab="(e) => keydownEvent(e, 'down')"
-      @keydown.up="(e) => keydownEvent(e, 'up')"
-      @keydown="(e) => checkNeedInit(e)"
+      @keydown="handleKeydown"
       :value="searchValue"
       :placeholder="
         pluginLoading
           ? '更新检测中...'
           : placeholder || config.perf.custom.placeholder
       "
-      @keypress.enter="(e) => keydownEvent(e, 'enter')"
-      @keypress.space="(e) => keydownEvent(e, 'space')"
       @focus="emit('focus')"
     >
       <template #suffix>
@@ -51,32 +44,38 @@
 </template>
 
 <script setup lang="ts">
-import { defineProps, defineEmits, ref, watch } from 'vue';
+import { ref, watch } from 'vue';
 import { MoreOutlined } from '@ant-design/icons-vue';
 import fileIconUrl from '../assets/file.png';
 
 const remote = window.require('@electron/remote');
 const { ipcRenderer } = window.require('electron');
 import localConfig from '../confOp';
-const { Menu, dialog, getCurrentWindow } = remote;
+const { Menu, dialog } = remote;
 
 const config: any = ref(localConfig.getConfig());
 const clipboardIcon = ref('');
 
-const props: any = defineProps({
-  searchValue: {
-    type: [String, Number],
-    default: '',
-  },
-  placeholder: {
-    type: String,
-    default: '',
-  },
-  pluginHistory: (() => [])(),
-  currentPlugin: {},
-  pluginLoading: Boolean,
-  clipboardFile: (() => [])(),
-});
+type PluginItem = Record<string, any>;
+
+const props = withDefaults(
+  defineProps<{
+    searchValue?: string | number;
+    placeholder?: string;
+    pluginHistory?: PluginItem[];
+    currentPlugin?: PluginItem;
+    pluginLoading?: boolean;
+    clipboardFile?: PluginItem[];
+  }>(),
+  {
+    searchValue: '',
+    placeholder: '',
+    pluginHistory: () => [],
+    currentPlugin: () => ({}),
+    pluginLoading: false,
+    clipboardFile: () => [],
+  }
+);
 
 const changeValue = (e) => {
   // if (props.currentPlugin.name === 'flick-system-feature') return;
@@ -160,6 +159,21 @@ const checkNeedInit = (e) => {
   }
 };
 
+const handleKeydown = (e) => {
+  checkNeedInit(e);
+  const keyMap: Record<string, string> = {
+    ArrowLeft: 'left',
+    ArrowRight: 'right',
+    ArrowDown: 'down',
+    Tab: 'down',
+    ArrowUp: 'up',
+    Enter: 'enter',
+    ' ': 'space',
+  };
+  const key = keyMap[e.key];
+  if (key) keydownEvent(e, key);
+};
+
 const targetSearch = ({ value }) => {
   if (props.currentPlugin.name) {
     return ipcRenderer.sendSync('msg-trigger', {
@@ -230,7 +244,7 @@ const showSeparate = async () => {
             p.version ? `版本：${p.version}` : '',
             p.description || '',
           ].filter(Boolean);
-          dialog.showMessageBoxSync(getCurrentWindow(), {
+          dialog.showMessageBoxSync({
             type: 'info',
             title: '关于插件应用',
             message: lines[0] || p.name,

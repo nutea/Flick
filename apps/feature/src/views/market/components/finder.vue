@@ -1,8 +1,19 @@
 <template>
   <div class="finder">
+    <a-alert
+      v-if="data.unavailable"
+      type="warning"
+      show-icon
+      message="插件市场数据源暂不可用，已安装插件仍可在“自定义插件”中管理。"
+      style="margin-bottom: 16px"
+    />
     <Carousel :itemsToShow="2" :transition="500">
       <Slide :key="index" v-for="(banner, index) in data.banners || []">
-        <img class="carousel__item" @click="jumpTo(banner.link)" :src="banner.src" />
+        <img
+          class="carousel__item"
+          @click="jumpTo(banner.link)"
+          :src="banner.src"
+        />
       </Slide>
     </Carousel>
     <a-divider />
@@ -103,7 +114,6 @@ const newList = computed(() => {
     margin: 17px 0;
   }
 }
-
 
 .carousel__item {
   cursor: pointer;

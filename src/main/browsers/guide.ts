@@ -1,4 +1,4 @@
-import { BrowserWindow, ipcMain, nativeTheme, screen } from 'electron';
+import { app, BrowserWindow, ipcMain, screen } from 'electron';
 import path from 'path';
 import {
   GUIDE_WIDTH,
@@ -11,7 +11,11 @@ import {
   shouldOpenSubAppShellDevTools,
 } from '@/main/common/devSubAppServers';
 import commonConst from '@/common/utils/commonConst';
-import { showStartupError, writeStartupLog } from '@/main/common/startupDiagnostics';
+import {
+  showStartupError,
+  writeStartupLog,
+} from '@/main/common/startupDiagnostics';
+import { secureWebContentsNavigation } from '@/main/common/navigationSecurity';
 
 const getWindowPos = (width, height) => {
   const screenPoint = screen.getCursorScreenPoint();
@@ -28,9 +32,13 @@ let win: any;
 export default () => {
   const init = () => {
     if (win) return;
+    ipcMain.removeAllListeners('guide:service');
     ipcMain.on('guide:service', async (event, arg: { type: string }) => {
-      const data = await operation[arg.type]();
-      event.returnValue = data;
+      if (arg?.type !== 'close') {
+        event.returnValue = { error: true, message: 'Unsupported operation' };
+        return;
+      }
+      event.returnValue = await operation.close();
     });
     createWindow();
   };
@@ -55,17 +63,20 @@ export default () => {
       height: GUIDE_HEIGHT,
       minHeight: WINDOW_MIN_HEIGHT,
       webPreferences: {
-        webSecurity: false,
+        webSecurity: true,
         backgroundThrottling: false,
-        contextIsolation: false,
-        webviewTag: true,
+        contextIsolation: true,
+        sandbox: true,
         devTools: true,
-        nodeIntegration: true,
+        nodeIntegration: false,
+        preload: path.join(app.getAppPath(), 'dist', 'preload', 'guide.js'),
         spellcheck: false,
       },
     });
     const guideFile = `file://${path.join(__static, './guide/index.html')}`;
-    void win.loadURL(devSubAppHttpUrl(DEV_APP_PORTS.guide, '/') ?? guideFile);
+    const guideUrl = devSubAppHttpUrl(DEV_APP_PORTS.guide, '/') ?? guideFile;
+    secureWebContentsNavigation(win.webContents, guideUrl);
+    void win.loadURL(guideUrl);
     if (shouldOpenSubAppShellDevTools()) {
       win.webContents.once('did-finish-load', () => {
         if (!win || win.isDestroyed()) return;

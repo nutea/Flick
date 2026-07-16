@@ -6,7 +6,8 @@
     "dev": "vite --port 8081",
     "build": "vite build",
     "preview": "vite preview --port 8081",
-    "lint": "eslint src"
+    "lint": "eslint src --max-warnings=0",
+    "typecheck": "vue-tsc --noEmit"
   },
   "dependencies": {
     "@ant-design/icons-vue": "catalog:",
@@ -35,7 +36,8 @@
     "prettier": "catalog:",
     "typescript": "catalog:",
     "typescript-eslint": "catalog:",
-    "vite": "catalog:"
+    "vite": "catalog:",
+    "vue-tsc": "catalog:"
   },
   "browserslist": [
     "> 1%",

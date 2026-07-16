@@ -22,6 +22,8 @@ export interface TriggerSuperPanelPayload {
   text?: string;
   fileUrl?: string | null;
   optionPlugin?: OptionPlugin[];
+  selectedFileIsDirectory?: boolean;
+  selectedFileDataUrl?: string;
 }
 
 export interface MatchPluginItem {

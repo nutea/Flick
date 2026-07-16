@@ -12,7 +12,7 @@
       <a-row>
         <a-col
           @click="() => openPlugin(item)"
-          @contextmenu.prevent="openMenu($event,item)"
+          @contextmenu.prevent="openMenu($event, item)"
           :class="
             currentSelect === index ? 'active history-item' : 'history-item'
           "
@@ -40,7 +40,13 @@
         >
           <a-list-item-meta :description="renderDesc(item.desc)">
             <template #title>
-              <span v-html="renderTitle(item.name, item.match)"></span>
+              <span>
+                {{ titleParts(item.name, item.match).before }}
+                <span class="matched-title">
+                  {{ titleParts(item.name, item.match).matched }}
+                </span>
+                {{ titleParts(item.name, item.match).after }}
+              </span>
             </template>
             <template #avatar>
               <a-avatar style="border-radius: 0" :src="item.icon" />
@@ -53,7 +59,7 @@
 </template>
 
 <script lang="ts" setup>
-import { defineEmits, defineProps, reactive, ref, toRaw, watch } from 'vue';
+import { reactive, ref, toRaw } from 'vue';
 import localConfig from '../confOp';
 
 const path = window.require('path');
@@ -63,37 +69,42 @@ declare const __static: string;
 
 const config: any = ref(localConfig.getConfig());
 
-const props: any = defineProps({
-  searchValue: {
-    type: [String, Number],
-    default: '',
-  },
-  options: {
-    type: Array,
-    default: (() => [])(),
-  },
-  currentSelect: {
-    type: Number,
-    default: 0,
-  },
-  currentPlugin: {},
-  pluginHistory: (() => [])(),
-  clipboardFile: (() => [])(),
-});
+type PluginItem = Record<string, any>;
+
+const props = withDefaults(
+  defineProps<{
+    searchValue?: string | number;
+    options?: PluginItem[];
+    currentSelect?: number;
+    currentPlugin?: PluginItem;
+    pluginHistory?: PluginItem[];
+    clipboardFile?: PluginItem[];
+  }>(),
+  {
+    searchValue: '',
+    options: () => [],
+    currentSelect: 0,
+    currentPlugin: () => ({}),
+    pluginHistory: () => [],
+    clipboardFile: () => [],
+  }
+);
 
 const emit = defineEmits(['choosePlugin', 'setPluginHistory']);
 
-const renderTitle = (title, match) => {
-  if (typeof title !== 'string') return;
-  if (!props.searchValue || !match) return title;
-  const result = title.substring(match[0], match[1] + 1);
-  return `<div>${title.substring(
-    0,
-    match[0]
-  )}<span style='color: var(--ant-error-color)'>${result}</span>${title.substring(
-    match[1] + 1,
-    title.length
-  )}</div>`;
+const titleParts = (title, match) => {
+  const value = typeof title === 'string' ? title : '';
+  if (!props.searchValue || !Array.isArray(match)) {
+    return { before: value, matched: '', after: '' };
+  }
+  const start = Math.max(0, Number(match[0]) || 0);
+  const end = Math.min(value.length - 1, Number(match[1]) || 0);
+  if (end < start) return { before: value, matched: '', after: '' };
+  return {
+    before: value.substring(0, start),
+    matched: value.substring(start, end + 1),
+    after: value.substring(end + 1),
+  };
 };
 
 const renderDesc = (desc = '') => {
@@ -147,7 +158,9 @@ const initMainCmdMenus = () => {
       label: '从"使用记录"中删除',
       icon: path.join(__static, 'icons', 'delete@2x.png'),
       click: () => {
-        const history = props.pluginHistory.filter((item) => item.name !== menuState.plugin.name);
+        const history = props.pluginHistory.filter(
+          (item) => item.name !== menuState.plugin.name
+        );
         emit('setPluginHistory', toRaw(history));
       },
     },
@@ -193,6 +206,10 @@ initMainCmdMenus();
   display: -webkit-box;
   -webkit-line-clamp: 1;
   -webkit-box-orient: vertical;
+}
+
+.matched-title {
+  color: var(--ant-error-color);
 }
 
 .contextmenu {

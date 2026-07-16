@@ -51,6 +51,13 @@ win:
     - target: nsis
       arch:
         - x64
+mac:
+  icon: public/icons/icon.icns
+  artifactName: flick-${version}-${arch}.${ext}
+  target:
+    - target: dmg
+      arch:
+        - arm64
 nsis:
   shortcutName: flick
   oneClick: false

@@ -189,6 +189,10 @@ window.flick = {
     shell.openPath(path);
   },
 
+  launchApp(path) {
+    return ipcInvoke('launchApp', { path });
+  },
+
   getLocalId: () => ipcSendSync('getLocalId'),
 
   removePlugin() {
@@ -208,6 +212,11 @@ window.flick = {
   },
 
   getFileIcon: (path) => ipcInvoke('getFileIcon', { path }),
+
+  getPluginInfo: (pluginName, pluginPath) =>
+    ipcInvoke('getPluginInfo', { pluginName, pluginPath }),
+
+  upgradePlugin: (name) => ipcInvoke('upgradePlugin', { name }),
 
   getCopyedFiles: () => {
     return ipcSendSync('getCopyFiles');

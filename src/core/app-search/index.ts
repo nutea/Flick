@@ -1,10 +1,5 @@
-import commonConst from "@/common/utils/commonConst";
-import winSearch from "./win";
-
-let appSearch = async () => [];
-
-if (commonConst.windows()) {
-  appSearch = winSearch;
-}
-
-export default appSearch;
+export default async () => {
+  if (!window.flick.isWindows()) return [];
+  const { default: winSearch } = await import('./win');
+  return winSearch();
+};

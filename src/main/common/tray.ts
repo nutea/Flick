@@ -41,7 +41,7 @@ function createTray(getWindow: () => BrowserWindow | undefined): Promise<Tray> {
           label: '帮助文档',
           click: () => {
             process.nextTick(() => {
-              shell.openExternal('https://github.com/clouDr-f2e/flick');
+              shell.openExternal('https://github.com/nutea/Flick');
             });
           },
         },
@@ -55,7 +55,7 @@ function createTray(getWindow: () => BrowserWindow | undefined): Promise<Tray> {
           label: '意见反馈',
           click: () => {
             process.nextTick(() => {
-              shell.openExternal('https://github.com/clouDr-f2e/flick/issues');
+              shell.openExternal('https://github.com/nutea/Flick/issues');
             });
           },
         },

@@ -15,8 +15,7 @@ try {
 
 const instance = axios.create({
   timeout: 4000,
-  baseURL:
-    baseURL || 'https://gitee.com/monkeyWang/flickdatabase/raw/master',
+  baseURL: baseURL || 'https://gitee.com/monkeyWang/flickdatabase/raw/master',
 });
 
 const withAccessToken = (targetPath: string) => {
@@ -24,25 +23,35 @@ const withAccessToken = (targetPath: string) => {
   return `${targetPath}?access_token=${encodeURIComponent(access_token)}&ref=master`;
 };
 
+const getJson = async <T>(targetPath: string, fallback: T): Promise<T> => {
+  try {
+    const response = await instance.get(withAccessToken(targetPath));
+    return response.data as T;
+  } catch {
+    return fallback;
+  }
+};
+
 export default {
   async getTotalPlugins() {
-    const res = await instance.get(withAccessToken('plugins/total-plugins.json'));
-    console.log('total plugsin', res);
-    return res.data;
+    return getJson('plugins/total-plugins.json', []);
   },
 
   async getFinderDetail() {
-    const res = await instance.get(withAccessToken('plugins/finder.json'));
-    return res.data;
+    return getJson('plugins/finder.json', {
+      banners: [],
+      must: [],
+      recommend: [],
+      new: [],
+      unavailable: true,
+    });
   },
 
   async getSystemDetail() {
-    const res = await instance.get(withAccessToken('plugins/system.json'));
-    return res.data;
+    return getJson('plugins/system.json', []);
   },
   async getWorkerDetail() {
-    const res = await instance.get(withAccessToken('plugins/worker.json'));
-    return res.data;
+    return getJson('plugins/worker.json', []);
   },
 
   async getPluginDetail(url: string) {
@@ -51,15 +60,12 @@ export default {
   },
 
   async getSearchDetail() {
-    const res = await instance.get(withAccessToken('plugins/search.json'));
-    return res.data;
+    return getJson('plugins/search.json', []);
   },
   async getDevDetail() {
-    const res = await instance.get(withAccessToken('plugins/dev.json'));
-    return res.data;
+    return getJson('plugins/dev.json', []);
   },
   async getImageDetail() {
-    const res = await instance.get(withAccessToken('plugins/image.json'));
-    return res.data;
+    return getJson('plugins/image.json', []);
   },
 };

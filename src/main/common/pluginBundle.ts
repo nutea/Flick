@@ -103,12 +103,7 @@ function toImportAbsoluteLogo(
 ): string | undefined {
   if (typeof logo !== 'string' || !logo.trim()) return undefined;
   const s = logo.trim();
-  if (
-    isHttpUrl(s) ||
-    /^data:/i.test(s) ||
-    path.isAbsolute(s) ||
-    isFileUrl(s)
-  ) {
+  if (isHttpUrl(s) || /^data:/i.test(s) || path.isAbsolute(s) || isFileUrl(s)) {
     return s;
   }
   const root = path.resolve(pluginRootDir(pluginName));
@@ -170,7 +165,10 @@ async function collectHoistedDependencyClosure(
 
 function readVersionFromNodeModules(pluginName: string): string | undefined {
   try {
-    const p = path.join(nmPackagePath(path.join(baseDir, 'node_modules'), pluginName), 'package.json');
+    const p = path.join(
+      nmPackagePath(path.join(baseDir, 'node_modules'), pluginName),
+      'package.json'
+    );
     const j = JSON.parse(fs.readFileSync(p, 'utf-8')) as { version?: string };
     return j.version;
   } catch {
@@ -499,9 +497,11 @@ export async function importPluginBundle(
 
     await fs.mkdirp(baseDir);
     const pkgPath = path.join(baseDir, 'package.json');
-    const rootPkg = (await fs.pathExists(pkgPath)
-      ? JSON.parse(await fs.readFile(pkgPath, 'utf-8'))
-      : defaultRootPackageJson()) as {
+    const rootPkg = (
+      (await fs.pathExists(pkgPath))
+        ? JSON.parse(await fs.readFile(pkgPath, 'utf-8'))
+        : defaultRootPackageJson()
+    ) as {
       dependencies?: Record<string, string>;
       volta?: { node: string };
     };

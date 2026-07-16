@@ -1,6 +1,6 @@
 <template>
   <div class="settings">
-    <div class="view-title"> {{ $t('feature.settings.title') }}</div>
+    <div class="view-title">{{ $t('feature.settings.title') }}</div>
     <div class="view-container">
       <a-menu v-model:selectedKeys="currentSelect" mode="horizontal">
         <a-menu-item key="userInfo">
@@ -48,18 +48,18 @@
                       style="cursor: pointer; text-decoration: underline"
                       @click="resetDefault('Alt')"
                     >
-                    Alt+Space
-                  </span>
+                      Alt+Space
+                    </span>
                     <span
                       style="
-                      cursor: pointer;
-                      margin-left: 8px;
-                      text-decoration: underline;
-                    "
+                        cursor: pointer;
+                        margin-left: 8px;
+                        text-decoration: underline;
+                      "
                       @click="resetDefault('Ctrl')"
                     >
-                    Ctrl+Space
-                  </span>
+                      Ctrl+Space
+                    </span>
                   </template>
                 </template>
                 <div
@@ -102,7 +102,9 @@
               ></a-switch>
             </div>
             <div class="settings-item-li">
-              <div class="label">{{ $t('feature.settings.basic.autoBoot') }}</div>
+              <div class="label">
+                {{ $t('feature.settings.basic.autoBoot') }}
+              </div>
               <a-switch
                 v-model:checked="common.start"
                 :checked-children="$t('feature.settings.basic.on')"
@@ -133,7 +135,9 @@
           <div class="setting-item">
             <div class="title">{{ $t('feature.settings.basic.theme') }}</div>
             <div class="settings-item-li">
-              <div class="label">{{ $t('feature.settings.basic.darkMode') }}</div>
+              <div class="label">
+                {{ $t('feature.settings.basic.darkMode') }}
+              </div>
               <a-switch
                 v-model:checked="common.darkMode"
                 :checked-children="$t('feature.settings.basic.on')"
@@ -231,16 +235,7 @@
 </template>
 
 <script setup>
-import {
-  ToolOutlined,
-  LaptopOutlined,
-  DatabaseOutlined,
-  MinusCircleOutlined,
-  PlusCircleOutlined,
-  UserOutlined,
-  FolderOpenOutlined,
-  SafetyOutlined,
-} from '@ant-design/icons-vue';
+import { MinusCircleOutlined, PlusCircleOutlined } from '@ant-design/icons-vue';
 import debounce from 'lodash.debounce';
 import { ref, reactive, watch, toRefs, computed } from 'vue';
 import keycodes from './keycode';
@@ -252,8 +247,6 @@ import { useI18n } from 'vue-i18n';
 import localConfig from '@/confOp';
 
 const { locale, t } = useI18n();
-
-const { ipcRenderer } = window.require('electron');
 
 const examples = [
   {
@@ -281,9 +274,11 @@ const DOUBLE_CLICK_THRESHOLD = 300; // 双击时间阈值（毫秒）
 const isWindows = window?.flick?.isWindows();
 const tipText = computed(() => {
   const optionKeyName = isWindows ? 'Alt' : 'Option、Command';
-  return t('feature.settings.global.addShortcutKeyTips', {
-    optionKeyName: optionKeyName,
-  }) + `此外你也可以双击修饰键如（Ctrl+Ctrl）`;
+  return (
+    t('feature.settings.global.addShortcutKeyTips', {
+      optionKeyName: optionKeyName,
+    }) + `此外你也可以双击修饰键如（Ctrl+Ctrl）`
+  );
 });
 
 const currentSelect = ref(['userInfo']);
@@ -311,7 +306,7 @@ const setConfig = debounce(() => {
       })
     )
   );
-  ipcRenderer.send('re-register');
+  window.market.reregisterShortcuts();
 }, 500);
 
 watch(state, setConfig);
@@ -319,7 +314,8 @@ watch(state, setConfig);
 const changeShortCut = (e, key) => {
   let compose = '';
   const currentTime = Date.now();
-  const isDoubleClick = currentTime - lastKeyPressTime.value < DOUBLE_CLICK_THRESHOLD;
+  const isDoubleClick =
+    currentTime - lastKeyPressTime.value < DOUBLE_CLICK_THRESHOLD;
   lastKeyPressTime.value = currentTime;
 
   // 处理 F1-F12 功能键
@@ -330,19 +326,23 @@ const changeShortCut = (e, key) => {
 
   // 处理双击功能键的情况
   if (isDoubleClick) {
-    if (e.keyCode === 17) { // Ctrl
+    if (e.keyCode === 17) {
+      // Ctrl
       state.shortCut[key] = 'Ctrl+Ctrl';
       return;
     }
-    if (e.keyCode === 18) { // Alt
+    if (e.keyCode === 18) {
+      // Alt
       state.shortCut[key] = 'Option+Option';
       return;
     }
-    if (e.keyCode === 16) { // Shift
+    if (e.keyCode === 16) {
+      // Shift
       state.shortCut[key] = 'Shift+Shift';
       return;
     }
-    if (e.keyCode === 93) { // Command
+    if (e.keyCode === 93) {
+      // Command
       state.shortCut[key] = 'Command+Command';
       return;
     }
@@ -350,7 +350,7 @@ const changeShortCut = (e, key) => {
 
   // 处理功能键+普通键的组合
   let hasModifierKey = false;
-  
+
   if (e.ctrlKey && e.keyCode !== 17) {
     compose += '+Ctrl';
     hasModifierKey = true;
@@ -450,7 +450,7 @@ const addConfig = () => {
   });
 };
 
-const { shortCut, common, local, global } = toRefs(state);
+const { shortCut, common, global } = toRefs(state);
 
 const options = ref([
   {
@@ -558,7 +558,8 @@ const changeLanguage = (value) => {
           background: var(--color-input-hover) !important;
           color: var(--color-text-content);
         }
-        .ant-input-password-icon, .ant-select-arrow {
+        .ant-input-password-icon,
+        .ant-select-arrow {
           color: var(--color-action-color);
         }
       }

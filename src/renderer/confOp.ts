@@ -1,9 +1,14 @@
 const LOCAL_CONFIG_KEY = 'flick-local-config';
 
 const localConfig = {
-  getConfig(): Promise<any> {
+  getConfig(): any {
     const data: any = window.flick.db.get(LOCAL_CONFIG_KEY) || {};
-    return data.data;
+    const config = data.data;
+    const logo = config?.perf?.custom?.logo;
+    if (typeof logo === 'string' && logo.startsWith('file://')) {
+      config.perf.custom.logo = `image://${logo.slice('file://'.length)}`;
+    }
+    return config;
   },
 
   setConfig(data) {

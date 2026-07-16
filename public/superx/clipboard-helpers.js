@@ -18,7 +18,8 @@ function getFilePathFromClipboard(clipboard) {
             filePath =
                 ((_a = clipboard
                     .read('NSFilenamesPboardType')
-                    .match(/<string>.*<\/string>/g)) === null || _a === void 0 ? void 0 : _a.map((item) => item.replace(/<string>|<\/string>/g, ''))) || [];
+                    .match(/<string>.*<\/string>/g)) === null || _a === void 0 ? void 0 : _a.map((item) => item.replace(/<string>|<\/string>/g, ''))) ||
+                    [];
         }
         else {
             const clipboardImage = clipboard.readImage('clipboard');
@@ -73,9 +74,7 @@ function getFilePathFromClipboard(clipboard) {
             else {
                 const buf = clipboard.readBuffer('FileNameW');
                 filePath = [
-                    buf
-                        .toString('ucs2')
-                        .replace(RegExp(String.fromCharCode(0), 'g'), ''),
+                    buf.toString('ucs2').replace(RegExp(String.fromCharCode(0), 'g'), ''),
                 ].filter(Boolean);
             }
         }
@@ -91,7 +90,7 @@ function snapshotClipboard(clipboard) {
     return { text, pathStr, hasImage };
 }
 function clipboardSnapsEqual(a, b) {
-    return a.text === b.text && a.pathStr === b.pathStr && a.hasImage === b.hasImage;
+    return (a.text === b.text && a.pathStr === b.pathStr && a.hasImage === b.hasImage);
 }
 function snapUnchanged(a, b) {
     return clipboardSnapsEqual(a, b);
@@ -128,8 +127,6 @@ async function getSelectedContent(clipboard, simulateCopy) {
  * 所用坐标系一致。勿对 Windows 再调用 `screen.screenToDipPoint`：其入参应为物理像素，误传 DIP 会在
  * 高 DPI（如 125%～200%）下二次换算，导致窗口相对鼠标严重偏移（例如看似顶-left 对在指针旁）。
  */
-function getPos(
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
-_screen, point, _isMacOS) {
+function getPos(_screen, point, _isMacOS) {
     return point;
 }

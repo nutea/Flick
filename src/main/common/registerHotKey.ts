@@ -121,8 +121,7 @@ const registerHotKey = (mainWindow: BrowserWindow): void => {
       // listener can short-circuit without touching the DB.
       const modifiers = config.perf.shortCut.showAndHidden.split('+');
       const showAndHiddenKeyStr = modifiers.pop() || '';
-      doublePressExpectedKeys =
-        DOUBLE_PRESS_KEY_MAP[showAndHiddenKeyStr] || [];
+      doublePressExpectedKeys = DOUBLE_PRESS_KEY_MAP[showAndHiddenKeyStr] || [];
       uIOhookRegister(mainWindowPopUp);
     } else {
       // Drop the native hook subscription so the OS hook can be torn down when
@@ -152,7 +151,10 @@ const registerHotKey = (mainWindow: BrowserWindow): void => {
             break;
           }
         } catch (error) {
-          writeStartupLog(`globalShortcut.register failed for ${shortcut}`, error);
+          writeStartupLog(
+            `globalShortcut.register failed for ${shortcut}`,
+            error
+          );
         }
       }
       if (!registered) {

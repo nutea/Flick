@@ -18,7 +18,7 @@ interface ImportMeta {
 
 interface Window {
   flick: any;
-  market: any
+  market: any;
 }
 
 namespace Market {

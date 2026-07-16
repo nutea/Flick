@@ -6,11 +6,23 @@
           {{ $t('feature.settings.account.themeColor') }}
         </div>
         <div class="settings-item-li">
-          <a-radio-group @change="changeTheme" v-model:value="theme" button-style="solid">
-            <a-radio-button value="SPRING">{{ $t('feature.settings.account.spring') }}</a-radio-button>
-            <a-radio-button value="SUMMER">{{ $t('feature.settings.account.summer') }}</a-radio-button>
-            <a-radio-button value="AUTUMN">{{ $t('feature.settings.account.autumn') }}</a-radio-button>
-            <a-radio-button value="WINTER">{{ $t('feature.settings.account.winter') }}</a-radio-button>
+          <a-radio-group
+            @change="changeTheme"
+            v-model:value="theme"
+            button-style="solid"
+          >
+            <a-radio-button value="SPRING">
+              {{ $t('feature.settings.account.spring') }}
+            </a-radio-button>
+            <a-radio-button value="SUMMER">
+              {{ $t('feature.settings.account.summer') }}
+            </a-radio-button>
+            <a-radio-button value="AUTUMN">
+              {{ $t('feature.settings.account.autumn') }}
+            </a-radio-button>
+            <a-radio-button value="WINTER">
+              {{ $t('feature.settings.account.winter') }}
+            </a-radio-button>
           </a-radio-group>
         </div>
       </div>
@@ -35,8 +47,14 @@
             {{ $t('feature.settings.account.logo') }}
           </div>
           <div class="img-container">
-            <img class="custom-img" :src="custom.logo" />
-            <a-button class="btn" @click="changeLogo" shape="round" size="small" type="primary">
+            <img class="custom-img" :src="featureImageUrl(custom.logo)" />
+            <a-button
+              class="btn"
+              @click="changeLogo"
+              shape="round"
+              size="small"
+              type="primary"
+            >
               {{ $t('feature.settings.account.replace') }}
             </a-button>
           </div>
@@ -51,8 +69,7 @@ import { reactive, toRefs, watch, ref } from 'vue';
 import debounce from 'lodash.debounce';
 import localConfig from '@/confOp';
 import * as Themes from '@/assets/constans';
-const { ipcRenderer } = window.require('electron');
-
+import { featureImageUrl } from '@/utils/imageUrl';
 const state = reactive({
   custom: {},
 });
@@ -76,7 +93,7 @@ const setConfig = debounce(() => {
       })
     )
   );
-  ipcRenderer.send('re-register');
+  window.market.reregisterShortcuts();
 }, 500);
 
 watch(state, setConfig);

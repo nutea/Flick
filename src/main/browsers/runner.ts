@@ -1,5 +1,6 @@
 import { app, BrowserView, BrowserWindow, session } from 'electron';
 import path from 'path';
+import { fileURLToPath } from 'url';
 import commonConst from '../../common/utils/commonConst';
 import { PLUGIN_INSTALL_DIR as baseDir } from '@/common/constans/main';
 import localConfig from '@/main/common/initLocalConfig';
@@ -9,14 +10,20 @@ import {
   WINDOW_WIDTH,
 } from '@/common/constans/common';
 import { applyMainWindowContentHeight } from '@/main/common/mainWindowContentResize';
-import { DEV_APP_PORTS, devSubAppHttpUrl } from '@/main/common/devSubAppServers';
+import {
+  DEV_APP_PORTS,
+  devSubAppHttpUrl,
+} from '@/main/common/devSubAppServers';
+import { secureWebContentsNavigation } from '@/main/common/navigationSecurity';
+import { registerFeatureBridgeIpc } from '@/main/common/featureBridgeIpc';
 
-/** 与主窗口 webPreferences.preload 一致：须为 electron-vite 产物；勿用 public/preload.js（裸 require @electron/remote 在 session preload 中会解析失败） */
+/** 通用插件 API 的编译后 preload；脚本自身会跳过 DevTools 与子 frame。 */
 function flickSessionPreloadPath(): string {
   return path.join(app.getAppPath(), 'dist', 'preload', 'index.js');
 }
 
 const registeredSessionPreloads = new WeakMap<Electron.Session, string>();
+const PLUGIN_NAME_RE = /^(?:@[a-z0-9][a-z0-9._-]*\/)?[a-z0-9][a-z0-9._-]*$/i;
 
 function ensureSessionPreload(ses: Electron.Session): void {
   const filePath = flickSessionPreloadPath();
@@ -27,6 +34,64 @@ function ensureSessionPreload(ses: Electron.Session): void {
     return;
   }
   ses.setPreloads([filePath]);
+}
+
+function isPathInside(root: string, candidate: string): boolean {
+  const relative = path.relative(path.resolve(root), path.resolve(candidate));
+  return (
+    relative === '' ||
+    (!relative.startsWith(`..${path.sep}`) &&
+      relative !== '..' &&
+      !path.isAbsolute(relative))
+  );
+}
+
+function assertSafePluginEntryUrl(
+  rawUrl: string,
+  plugin: { name?: unknown; tplPath?: unknown }
+): void {
+  let parsed: URL;
+  try {
+    parsed = new URL(rawUrl);
+  } catch {
+    throw new Error('Plugin entry URL is invalid');
+  }
+
+  if (parsed.protocol === 'http:' || parsed.protocol === 'https:') {
+    const isLoopback = ['localhost', '127.0.0.1', '::1'].includes(
+      parsed.hostname
+    );
+    if (
+      commonConst.dev() &&
+      isLoopback &&
+      !parsed.username &&
+      !parsed.password
+    ) {
+      return;
+    }
+    throw new Error('Node-enabled plugin views cannot load remote URLs');
+  }
+
+  if (parsed.protocol !== 'file:') {
+    throw new Error(`Plugin entry protocol is not allowed: ${parsed.protocol}`);
+  }
+
+  const name = typeof plugin.name === 'string' ? plugin.name : '';
+  if (!PLUGIN_NAME_RE.test(name) || name.length > 214) {
+    throw new Error('Plugin name is invalid');
+  }
+  const entryPath = fileURLToPath(parsed);
+  const allowedRoot =
+    name === 'flick-system-feature'
+      ? path.join(__static, 'feature')
+      : name === 'flick-system-super-panel'
+        ? path.join(__static, 'superx')
+        : plugin.tplPath
+          ? path.join(__static, 'tpl')
+          : path.join(baseDir, 'node_modules', name);
+  if (!isPathInside(allowedRoot, entryPath)) {
+    throw new Error('Plugin entry is outside its allowed directory');
+  }
 }
 
 const getRelativePath = (indexPath) => {
@@ -51,31 +116,8 @@ const getPreloadPath = (plugin, pluginIndexPath) => {
   return path.resolve(getRelativePath(pluginIndexPath), `../`, preload);
 };
 
-const viewPoolManager = () => {
-  const viewPool: any = {
-    views: [],
-  };
-  const maxLen = 4;
-  return {
-    getView(pluginName) {
-      return viewPool.views.find((view) => view.pluginName === pluginName);
-    },
-    addView(pluginName, view) {
-      if (this.getView(pluginName)) return;
-      if (viewPool.views.length > maxLen) {
-        viewPool.views.shift();
-      }
-      viewPool.views.push({
-        pluginName,
-        view,
-      });
-    },
-  };
-};
-
 export default () => {
   let view;
-  const viewInstance = viewPoolManager();
 
   const viewReadyFn = async (window, { pluginSetting, ext }) => {
     if (!view) return;
@@ -116,35 +158,31 @@ export default () => {
       //   createView(plugin, window);
       //   viewInstance.addView(plugin.name, view);
       // }
-      // eslint-disable-next-line @typescript-eslint/no-var-requires
+
       require('@electron/remote/main').enable(view.webContents);
     }
   };
 
   const createView = (plugin, window: BrowserWindow) => {
-    const {
-      tplPath,
-      indexPath,
-      development,
-      name,
-      main = 'index.html',
-      pluginSetting,
-      ext,
-    } = plugin;
+    const { tplPath, indexPath, development, main = 'index.html' } = plugin;
+    const name =
+      typeof plugin.originName === 'string' && plugin.originName
+        ? plugin.originName
+        : plugin.name;
+    const runtimePlugin = { ...plugin, name };
     let pluginIndexPath = tplPath || indexPath;
     let preloadPath;
-    let darkMode;
     // 开发环境
     if (commonConst.dev() && development) {
       pluginIndexPath = development;
       const pluginPath = path.resolve(baseDir, 'node_modules', name);
       preloadPath = `file://${path.join(pluginPath, './', main)}`;
     }
-    // 再尝试去找
-    if (plugin.name === 'flick-system-feature' && !pluginIndexPath) {
+    // 系统插件入口由主进程权威决定，不能信任历史记录或渲染进程携带的旧 URL。
+    if (name === 'flick-system-feature') {
       pluginIndexPath = `file://${__static}/feature/index.html`;
     }
-    if (plugin.name === 'flick-system-super-panel' && !pluginIndexPath) {
+    if (name === 'flick-system-super-panel') {
       pluginIndexPath = `file://${path.join(__static, 'superx', main)}`;
     }
     if (!pluginIndexPath) {
@@ -158,18 +196,23 @@ export default () => {
       const h = devSubAppHttpUrl(DEV_APP_PORTS.superxWeb, `/${main}`);
       if (h) pluginIndexPath = h;
     }
-    const preload = getPreloadPath(plugin, preloadPath || pluginIndexPath);
+    assertSafePluginEntryUrl(pluginIndexPath, runtimePlugin);
+    const secureFeature = name === 'flick-system-feature';
+    const preload = secureFeature
+      ? path.join(app.getAppPath(), 'dist', 'preload', 'feature.js')
+      : getPreloadPath(runtimePlugin, preloadPath || pluginIndexPath);
 
     const ses = session.fromPartition('<' + name + '>');
-    ensureSessionPreload(ses);
+    if (!secureFeature) ensureSessionPreload(ses);
 
     view = new BrowserView({
       webPreferences: {
-        webSecurity: false,
-        nodeIntegration: true,
-        contextIsolation: false,
+        webSecurity: secureFeature,
+        nodeIntegration: !secureFeature,
+        contextIsolation: secureFeature,
+        sandbox: secureFeature,
         devTools: true,
-        webviewTag: true,
+        webviewTag: !secureFeature,
         preload,
         session: ses,
         defaultFontSize: 14,
@@ -180,9 +223,67 @@ export default () => {
         spellcheck: false,
       },
     });
+    if (secureFeature) registerFeatureBridgeIpc(view.webContents);
+    const createdView = view;
+    createdView.webContents.on(
+      'did-fail-load',
+      (_event, code, description, url, isMainFrame) => {
+        if (!isMainFrame) return;
+        console.error(
+          `[plugin-view] failed to load ${url}: ${code} ${description}`
+        );
+      }
+    );
+    createdView.webContents.on('render-process-gone', (_event, details) => {
+      console.error('[plugin-view] renderer exited:', name, details);
+    });
+    createdView.webContents.on('console-message', (details) => {
+      if (details.level !== 'warning' && details.level !== 'error') return;
+      console.warn(
+        `[plugin-view:${String(name)}] ${details.level}: ${details.message}`
+      );
+    });
     window.setBrowserView(view);
+    secureWebContentsNavigation(view.webContents, pluginIndexPath);
     view.webContents.loadURL(pluginIndexPath);
-    view.webContents.once('dom-ready', () => viewReadyFn(window, plugin));
+    view.webContents.once('dom-ready', () => {
+      void viewReadyFn(window, plugin);
+      if (
+        secureFeature &&
+        process.env.FLICK_FEATURE_SMOKE === '1' &&
+        !createdView.webContents.isDestroyed()
+      ) {
+        void createdView.webContents
+          .executeJavaScript(
+            `({
+            flickBridge: typeof window.flick === 'object',
+            marketBridge: typeof window.market === 'object',
+            nodeRequireType: typeof window.require,
+            renderedText: document.body.innerText.slice(0, 300)
+          })`
+          )
+          .then((result) => {
+            const preferences = createdView.webContents.getLastWebPreferences();
+            const secure =
+              result.flickBridge === true &&
+              result.marketBridge === true &&
+              result.nodeRequireType === 'undefined' &&
+              preferences.contextIsolation === true &&
+              preferences.nodeIntegration === false &&
+              preferences.sandbox === true &&
+              preferences.webSecurity === true;
+            const report = { secure, preferences, result };
+            const method = secure ? console.info : console.error;
+            method(
+              `[flick-system-feature] smoke ${secure ? 'passed' : 'failed'}:`,
+              JSON.stringify(report)
+            );
+          })
+          .catch((error) => {
+            console.error('[flick-system-feature] smoke failed:', error);
+          });
+      }
+    });
     // 修复请求跨域问题
     view.webContents.session.webRequest.onBeforeSendHeaders(
       (details, callback) => {

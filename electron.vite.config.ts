@@ -59,12 +59,30 @@ export default defineConfig({
       rollupOptions: {
         input: {
           index: path.resolve(__dirname, 'src/preload/main.ts'),
+          guide: path.resolve(__dirname, 'src/preload/guide.ts'),
+          detach: path.resolve(__dirname, 'src/preload/detach.ts'),
+          feature: path.resolve(__dirname, 'src/preload/feature.ts'),
         },
       },
     },
   },
   renderer: {
     root: path.resolve(__dirname, 'src/renderer'),
+    optimizeDeps: {
+      include: [
+        'vue',
+        '@ant-design/icons-vue',
+        'ant-design-vue',
+        'ant-design-vue/es/avatar/style/css',
+        'ant-design-vue/es/button/style/css',
+        'ant-design-vue/es/divider/style/css',
+        'ant-design-vue/es/grid/style/css',
+        'ant-design-vue/es/input/style/css',
+        'ant-design-vue/es/list/style/css',
+        'ant-design-vue/es/spin/style/css',
+        'ant-design-vue/es/tag/style/css',
+      ],
+    },
     resolve: {
       alias: {
         '@': path.resolve(__dirname, 'src'),
@@ -80,10 +98,18 @@ export default defineConfig({
         input: {
           index: path.resolve(__dirname, 'src/renderer/index.html'),
         },
+        output: {
+          manualChunks(id) {
+            if (!id.includes('node_modules')) return undefined;
+            if (id.includes('@ant-design/icons-vue')) return 'icons';
+            if (id.includes('ant-design-vue')) return 'antd';
+            if (id.includes('/vue/')) return 'vue-vendor';
+            return undefined;
+          },
+        },
       },
       emptyOutDir: true,
     },
     plugins: [vue()],
   },
 });
-

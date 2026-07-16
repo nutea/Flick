@@ -1,5 +1,4 @@
 import { createApp } from 'vue';
-import Vue3Lottie from 'vue3-lottie';
 import {
   ConfigProvider,
   Button,
@@ -31,7 +30,30 @@ import App from './App.vue';
 import router from './router';
 import store from './store';
 import './assets/ant-reset.less';
-import 'ant-design-vue/dist/antd.variable.min.css';
+import 'ant-design-vue/es/alert/style/css';
+import 'ant-design-vue/es/avatar/style/css';
+import 'ant-design-vue/es/button/style/css';
+import 'ant-design-vue/es/collapse/style/css';
+import 'ant-design-vue/es/divider/style/css';
+import 'ant-design-vue/es/drawer/style/css';
+import 'ant-design-vue/es/dropdown/style/css';
+import 'ant-design-vue/es/form/style/css';
+import 'ant-design-vue/es/grid/style/css';
+import 'ant-design-vue/es/input/style/css';
+import 'ant-design-vue/es/input-number/style/css';
+import 'ant-design-vue/es/list/style/css';
+import 'ant-design-vue/es/menu/style/css';
+import 'ant-design-vue/es/message/style/css';
+import 'ant-design-vue/es/modal/style/css';
+import 'ant-design-vue/es/popconfirm/style/css';
+import 'ant-design-vue/es/radio/style/css';
+import 'ant-design-vue/es/result/style/css';
+import 'ant-design-vue/es/select/style/css';
+import 'ant-design-vue/es/spin/style/css';
+import 'ant-design-vue/es/switch/style/css';
+import 'ant-design-vue/es/tooltip/style/css';
+import 'ant-design-vue/es/typography/style/css';
+import 'ant-design-vue/es/upload/style/css';
 import registerI18n from './languages/i18n';
 import localConfig from './confOp';
 
@@ -40,19 +62,18 @@ const config: any = localConfig.getConfig();
 // 暗夜模式
 if (config.perf.common.darkMode) {
   document.body.classList.add('dark');
-  window.flick.theme = 'dark';
 }
 
 ConfigProvider.config({
   theme: config.perf.custom || {},
 });
 
-window.flick.changeTheme = () => {
+window.flick.onThemeChange(() => {
   const next: any = localConfig.getConfig();
   ConfigProvider.config({
     theme: next.perf.custom || {},
   });
-};
+});
 
 createApp(App)
   .use(registerI18n)
@@ -82,5 +103,4 @@ createApp(App)
   .use(Popconfirm)
   .use(Typography)
   .use(router)
-  .use(Vue3Lottie)
   .mount('#app');

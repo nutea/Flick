@@ -44,7 +44,6 @@ import localConfig from './confOp';
 
 const { onMouseDown } = useDrag();
 const remote = window.require('@electron/remote');
-const { exec } = window.require('child_process');
 
 const {
   initPlugins,
@@ -76,7 +75,7 @@ const config: any = ref(localConfig.getConfig());
 
 getPluginInfo({
   pluginName: 'feature',
-  // eslint-disable-next-line no-undef
+
   pluginPath: `${__static}/feature/package.json`,
 }).then((res) => {
   menuPluginInfo.value = res;
@@ -85,7 +84,7 @@ getPluginInfo({
 
 getPluginInfo({
   pluginName: 'flick-system-super-panel',
-  // eslint-disable-next-line no-undef
+
   pluginPath: `${__static}/superx/package.json`,
 }).then((res) => {
   remote.getGlobal('LOCAL_PLUGINS').addPlugin(res);
@@ -144,21 +143,25 @@ watch(
   }
 );
 
-watch(searchValue, () => {
-  currentSelect.value = 0;
-  if (currentPlugin.value.name) return;
-  if (!searchValue.value) {
-    flushEmptySearchHeight.cancel();
-    flushExpendHeight();
-    return;
-  }
-  if (options.value.length) {
-    flushEmptySearchHeight.cancel();
-    flushExpendHeight();
-    return;
-  }
-  flushEmptySearchHeight();
-}, { flush: 'post' });
+watch(
+  searchValue,
+  () => {
+    currentSelect.value = 0;
+    if (currentPlugin.value.name) return;
+    if (!searchValue.value) {
+      flushEmptySearchHeight.cancel();
+      flushExpendHeight();
+      return;
+    }
+    if (options.value.length) {
+      flushEmptySearchHeight.cancel();
+      flushExpendHeight();
+      return;
+    }
+    flushEmptySearchHeight();
+  },
+  { flush: 'post' }
+);
 
 const changeIndex = (index) => {
   const len = options.value.length || pluginHistory.value.length;
@@ -195,7 +198,9 @@ const choosePlugin = (plugin) => {
     if (currentChoose.pluginType === 'app') {
       hasRemove = false;
       changePluginHistory(currentChoose);
-      exec(currentChoose.action);
+      void window.flick.launchApp(currentChoose.desc).catch(() => {
+        message.error('启动应用出错，请确保启动应用存在！');
+      });
       return;
     }
     localPlugins.find((plugin) => {

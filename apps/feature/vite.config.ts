@@ -25,6 +25,27 @@ export default defineConfig(({ command }) => ({
     outDir: path.join(__dirname, '../../public/feature'),
     emptyOutDir: true,
     sourcemap: false,
+    rollupOptions: {
+      output: {
+        manualChunks(id) {
+          if (!id.includes('node_modules')) return undefined;
+          if (id.includes('@ant-design/icons-vue')) return 'icons';
+          if (id.includes('ant-design-vue')) return 'antd';
+          if (
+            id.includes('/vue/') ||
+            id.includes('/vue-router/') ||
+            id.includes('/vuex/') ||
+            id.includes('/vue-i18n/')
+          ) {
+            return 'vue-vendor';
+          }
+          if (id.includes('/axios/') || id.includes('/markdown-it/')) {
+            return 'data-vendor';
+          }
+          return undefined;
+        },
+      },
+    },
+    chunkSizeWarningLimit: 550,
   },
 }));
-

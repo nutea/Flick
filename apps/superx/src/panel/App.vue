@@ -13,7 +13,11 @@
       </button>
     </div>
 
-    <div v-if="selectedPreview" class="selected-content" :class="`kind-${selectedPreview.kind}`">
+    <div
+      v-if="selectedPreview"
+      class="selected-content"
+      :class="`kind-${selectedPreview.kind}`"
+    >
       <div class="selected-header">
         <span class="selected-title">当前选中</span>
         <span class="selected-type">{{ selectedPreview.typeLabel }}</span>
@@ -165,8 +169,19 @@ const selectedPreview = computed(() => {
   const fullPath = normalizePath(rawPath);
   const seg = fullPath.split(/[/\\]/).filter(Boolean);
   const filename = seg[seg.length - 1] || fullPath;
-  const ext = filename.includes('.') ? filename.split('.').pop()?.toLowerCase() || '' : '';
-  const imageSet = new Set(['png', 'jpg', 'jpeg', 'gif', 'webp', 'bmp', 'svg', 'ico']);
+  const ext = filename.includes('.')
+    ? filename.split('.').pop()?.toLowerCase() || ''
+    : '';
+  const imageSet = new Set([
+    'png',
+    'jpg',
+    'jpeg',
+    'gif',
+    'webp',
+    'bmp',
+    'svg',
+    'ico',
+  ]);
   const videoSet = new Set(['mp4', 'mov', 'avi', 'mkv', 'webm', 'flv']);
   const audioSet = new Set(['mp3', 'wav', 'flac', 'aac', 'ogg', 'm4a']);
   const archiveSet = new Set(['zip', 'rar', '7z', 'tar', 'gz', 'bz2', 'xz']);
@@ -194,7 +209,17 @@ const selectedPreview = computed(() => {
     'scss',
     'less',
   ]);
-  const docSet = new Set(['pdf', 'doc', 'docx', 'xls', 'xlsx', 'ppt', 'pptx', 'txt', 'rtf']);
+  const docSet = new Set([
+    'pdf',
+    'doc',
+    'docx',
+    'xls',
+    'xlsx',
+    'ppt',
+    'pptx',
+    'txt',
+    'rtf',
+  ]);
 
   let kind = 'file';
   let typeLabel = ext ? `${ext.toUpperCase()} 文件` : '文件夹';
@@ -231,15 +256,25 @@ const selectedPreview = computed(() => {
 
 const fullTranslationLines = computed(() => {
   if (!translate.value) return [] as string[];
-  const main = (translate.value.translation || []).filter((line) => String(line || '').trim());
-  const notes = (translate.value.basic?.explains || []).filter((line) => String(line || '').trim());
+  const main = (translate.value.translation || []).filter((line) =>
+    String(line || '').trim()
+  );
+  const notes = (translate.value.basic?.explains || []).filter((line) =>
+    String(line || '').trim()
+  );
   return [...main, ...notes];
 });
 
-const translationFullText = computed(() => fullTranslationLines.value.join('；'));
-const translationPreviewText = computed(() => fullTranslationLines.value.slice(0, 2).join('；'));
+const translationFullText = computed(() =>
+  fullTranslationLines.value.join('；')
+);
+const translationPreviewText = computed(() =>
+  fullTranslationLines.value.slice(0, 2).join('；')
+);
 const showFullTranslationEntry = computed(
-  () => fullTranslationLines.value.length > 2 || translationFullText.value.length > 56
+  () =>
+    fullTranslationLines.value.length > 2 ||
+    translationFullText.value.length > 56
 );
 
 function closeTranslationModal() {

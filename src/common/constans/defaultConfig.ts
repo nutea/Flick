@@ -8,7 +8,7 @@ export default {
       warningColor: '#e5a84b',
       successColor: '#c0d695',
       infoColor: '#aa8eeB',
-      logo: `file://${__static}/logo.png`,
+      logo: `image://${__static}/logo.png`,
       placeholder: '你好，Flick！请输入插件关键词',
       username: 'Flick',
     },

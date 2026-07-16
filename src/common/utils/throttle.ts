@@ -1,4 +1,3 @@
-// eslint-disable-next-line @typescript-eslint/explicit-module-boundary-types
 export default function throttle(func, wait, options?: any): () => void {
   let context, args, result;
   let timeout = null;

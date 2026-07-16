@@ -1,5 +1,4 @@
 import type { CmdItem, FeatureItem } from './types';
-import { getElectron } from './electron';
 
 /**
  * 与原打包逻辑一致：部分入口传 `cmd` 为字符串（如「已安装插件」），
@@ -7,11 +6,12 @@ import { getElectron } from './electron';
  */
 export function openPlugin(args: {
   plugin: Record<string, unknown>;
-  feature: FeatureItem | { code: string; type?: string; payload?: unknown; cmds?: CmdItem[] };
+  feature:
+    | FeatureItem
+    | { code: string; type?: string; payload?: unknown; cmds?: CmdItem[] };
   cmd?: string | CmdItem;
   data?: unknown;
 }): void {
-  const { ipcRenderer } = getElectron();
   const { plugin, feature, cmd, data } = args;
 
   const extType =
@@ -28,16 +28,13 @@ export function openPlugin(args: {
         ? feature.payload
         : undefined;
 
-  ipcRenderer.send('msg-trigger', {
-    type: 'openPlugin',
-    data: {
-      ...plugin,
-      cmd: feature.code,
-      ext: {
-        code: feature.code,
-        type: extType,
-        payload: extPayload,
-      },
+  window.superPanel.openPlugin({
+    ...plugin,
+    cmd: feature.code,
+    ext: {
+      code: feature.code,
+      type: extType,
+      payload: extPayload,
     },
   });
 }

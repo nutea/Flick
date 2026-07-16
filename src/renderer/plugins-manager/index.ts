@@ -1,25 +1,15 @@
 import { reactive, toRefs, ref } from 'vue';
 import appSearch from '@/core/app-search';
-import { PluginHandler } from '@/core';
-import commonConst from '@/common/utils/commonConst';
 import searchManager from './search';
 import optionsManager from './options';
-import {
-  PLUGIN_INSTALL_DIR as baseDir,
-  PLUGIN_HISTORY,
-} from '@/common/constans/renderer';
+import { PLUGIN_HISTORY } from '@/common/constans/renderer';
 import { message } from 'ant-design-vue';
 
-const { nativeImage, ipcRenderer } = window.require('electron');
+const { ipcRenderer } = window.require('electron');
 const { getGlobal } = window.require('@electron/remote');
 const path = window.require('path');
-const { exec } = window.require('child_process');
 
 const createPluginManager = (): any => {
-  const pluginInstance = new PluginHandler({
-    baseDir,
-  });
-
   const state: any = reactive({
     appList: [],
     plugins: [],
@@ -33,7 +23,7 @@ const createPluginManager = (): any => {
 
   const initPlugins = async () => {
     initPluginHistory();
-    appList.value = await appSearch(nativeImage);
+    appList.value = await appSearch();
     initLocalStartPlugin();
   };
 
@@ -69,13 +59,20 @@ const createPluginManager = (): any => {
     state.pluginLoading = true;
     state.currentPlugin = plugin;
     // 自带的插件不需要检测更新
+    const runtimeName = plugin.originName || plugin.name;
     if (
-      plugin.name === 'flick-system-feature' ||
-      plugin.name === 'flick-system-super-panel'
+      runtimeName === 'flick-system-feature' ||
+      runtimeName === 'flick-system-super-panel'
     ) {
+      state.pluginLoading = false;
       return;
     }
-    await pluginInstance.upgrade(plugin.name);
+    if (
+      typeof runtimeName === 'string' &&
+      /^(?:@[a-z0-9][a-z0-9._-]*\/)?[a-z0-9][a-z0-9._-]*$/i.test(runtimeName)
+    ) {
+      await window.flick.upgradePlugin(runtimeName);
+    }
     state.pluginLoading = false;
   };
 
@@ -104,7 +101,7 @@ const createPluginManager = (): any => {
         changePluginHistory({
           ...plugin,
           ...option,
-          originName: plugin.name,
+          originName: plugin.originName || plugin.name,
         });
         return;
       }
@@ -133,7 +130,7 @@ const createPluginManager = (): any => {
     }
     if (plugin.pluginType === 'app') {
       try {
-        exec(plugin.action);
+        await window.flick.launchApp(plugin.desc);
       } catch (e) {
         message.error('启动应用出错，请确保启动应用存在！');
       }
@@ -141,7 +138,7 @@ const createPluginManager = (): any => {
     changePluginHistory({
       ...plugin,
       ...option,
-      originName: plugin.name,
+      originName: plugin.originName || plugin.name,
     });
   };
 
@@ -206,10 +203,7 @@ const createPluginManager = (): any => {
   });
   // plugin operation
   const getPluginInfo = async ({ pluginName, pluginPath }) => {
-    const pluginInfo = await pluginInstance.getAdapterInfo(
-      pluginName,
-      pluginPath
-    );
+    const pluginInfo = await window.flick.getPluginInfo(pluginName, pluginPath);
     return {
       ...pluginInfo,
       icon: pluginInfo.logo,
@@ -225,7 +219,7 @@ const createPluginManager = (): any => {
     state.plugins.unshift(plugin);
   };
 
-  const removePlugin = (plugin: any) => {
+  const removePlugin = (_plugin: any) => {
     // todo
   };
 

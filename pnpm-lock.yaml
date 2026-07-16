@@ -113,15 +113,15 @@ importers:
       fix-path:
         specifier: ^3.0.0
         version: 3.0.0
+      flick-native:
+        specifier: workspace:*
+        version: link:packages/flick-native
       fs-extra:
         specifier: ^10.1.0
         version: 10.1.0
       plist:
         specifier: ^3.1.0
         version: 3.1.0
-      flick-native:
-        specifier: workspace:*
-        version: link:packages/flick-native
       semver:
         specifier: ^7.7.4
         version: 7.7.4
@@ -198,6 +198,9 @@ importers:
       vue-router:
         specifier: 'catalog:'
         version: 4.6.4(vue@3.5.32(typescript@5.6.3))
+      vue-tsc:
+        specifier: 'catalog:'
+        version: 2.2.12(typescript@5.6.3)
       vuex:
         specifier: 'catalog:'
         version: 4.1.0(vue@3.5.32(typescript@5.6.3))
@@ -253,6 +256,9 @@ importers:
       vite:
         specifier: 'catalog:'
         version: 5.4.21(@types/node@22.19.17)(less@4.6.4)
+      vue-tsc:
+        specifier: 'catalog:'
+        version: 2.2.12(typescript@5.6.3)
 
   apps/feature:
     dependencies:
@@ -332,6 +338,9 @@ importers:
       vite:
         specifier: 'catalog:'
         version: 5.4.21(@types/node@22.19.17)(less@4.6.4)
+      vue-tsc:
+        specifier: 'catalog:'
+        version: 2.2.12(typescript@5.6.3)
 
   apps/guide:
     dependencies:
@@ -467,6 +476,9 @@ importers:
       vite:
         specifier: 'catalog:'
         version: 5.4.21(@types/node@22.19.17)(less@4.6.4)
+      vue-tsc:
+        specifier: 'catalog:'
+        version: 2.2.12(typescript@5.6.3)
 
   packages/flick-native:
     devDependencies:

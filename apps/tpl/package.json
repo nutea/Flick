@@ -6,7 +6,8 @@
     "dev": "vite --port 8083",
     "build": "vite build",
     "preview": "vite preview --port 8083",
-    "lint": "eslint src"
+    "lint": "eslint src --max-warnings=0",
+    "typecheck": "vue-tsc --noEmit"
   },
   "dependencies": {
     "vue": "catalog:",
@@ -25,7 +26,8 @@
     "prettier": "catalog:",
     "typescript": "catalog:",
     "typescript-eslint": "catalog:",
-    "vite": "catalog:"
+    "vite": "catalog:",
+    "vue-tsc": "catalog:"
   },
   "browserslist": [
     "> 1%",

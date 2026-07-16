@@ -1,8 +1,7 @@
-import { BrowserWindow, ipcMain, nativeTheme } from 'electron';
+import { BrowserWindow, dialog, ipcMain, Menu, nativeTheme } from 'electron';
 import localConfig from '../common/initLocalConfig';
 import path from 'path';
 import commonConst from '@/common/utils/commonConst';
-import { WINDOW_MIN_HEIGHT } from '@/common/constans/common';
 import { executePluginSubInputChangeHook } from '@/main/common/pluginSubInputHook';
 import { resolveDetachWindowIcon } from '@/main/common/detachWindowIcon';
 import {
@@ -10,6 +9,12 @@ import {
   devSubAppHttpUrl,
   shouldOpenSubAppShellDevTools,
 } from '@/main/common/devSubAppServers';
+import { secureWebContentsNavigation } from '@/main/common/navigationSecurity';
+import {
+  flipPluginAutoDetachSync,
+  flipPluginDetachAlwaysShowSearchSync,
+  readPluginFlickConfigSync,
+} from '@/main/common/pluginFlickConfig';
 
 const DETACH_TITLEBAR_HEIGHT = 50;
 
@@ -19,7 +24,9 @@ export default () => {
   /** pluginSetting.single 非 false 时同一插件仅保留一个分离窗；key 为插件 `name` */
   const singleDetachWindowByPlugin = new Map<string, BrowserWindow>();
 
-  const getExistingDetachWindow = (pluginName: string): BrowserWindow | undefined => {
+  const getExistingDetachWindow = (
+    pluginName: string
+  ): BrowserWindow | undefined => {
     const w = singleDetachWindowByPlugin.get(pluginName);
     if (!w || w.isDestroyed()) {
       if (w) singleDetachWindowByPlugin.delete(pluginName);
@@ -34,14 +41,12 @@ export default () => {
     view: Electron.BrowserView,
     allowMultipleDetachWindows?: boolean
   ) => {
-    const createWin = await createWindow(
+    await createWindow(
       pluginInfo,
       viewInfo,
       view,
       !!allowMultipleDetachWindows
     );
-    // eslint-disable-next-line @typescript-eslint/no-var-requires
-    require('@electron/remote/main').enable(createWin.webContents);
   };
 
   /** 插件 BrowserView 不可铺满整个客户区，否则会盖住 detach 页顶栏（无法拖动/关闭）。 */
@@ -85,13 +90,15 @@ export default () => {
       y: viewInfo.y,
       ...(winIcon ? { icon: winIcon } : {}),
       webPreferences: {
-        webSecurity: false,
+        webSecurity: true,
         backgroundThrottling: false,
-        contextIsolation: false,
-        webviewTag: true,
+        contextIsolation: true,
+        sandbox: true,
+        webviewTag: false,
         devTools: true,
-        nodeIntegration: true,
-        navigateOnDragDrop: true,
+        nodeIntegration: false,
+        navigateOnDragDrop: false,
+        preload: path.join(__dirname, '../../preload/detach.js'),
         spellcheck: false,
       },
     });
@@ -102,6 +109,7 @@ export default () => {
 
     const detachFile = `file://${path.join(__static, './detach/index.html')}`;
     const detachUrl = devSubAppHttpUrl(DEV_APP_PORTS.detach, '/') ?? detachFile;
+    secureWebContentsNavigation(createWin.webContents, detachUrl);
     void createWin.loadURL(detachUrl);
     if (shouldOpenSubAppShellDevTools()) {
       createWin.webContents.once('did-finish-load', () => {
@@ -114,7 +122,7 @@ export default () => {
       executeHooks('PluginOut', null);
     });
     createWin.on('closed', () => {
-      view.webContents?.destroy();
+      if (!view.webContents.isDestroyed()) view.webContents.close();
       if (!allowMultipleDetachWindows && pluginKey) {
         const cur = singleDetachWindowByPlugin.get(pluginKey);
         if (cur === createWin) {
@@ -229,6 +237,138 @@ export default () => {
       default:
         break;
     }
+  });
+
+  const windowFromSender = (sender: Electron.WebContents) => {
+    const w = BrowserWindow.fromWebContents(sender);
+    return w && !w.isDestroyed() ? w : null;
+  };
+  const pluginContents = (w: BrowserWindow) => {
+    const contents = w.getBrowserView()?.webContents;
+    return contents && !contents.isDestroyed() ? contents : null;
+  };
+
+  for (const channel of [
+    'detach:set-pinned',
+    'detach:toggle-devtools',
+    'detach:get-devtools-state',
+    'detach:open-plugin-menu',
+  ]) {
+    try {
+      ipcMain.removeHandler(channel);
+    } catch {
+      /* first registration */
+    }
+  }
+
+  ipcMain.handle('detach:set-pinned', (event, pinned: unknown) => {
+    const w = windowFromSender(event.sender);
+    if (!w) return false;
+    w.setAlwaysOnTop(pinned === true);
+    return true;
+  });
+
+  ipcMain.handle('detach:get-devtools-state', (event) => {
+    const w = windowFromSender(event.sender);
+    return !!(w && pluginContents(w)?.isDevToolsOpened());
+  });
+
+  ipcMain.handle('detach:toggle-devtools', (event) => {
+    const w = windowFromSender(event.sender);
+    const contents = w && pluginContents(w);
+    if (!contents) return false;
+    if (contents.isDevToolsOpened()) contents.closeDevTools();
+    else contents.openDevTools({ mode: 'detach' });
+    const opened = contents.isDevToolsOpened();
+    event.sender.send('detach:devtools-state', opened);
+    return opened;
+  });
+
+  ipcMain.handle('detach:open-plugin-menu', (event, rawInfo: unknown) => {
+    const w = windowFromSender(event.sender);
+    if (!w || !rawInfo || typeof rawInfo !== 'object') return false;
+    const source = rawInfo as Record<string, unknown>;
+    const info = {
+      name: typeof source.name === 'string' ? source.name : '',
+      pluginName:
+        typeof source.pluginName === 'string' ? source.pluginName : '',
+      version: typeof source.version === 'string' ? source.version : '',
+      description:
+        typeof source.description === 'string' ? source.description : '',
+    };
+    const canConfigure =
+      !!info.name && info.name !== 'flick-system-super-panel';
+    const config = canConfigure
+      ? readPluginFlickConfigSync(info.name)
+      : { autoDetach: false, detachAlwaysShowSearch: false };
+    const zoom = (action: 'in' | 'out' | 'reset') => {
+      const contents = pluginContents(w);
+      if (!contents) return;
+      const current = contents.getZoomFactor();
+      if (action === 'in')
+        contents.setZoomFactor(
+          Math.min(3, Math.round((current + 0.1) * 100) / 100)
+        );
+      else if (action === 'out')
+        contents.setZoomFactor(
+          Math.max(0.5, Math.round((current - 0.1) * 100) / 100)
+        );
+      else contents.setZoomFactor(1);
+    };
+    const template: Electron.MenuItemConstructorOptions[] = [
+      {
+        label: '关于插件应用',
+        click: () => {
+          const lines = [
+            info.pluginName || info.name,
+            info.version ? `版本：${info.version}` : '',
+            info.description,
+          ].filter(Boolean);
+          dialog.showMessageBoxSync(w, {
+            type: 'info',
+            title: '关于插件应用',
+            message: lines[0] || info.name,
+            detail: lines.slice(1).join('\n') || undefined,
+            buttons: ['确定'],
+            noLink: true,
+          });
+        },
+      },
+    ];
+    if (canConfigure) {
+      template.push({
+        label: '插件应用设置',
+        submenu: [
+          {
+            label: '自动分离为独立窗口',
+            type: 'checkbox',
+            checked: !!config.autoDetach,
+            click: () => void flipPluginAutoDetachSync(info.name),
+          },
+          {
+            label: '独立窗口显示搜索框',
+            type: 'checkbox',
+            checked: !!config.detachAlwaysShowSearch,
+            click: () => {
+              const enabled = flipPluginDetachAlwaysShowSearchSync(info.name);
+              if (!event.sender.isDestroyed()) {
+                event.sender.send('detach:always-show-search', enabled);
+              }
+            },
+          },
+        ],
+      });
+    }
+    template.push({
+      label: '缩放比例',
+      submenu: [
+        { label: '放大', click: () => zoom('in') },
+        { label: '缩小', click: () => zoom('out') },
+        { label: '重置为 100%', click: () => zoom('reset') },
+      ],
+    });
+    Menu.buildFromTemplate(template).popup({ window: w });
+    return true;
   });
 
   return {

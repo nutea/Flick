@@ -2,11 +2,10 @@ import path from 'path';
 import fs from 'fs';
 import { exec } from 'child_process';
 
-// eslint-disable-next-line @typescript-eslint/no-var-requires
 const plist = require('simple-plist');
 
 const getIconFile = (appFileInput) => {
-  return new Promise((resolve, reject) => {
+  return new Promise((resolve) => {
     const plistPath = path.join(appFileInput, 'Contents', 'Info.plist');
     plist.readFile(plistPath, (err, data) => {
       if (err || !data.CFBundleIconFile) {

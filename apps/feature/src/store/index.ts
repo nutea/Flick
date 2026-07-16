@@ -38,7 +38,7 @@ export default createStore({
     },
   },
   actions: {
-    async saveLocalPlugins({ dispatch, state }, plugins) {
+    async saveLocalPlugins({ dispatch }, plugins) {
       // 先移除
       window.flick.db.remove(LOCAL_PLUGIN_JSON);
       window.flick.db.put({
@@ -47,7 +47,7 @@ export default createStore({
       });
       await dispatch('init');
     },
-    async deleteLocalPlugins({ dispatch, state }) {
+    async deleteLocalPlugins({ dispatch }) {
       // 先移除
       window.flick.db.remove(LOCAL_PLUGIN_JSON);
       await dispatch('init');
@@ -85,7 +85,7 @@ export default createStore({
       });
     },
 
-    startUnDownload({ commit, state }, name) {
+    startUnDownload({ commit }, name) {
       const localPlugins = window.market.getLocalPlugins();
       localPlugins.forEach((origin: Market.Plugin) => {
         if (origin.name === name) {
@@ -97,7 +97,7 @@ export default createStore({
       });
     },
 
-    errorUnDownload({ commit, state }, name) {
+    errorUnDownload({ commit }, name) {
       const localPlugins = window.market.getLocalPlugins();
       // 修复卸载失败，一直转圈的问题。
       localPlugins.forEach((origin: Market.Plugin) => {

@@ -1,11 +1,16 @@
-import { computed, nextTick, onMounted, onUnmounted, reactive, ref, watch } from 'vue';
-import { getChildProcess, getElectron, getOs, getPath } from './electron';
+import {
+  computed,
+  nextTick,
+  onMounted,
+  onUnmounted,
+  reactive,
+  ref,
+  watch,
+} from 'vue';
 import { flickDb } from './db';
 import { openPlugin } from './open-plugin';
 import { parseCmdRegex } from './cmd-regex';
 import type {
-  CmdItem,
-  FeatureItem,
   MatchPluginItem,
   OptionPlugin,
   TriggerSuperPanelPayload,
@@ -27,16 +32,10 @@ const EXPLORER_LIKE = [
   'Finder.app',
 ];
 const SUPER_PANEL_PREF_DB_ID = 'flick-system-super-panel-preferences';
-
-function msgTriggerSync<T>(type: string, data: unknown): T {
-  const { ipcRenderer } = getElectron();
-  const res = ipcRenderer.sendSync('msg-trigger', { type, data });
-  if (res instanceof Error) throw res;
-  return res as T;
-}
+const panel = window.superPanel;
 
 function getDesktopPath(): string {
-  return msgTriggerSync<string>('getPath', { name: 'desktop' });
+  return panel.getDesktopPath();
 }
 
 function basenameWinOrMac(p: string): string {
@@ -62,25 +61,22 @@ function normalizeVisibleText(raw: string): string {
     .trim();
 }
 
-/** 选中的是磁盘上的文件夹路径时，与 explorer 壳窗口走同一套「终端打开 / 新建文件 / 复制路径」 */
-function isDirectoryPath(p: string): boolean {
-  try {
-    // eslint-disable-next-line @typescript-eslint/no-require-imports
-    const fs = require('fs') as typeof import('fs');
-    const s = normalizeFsPath(p);
-    if (!s) return false;
-    return fs.statSync(s).isDirectory();
-  } catch {
-    return false;
+function extensionName(p: string): string {
+  const clean = String(p || '').split(/[?#]/, 1)[0];
+  const name = basenameWinOrMac(clean);
+  const dot = name.lastIndexOf('.');
+  return dot > 0 ? name.slice(dot) : '';
+}
+
+function normalizeLogo(raw: string): string {
+  const value = String(raw || '');
+  if (value.startsWith('file://')) {
+    return `image://${value.slice('file://'.length)}`;
   }
+  return value;
 }
 
 export function useSuperPanel() {
-  const pathMod = getPath();
-  const os = getOs();
-  const { ipcRenderer, clipboard } = getElectron();
-  const { spawn, exec } = getChildProcess();
-
   const pinned = ref(false);
 
   /** 翻译请求代数：面板关闭或新一轮 trigger 时递增，防止旧请求完成后写回 state */
@@ -106,11 +102,7 @@ export function useSuperPanel() {
       name: '终端打开',
       logo: '',
       click: () => {
-        if (os.type() === 'Windows_NT') {
-          spawn(`start cmd.exe /k "cd /d ${state.fileUrl}"`, [], { shell: true });
-        } else {
-          spawn('open', ['-a', 'Terminal', state.fileUrl]);
-        }
+        void panel.openTerminal(normalizeFsPath(state.fileUrl));
       },
     },
     {
@@ -118,13 +110,7 @@ export function useSuperPanel() {
       name: '新建文件',
       logo: '',
       click: () => {
-        ipcRenderer.send('create-file', {
-          title: '请选择要保存的文件名',
-          buttonLabel: '保存',
-          defaultPath: state.fileUrl.replace('file://', ''),
-          showsTagField: false,
-          nameFieldLabel: '',
-        });
+        void panel.createFile(normalizeFsPath(state.fileUrl));
       },
     },
     {
@@ -132,7 +118,7 @@ export function useSuperPanel() {
       name: '复制路径',
       logo: '',
       click: () => {
-        clipboard.writeText(state.fileUrl.replace('file://', ''));
+        panel.copyText(normalizeFsPath(state.fileUrl));
       },
     },
   ];
@@ -143,7 +129,7 @@ export function useSuperPanel() {
       name: '复制当前路径',
       logo: '',
       click: () => {
-        clipboard.writeText(state.fileUrl.replace('file://', ''));
+        panel.copyText(normalizeFsPath(state.fileUrl));
       },
     },
   ];
@@ -176,9 +162,14 @@ export function useSuperPanel() {
       .then((raw) => {
         if (mySeq !== translateSeq) return;
         const parsed = JSON.parse(raw) as TranslateState;
-        const hasBasic = !!parsed?.basic?.explains?.filter((line) => String(line || '').trim()).length;
-        const hasTranslation = !!parsed?.translation?.filter((line) => String(line || '').trim()).length;
-        state.translate = hasBasic || hasTranslation ? { ...parsed, src: visibleWord } : null;
+        const hasBasic = !!parsed?.basic?.explains?.filter((line) =>
+          String(line || '').trim()
+        ).length;
+        const hasTranslation = !!parsed?.translation?.filter((line) =>
+          String(line || '').trim()
+        ).length;
+        state.translate =
+          hasBasic || hasTranslation ? { ...parsed, src: visibleWord } : null;
       })
       .catch(() => {
         if (mySeq !== translateSeq) return;
@@ -200,11 +191,15 @@ export function useSuperPanel() {
     for (const plugin of optionPlugin) {
       for (const feature of plugin.features) {
         for (const cmd of feature.cmds) {
-          if (cmd.type === 'regex' && cmd.match && parseCmdRegex(cmd.match).test(text)) {
+          if (
+            cmd.type === 'regex' &&
+            cmd.match &&
+            parseCmdRegex(cmd.match).test(text)
+          ) {
             state.matchPlugins.push({
               type: 'ext',
               name: cmd.label || feature.code,
-              logo: plugin.logo,
+              logo: normalizeLogo(plugin.logo),
               click: () =>
                 openPlugin({
                   plugin: plugin as unknown as Record<string, unknown>,
@@ -218,7 +213,7 @@ export function useSuperPanel() {
             state.matchPlugins.push({
               type: 'ext',
               name: cmd.label || feature.code,
-              logo: plugin.logo,
+              logo: normalizeLogo(plugin.logo),
               click: () =>
                 openPlugin({
                   plugin: plugin as unknown as Record<string, unknown>,
@@ -233,35 +228,40 @@ export function useSuperPanel() {
     }
   }
 
-  function collectFilePlugins(fileUrl: string, ext: string, optionPlugin: OptionPlugin[]) {
+  function collectFilePlugins(
+    fileUrl: string,
+    ext: string,
+    selectedFileDataUrl: string,
+    optionPlugin: OptionPlugin[]
+  ) {
     const imgRe = /\.(png|jpg|gif|jpeg|webp)$/i;
     for (const plugin of optionPlugin) {
       for (const feature of plugin.features) {
         for (const cmd of feature.cmds) {
-          if (cmd.type === 'img' && imgRe.test(ext)) {
+          if (cmd.type === 'img' && imgRe.test(ext) && selectedFileDataUrl) {
             state.matchPlugins.unshift({
               type: 'ext',
               name: cmd.label || feature.code,
-              logo: plugin.logo,
+              logo: normalizeLogo(plugin.logo),
               click: () => {
-                const data = ipcRenderer.sendSync(
-                  'get-file-base64',
-                  state.fileUrl.replace('file://', '')
-                );
                 openPlugin({
                   plugin: plugin as unknown as Record<string, unknown>,
                   feature,
                   cmd,
-                  data,
+                  data: selectedFileDataUrl,
                 });
               },
             });
           }
-          if (cmd.type === 'file' && cmd.match && parseCmdRegex(cmd.match).test(ext)) {
+          if (
+            cmd.type === 'file' &&
+            cmd.match &&
+            parseCmdRegex(cmd.match).test(ext)
+          ) {
             state.matchPlugins.unshift({
               type: 'ext',
               name: cmd.label || feature.code,
-              logo: plugin.logo,
+              logo: normalizeLogo(plugin.logo),
               click: () =>
                 openPlugin({
                   plugin: plugin as unknown as Record<string, unknown>,
@@ -270,7 +270,7 @@ export function useSuperPanel() {
                   data: {
                     isFile: true,
                     isDirectory: false,
-                    name: pathMod.basename(fileUrl),
+                    name: basenameWinOrMac(fileUrl),
                     path: fileUrl,
                   },
                 }),
@@ -291,6 +291,7 @@ export function useSuperPanel() {
     }
     state.userPlugins = doc.data.map((row) => ({
       ...row,
+      logo: normalizeLogo(row.logo),
       click: () =>
         openPlugin({
           plugin: row as unknown as Record<string, unknown>,
@@ -325,21 +326,11 @@ export function useSuperPanel() {
   }
 
   function resolveCurrentFolder(cb: (folder: string) => void) {
-    if (os.type() === 'Darwin') {
-      exec(
-        `osascript -e 'tell application "Finder" to get the POSIX path of (target of front window as alias)'`,
-        { encoding: 'utf8' },
-        (err, stdout) => {
-          if (!err && stdout) cb(stdout.trim().replace(/\/$/, ''));
-        }
-      );
-    } else if (os.type() === 'Windows_NT') {
-      ipcRenderer
-        .invoke('get-path-async')
-        .then((data: { stdout?: string }) => {
-          const folder = String(data?.stdout ?? '').trim();
-          if (folder) cb(folder);
-        });
+    if (panel.platform === 'darwin' || panel.platform === 'win32') {
+      panel.getCurrentFolder().then((data) => {
+        const folder = String(data?.stdout ?? '').trim();
+        if (folder) cb(folder);
+      });
     }
   }
 
@@ -351,10 +342,16 @@ export function useSuperPanel() {
       state.loading = false;
       refreshPreferences();
 
-      const { text, fileUrl, optionPlugin = [] } = payload;
+      const {
+        text,
+        fileUrl,
+        optionPlugin = [],
+        selectedFileIsDirectory = false,
+        selectedFileDataUrl = '',
+      } = payload;
       state.selectedText = String(text ?? '');
       state.selectedFileUrl = fileUrl == null ? '' : String(fileUrl);
-      const ext = pathMod.extname(fileUrl || '');
+      const ext = extensionName(fileUrl || '');
       state.fileUrl = (fileUrl ?? '') as string;
 
       if (fileUrl === null) {
@@ -382,7 +379,7 @@ export function useSuperPanel() {
         return;
       }
 
-      if (fileUrl && isDirectoryPath(String(fileUrl))) {
+      if (fileUrl && selectedFileIsDirectory) {
         const folder = normalizeFsPath(String(fileUrl));
         state.matchPlugins = [...commonPlugins];
         state.fileUrl = folder;
@@ -392,13 +389,18 @@ export function useSuperPanel() {
 
       state.matchPlugins = [...selectedPlugins];
       state.fileUrl = String(fileUrl);
-      collectFilePlugins(String(fileUrl), ext, optionPlugin);
+      collectFilePlugins(
+        String(fileUrl),
+        ext,
+        selectedFileDataUrl,
+        optionPlugin
+      );
     } finally {
       // 等 Vue 把本次 payload 刷进 DOM 并上报高度后再让主进程 show，避免先闪旧内容、再与 setSize 同步抖动
       nextTick(() => {
         reportHeight();
         setTimeout(() => {
-          ipcRenderer.send('superPanel-content-applied');
+          panel.contentApplied();
         }, 48);
       });
     }
@@ -406,15 +408,15 @@ export function useSuperPanel() {
 
   function togglePin() {
     pinned.value = !pinned.value;
-    ipcRenderer.send('trigger-pin', pinned.value);
+    panel.setPinned(pinned.value);
   }
 
   function hidePanel() {
-    ipcRenderer.send('superPanel-hidden');
+    panel.hide();
   }
 
   function showMainWindow() {
-    ipcRenderer.send('msg-trigger', { type: 'showMainWindow' });
+    panel.showMainWindow();
   }
 
   function openInstalled() {
@@ -448,7 +450,7 @@ export function useSuperPanel() {
   function reportHeight() {
     const el = document.getElementById('app');
     if (!el) return;
-    ipcRenderer.send('superPanel-setSize', parseInt(getComputedStyle(el).height, 10));
+    panel.setHeight(parseInt(getComputedStyle(el).height, 10));
   }
 
   let offTrigger: (() => void) | undefined;
@@ -458,21 +460,15 @@ export function useSuperPanel() {
   onMounted(() => {
     refreshUserPlugins();
     refreshPreferences();
-    const handler = (_e: Electron.IpcRendererEvent, payload: TriggerSuperPanelPayload) =>
-      onTrigger(_e, payload);
-    const pinStateHandler = (_e: Electron.IpcRendererEvent, pin: boolean) => {
-      pinned.value = !!pin;
-    };
-    const dismissedHandler = () => cancelTranslateBecausePanelGone();
-    ipcRenderer.on('trigger-super-panel', handler);
-    ipcRenderer.on('superPanel-pin-state', pinStateHandler);
-    ipcRenderer.on('super-panel-dismissed', dismissedHandler);
-    offTrigger = () => ipcRenderer.removeListener('trigger-super-panel', handler);
-    offPinState = () => ipcRenderer.removeListener('superPanel-pin-state', pinStateHandler);
-    offPanelDismissed = () =>
-      ipcRenderer.removeListener('super-panel-dismissed', dismissedHandler);
-    ipcRenderer
-      .invoke('superPanel-get-pin-state')
+    offTrigger = panel.onTrigger((payload) =>
+      onTrigger(null, payload as TriggerSuperPanelPayload)
+    );
+    offPinState = panel.onPinState((pin) => {
+      pinned.value = pin;
+    });
+    offPanelDismissed = panel.onDismissed(cancelTranslateBecausePanelGone);
+    panel
+      .getPinState()
       .then((pin: unknown) => {
         pinned.value = !!pin;
       })

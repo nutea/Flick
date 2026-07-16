@@ -155,6 +155,79 @@ export default class DB {
     this.loaded = false;
   }
 
+  /** Create a transactionally consistent SQLite image while the live DB stays open. */
+  async exportSnapshot(): Promise<Buffer> {
+    const db = this.requireDb();
+    const snapshot = path.join(
+      this.dbpath,
+      `.flick-backup-${process.pid}-${Date.now()}.sqlite`
+    );
+    try {
+      await db.backup(snapshot);
+      return await fs.promises.readFile(snapshot);
+    } finally {
+      await fs.promises.rm(snapshot, { force: true }).catch(() => undefined);
+    }
+  }
+
+  /**
+   * Validate and atomically replace the live database. A failed reopen restores
+   * the previous file and leaves this instance usable.
+   */
+  async restoreSnapshot(buffer: Buffer): Promise<void> {
+    await fs.promises.mkdir(this.dbpath, { recursive: true });
+    const stamp = `${process.pid}-${Date.now()}`;
+    const candidatePath = path.join(
+      this.dbpath,
+      `.flick-restore-${stamp}.sqlite`
+    );
+    const rollbackPath = path.join(
+      this.dbpath,
+      `.flick-rollback-${stamp}.sqlite`
+    );
+    await fs.promises.writeFile(candidatePath, buffer);
+
+    let candidate: SqliteDatabase | undefined;
+    try {
+      candidate = new Database(candidatePath, {
+        readonly: true,
+        fileMustExist: true,
+      });
+      const integrity = candidate.pragma('quick_check', { simple: true });
+      if (integrity !== 'ok') {
+        throw new Error(`SQLite integrity check failed: ${String(integrity)}`);
+      }
+    } finally {
+      candidate?.close();
+    }
+
+    this.close();
+    const hadOriginal = fs.existsSync(this.dbFile);
+    try {
+      if (hadOriginal) await fs.promises.rename(this.dbFile, rollbackPath);
+      await fs.promises.rename(candidatePath, this.dbFile);
+      await Promise.all(
+        ['-wal', '-shm'].map((suffix) =>
+          fs.promises.rm(`${this.dbFile}${suffix}`, { force: true })
+        )
+      );
+      this.init();
+      await fs.promises.rm(rollbackPath, { force: true });
+    } catch (error) {
+      this.close();
+      await fs.promises.rm(this.dbFile, { force: true }).catch(() => undefined);
+      if (hadOriginal && fs.existsSync(rollbackPath)) {
+        await fs.promises.rename(rollbackPath, this.dbFile);
+      }
+      this.init();
+      throw error;
+    } finally {
+      await fs.promises
+        .rm(candidatePath, { force: true })
+        .catch(() => undefined);
+    }
+  }
+
   // -------------------------------------------------------------------------
   // Namespace helpers (stable names from the PouchDB impl; do not rename).
   // -------------------------------------------------------------------------
@@ -683,7 +756,7 @@ export default class DB {
   }): Promise<void> {
     const { default: WebDavOP } = await import('./webdav');
     const webdavClient = new WebDavOP(config);
-    await webdavClient.uploadSqliteFile(this.dbFile);
+    await webdavClient.uploadSqliteFile(this);
   }
 
   public async importDb(config: {

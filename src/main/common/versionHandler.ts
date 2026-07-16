@@ -3,7 +3,7 @@ import pkg from '../../../package.json';
 import { lt } from 'semver';
 import { getLatestVersion } from './getLatestVersion';
 const version = pkg.version;
-const downloadUrl = 'https://github.com/flickCenter/flick/releases/latest';
+const downloadUrl = 'https://github.com/nutea/Flick/releases/latest';
 
 const checkVersion = async () => {
   const res: string = await getLatestVersion();

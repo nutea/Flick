@@ -1,4 +1,3 @@
-import getCopyFiles from '@/common/utils/getCopyFiles';
 import pluginClickEvent from './pluginClickEvent';
 import localConfig from '../confOp';
 import { ref } from 'vue';
@@ -15,7 +14,7 @@ export default ({ currentPlugin, optionsRef, openPlugin, setOptionsRef }) => {
     if (!config.perf.common.autoPast && strict) return;
 
     if (currentPlugin.value.name) return;
-    const fileList = files || getCopyFiles();
+    const fileList = files || window.flick.getCopyedFiles();
     // 拷贝的是文件
     if (fileList) {
       window.setSubInputValue({ value: '' });

@@ -3,7 +3,7 @@
 </template>
 
 <script setup>
-import { useRouter } from "vue-router";
+import { useRouter } from 'vue-router';
 
 const router = useRouter();
 window.flick.onPluginEnter(({ code, type, payload }) => {
@@ -15,7 +15,9 @@ window.flick.onPluginEnter(({ code, type, payload }) => {
   router.push({
     name: current.mode,
     params: {
-      code, type, payload
+      code,
+      type,
+      payload,
     },
   });
 });

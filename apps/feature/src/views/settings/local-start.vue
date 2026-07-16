@@ -1,5 +1,10 @@
 <template>
-  <div class="file-container" @drop.prevent="dropFile" @dragenter="checkDrop" @dragover="checkDrop">
+  <div
+    class="file-container"
+    @drop.prevent="dropFile"
+    @dragenter="checkDrop"
+    @dragover="checkDrop"
+  >
     <a-alert message="可拖放文件夹到这里加入启动" type="info" show-icon />
     <a-list item-layout="horizontal" :data-source="localStartList">
       <template #renderItem="{ item }">
@@ -10,7 +15,9 @@
           <a-list-item-meta :description="item.desc">
             <template #title>
               <div>
-                <span :class="item.del ? 'del-title' : ''">{{item.name}}</span>
+                <span :class="item.del ? 'del-title' : ''">
+                  {{ item.name }}
+                </span>
                 <span v-if="item.del" class="has-del">文件不存在</span>
               </div>
             </template>
@@ -26,50 +33,53 @@
 
 <script setup>
 import { ref } from 'vue';
-const fs = window.require('fs');
-const process = window.require('process');
 
 const dbId = 'flick-local-start-app';
 
 const localStartList = ref(window.flick.dbStorage.getItem(dbId) || []);
 
-const checkFileExists = () => {
-  localStartList.value = localStartList.value.map((plugin) => {
-    if (!fs.existsSync(plugin.desc)) {
+const checkFileExists = async () => {
+  localStartList.value = await Promise.all(
+    localStartList.value.map(async (plugin) => {
+      if (!(await window.market.pathExists(plugin.desc))) {
+        return {
+          ...plugin,
+          del: true,
+        };
+      }
       return {
         ...plugin,
-        del: true,
+        del: false,
       };
-    }
-    return plugin;
-  });
+    })
+  );
 };
 
-checkFileExists();
+void checkFileExists();
 
 const dropFile = async (e) => {
-  const files = await Promise.all(Array.from(e.dataTransfer.files).map(async (file) => {
-    const action =
-      process.platform === 'win32'
-        ? `start "dummyclient" "${file.path}"`
-        : `open ${file.path.replace(/ /g, '\\ ')}`;
-    const plugin = {
-      icon: await window.flick.getFileIcon(file.path),
-      value: 'plugin',
-      desc: file.path,
-      pluginType: 'app',
-      name: file.name,
-      action,
-      keyWords: [file.name],
-      names: [file.name],
-    };
-    window.market.addLocalStartPlugin(plugin);
-    return plugin;
-  }));
-  localStartList.value = [
-    ...localStartList.value,
-    ...files,
-  ];
+  const files = await Promise.all(
+    Array.from(e.dataTransfer.files).map(async (file) => {
+      const filePath = window.market.getPathForFile(file);
+      const action =
+        window.market.platform === 'win32'
+          ? `start "dummyclient" "${filePath}"`
+          : `open ${filePath.replace(/ /g, '\\ ')}`;
+      const plugin = {
+        icon: await window.flick.getFileIcon(filePath),
+        value: 'plugin',
+        desc: filePath,
+        pluginType: 'app',
+        name: file.name,
+        action,
+        keyWords: [file.name],
+        names: [file.name],
+      };
+      window.market.addLocalStartPlugin(plugin);
+      return plugin;
+    })
+  );
+  localStartList.value = [...localStartList.value, ...files];
   window.flick.dbStorage.setItem(
     dbId,
     JSON.parse(JSON.stringify(localStartList.value))

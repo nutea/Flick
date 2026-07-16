@@ -10,17 +10,12 @@
       class="error-content"
       v-else
       sub-title="哎呀，暂时还没有这个插件哟！"
-    >
-      <template #icon>
-        <Vue3Lottie :animationData="emptyJson" :height="240" :width="240" />
-      </template>
-    </a-result>
+    />
   </div>
 </template>
 
 <script setup>
 import { computed } from 'vue';
-import emptyJson from '@/assets/lottie/empty.json';
 import PluginList from './plugin-list.vue';
 
 import { useStore } from 'vuex';

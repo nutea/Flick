@@ -12,7 +12,8 @@ export interface TranslateTestPrefs {
   anthropicMaxTokens: number;
 }
 
-const TEST_SYSTEM = 'You are a connectivity check. Reply with exactly OK and nothing else.';
+const TEST_SYSTEM =
+  'You are a connectivity check. Reply with exactly OK and nothing else.';
 const TEST_USER = 'ping';
 
 type PlainObject = Record<string, unknown>;
@@ -23,7 +24,10 @@ function parseExtraHeaders(raw: string | undefined): Record<string, string> {
     const parsed = JSON.parse(raw) as unknown;
     if (parsed && typeof parsed === 'object' && !Array.isArray(parsed)) {
       return Object.fromEntries(
-        Object.entries(parsed as Record<string, unknown>).map(([k, v]) => [k, String(v)])
+        Object.entries(parsed as Record<string, unknown>).map(([k, v]) => [
+          k,
+          String(v),
+        ])
       );
     }
   } catch {
@@ -58,7 +62,14 @@ function extractTextContent(content: unknown): string {
 }
 
 function extractTextFromObject(obj: PlainObject): string {
-  const directKeys = ['content', 'text', 'output_text', 'answer', 'response', 'completion'];
+  const directKeys = [
+    'content',
+    'text',
+    'output_text',
+    'answer',
+    'response',
+    'completion',
+  ];
   for (const key of directKeys) {
     const value = obj[key];
     const text = extractTextContent(value);
@@ -134,7 +145,9 @@ function looksLikeSuccessfulResponse(json: unknown): boolean {
   );
 }
 
-async function testOpenAi(prefs: TranslateTestPrefs): Promise<{ ok: boolean; message: string }> {
+async function testOpenAi(
+  prefs: TranslateTestPrefs
+): Promise<{ ok: boolean; message: string }> {
   const baseUrl = prefs.llmBaseUrl.trim();
   const apiKey = prefs.llmApiKey.trim();
   const model = prefs.llmModel.trim();
@@ -177,7 +190,10 @@ async function testOpenAi(prefs: TranslateTestPrefs): Promise<{ ok: boolean; mes
         typeof (json as { model?: unknown }).model === 'string'
           ? String((json as { model?: unknown }).model)
           : model;
-      return { ok: true, message: `Connected${modelName ? ` (${modelName})` : ''}` };
+      return {
+        ok: true,
+        message: `Connected${modelName ? ` (${modelName})` : ''}`,
+      };
     }
     return { ok: false, message: 'Empty response from model.' };
   } catch {

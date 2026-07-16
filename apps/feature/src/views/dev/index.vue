@@ -17,7 +17,7 @@
         <a-form-item :label="$t('feature.dev.pluginName')" name="name">
           <a-input v-model:value="formState.name" />
         </a-form-item>
-    
+
         <a-form-item :wrapper-col="{ span: 14, offset: 4 }">
           <a-button :loading="loading" type="primary" @click="onSubmit">
             {{ $t('feature.dev.install') }}

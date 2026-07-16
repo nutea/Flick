@@ -1,5 +1,5 @@
 <template>
-  <div :class="[process.platform, 'detach']">
+  <div :class="[platform, 'detach']">
     <div class="info">
       <img :src="plugInfo.logo" />
       <input
@@ -13,7 +13,16 @@
     </div>
     <div class="handle-container">
       <div class="handle">
-        <div class="plugin-menu-btn" @click.stop="openPluginMenu" title="菜单">
+        <div
+          class="plugin-menu-btn"
+          role="button"
+          tabindex="0"
+          aria-label="插件菜单"
+          @click.stop="openPluginMenu"
+          @keydown.enter.stop="openPluginMenu"
+          @keydown.space.prevent.stop="openPluginMenu"
+          title="菜单"
+        >
           <span class="plugin-menu-icon">
             <i></i>
             <i></i>
@@ -22,21 +31,52 @@
         </div>
         <div
           class="devtool"
+          role="button"
+          tabindex="0"
+          aria-label="切换插件开发者工具"
           :class="{ active: devToolsActive }"
           @click.stop="toggleDevTools"
+          @keydown.enter.stop="toggleDevTools"
+          @keydown.space.prevent.stop="toggleDevTools"
           :title="devToolsActive ? '关闭开发者工具' : '开发者工具'"
         ></div>
         <div
           class="pin"
+          role="button"
+          tabindex="0"
+          aria-label="切换窗口置顶"
           :class="{ active: pinned }"
           @click.stop="togglePin"
+          @keydown.enter.stop="togglePin"
+          @keydown.space.prevent.stop="togglePin"
           :title="pinned ? '取消固定' : '固定在最前'"
         ></div>
       </div>
-      <div class="window-handle" v-if="process.platform !== 'darwin'">
-        <div class="minimize" @click="minimize"></div>
-        <div class="maximize" @click="maximize"></div>
-        <div class="close" @click="close"></div>
+      <div class="window-handle" v-if="platform !== 'darwin'">
+        <div
+          class="minimize"
+          role="button"
+          tabindex="0"
+          aria-label="最小化"
+          @click="minimize"
+          @keydown.enter="minimize"
+        ></div>
+        <div
+          class="maximize"
+          role="button"
+          tabindex="0"
+          aria-label="最大化或还原"
+          @click="maximize"
+          @keydown.enter="maximize"
+        ></div>
+        <div
+          class="close"
+          role="button"
+          tabindex="0"
+          aria-label="关闭"
+          @click="close"
+          @keydown.enter="close"
+        ></div>
       </div>
     </div>
   </div>
@@ -44,13 +84,10 @@
 
 <script setup>
 import throttle from 'lodash.throttle';
-import { nextTick, ref } from 'vue';
+import { ref } from 'vue';
 
-const { ipcRenderer } = window.require('electron');
-const remote = window.require('@electron/remote');
-const { Menu, dialog, getCurrentWindow } = remote;
-
-const process = window.require('process');
+const api = window.detach;
+const platform = api.platform;
 
 const pinned = ref(false);
 /** 插件 BrowserView 的开发者工具是否打开（与壳页无关） */
@@ -66,14 +103,7 @@ function pinStorageKey() {
 }
 
 function syncDetachAlwaysOnTop() {
-  try {
-    const win = getCurrentWindow();
-    if (!win || typeof win.setAlwaysOnTop !== 'function') return;
-    /** 独立窗口已 enable remote；置顶用当前 BrowserWindow，避免 ipc 侧 fromWebContents 解析不到 sender */
-    win.setAlwaysOnTop(pinned.value);
-  } catch {
-    /* ignore */
-  }
+  void api.setPinned(pinned.value);
 }
 
 function loadPinFromStorage() {
@@ -95,64 +125,33 @@ function togglePin() {
   syncDetachAlwaysOnTop();
 }
 
-function getPluginWebContents() {
-  try {
-    const win = getCurrentWindow();
-    const bv = win.getBrowserView();
-    return bv?.webContents ?? null;
-  } catch {
-    return null;
-  }
-}
-
-let devToolsListenersAttachedFor = 0;
-
-function setupPluginDevToolsListenersOnce(wc) {
-  if (!wc || wc.isDestroyed()) return;
-  if (devToolsListenersAttachedFor === wc.id) return;
-  devToolsListenersAttachedFor = wc.id;
-  wc.on('devtools-opened', () => {
-    devToolsActive.value = true;
-  });
-  wc.on('devtools-closed', () => {
-    devToolsActive.value = false;
-  });
-}
-
-function syncDevToolsState() {
-  const wc = getPluginWebContents();
-  devToolsActive.value = !!(wc && !wc.isDestroyed() && wc.isDevToolsOpened());
-}
-
 /** BrowserView 在 ready-to-show 后才挂上，壳脚本可能早于此时执行 */
 function scheduleDevToolsListenerSetup() {
   let attempts = 0;
   const tick = () => {
-    const wc = getPluginWebContents();
-    if (wc && !wc.isDestroyed()) {
-      setupPluginDevToolsListenersOnce(wc);
-      syncDevToolsState();
-      return;
-    }
-    if (++attempts < 50) {
-      setTimeout(tick, 40);
-    }
+    void api.getDevToolsState().then((opened) => {
+      devToolsActive.value = opened;
+      if (!opened && ++attempts < 10) setTimeout(tick, 100);
+    });
   };
-  nextTick(tick);
+  setTimeout(tick, 0);
 }
 
 function toggleDevTools() {
-  const wc = getPluginWebContents();
-  if (!wc || wc.isDestroyed()) return;
-  setupPluginDevToolsListenersOnce(wc);
-  if (wc.isDevToolsOpened()) {
-    wc.closeDevTools();
-    devToolsActive.value = false;
-  } else {
-    wc.openDevTools({ mode: 'detach' });
-    devToolsActive.value = true;
-  }
+  void api.toggleDevTools().then((opened) => {
+    devToolsActive.value = opened;
+  });
 }
+
+api.onDevToolsState((opened) => {
+  devToolsActive.value = opened;
+});
+
+api.onAlwaysShowSearch((enabled) => {
+  detachAlwaysShowSearch.value = enabled;
+  ensureSubInputStubWhenAlwaysShow();
+  updateShowInputFromState();
+});
 
 function ensureSubInputStubWhenAlwaysShow() {
   if (detachAlwaysShowSearch.value && !plugInfo.value.subInput) {
@@ -171,6 +170,12 @@ function updateShowInputFromState() {
 }
 
 window.initDetach = (pluginInfo) => {
+  if (
+    typeof pluginInfo.logo === 'string' &&
+    pluginInfo.logo.startsWith('file://')
+  ) {
+    pluginInfo.logo = `image://${pluginInfo.logo.slice('file://'.length)}`;
+  }
   plugInfo.value = pluginInfo;
   detachAlwaysShowSearch.value = !!pluginInfo.detachAlwaysShowSearch;
   if (detachAlwaysShowSearch.value && !plugInfo.value.subInput) {
@@ -192,107 +197,24 @@ try {
 }
 
 const changeValue = throttle((e) => {
-  ipcRenderer.send('msg-trigger', {
-    type: 'detachInputChange',
-    data: {
-      text: e.target.value,
-    },
-  });
+  api.sendInput(e.target.value);
 }, 500);
 
-const zoomPlugin = (action) => {
-  void ipcRenderer.invoke('flick:detach-adjust-plugin-zoom', {
-    action,
-    winId: getCurrentWindow().id,
-  });
-};
-
 const openPluginMenu = async () => {
-  const name = plugInfo.value.name;
-  const canFileConfig = name && name !== 'flick-system-super-panel';
-  const flickCfg = canFileConfig
-    ? await ipcRenderer.invoke('flick:get-plugin-flick-config', name)
-    : { autoDetach: false, detachAlwaysShowSearch: false };
-
-  const items = [
-    {
-      label: '关于插件应用',
-      click: () => {
-        const p = plugInfo.value;
-        const lines = [
-          p.pluginName || p.name,
-          p.version ? `版本：${p.version}` : '',
-          p.description || '',
-        ].filter(Boolean);
-        dialog.showMessageBoxSync(getCurrentWindow(), {
-          type: 'info',
-          title: '关于插件应用',
-          message: lines[0] || p.name || '',
-          detail: lines.slice(1).join('\n') || undefined,
-          buttons: ['确定'],
-          noLink: true,
-        });
-      },
-    },
-  ];
-
-  if (canFileConfig) {
-    items.push({
-      label: '插件应用设置',
-      submenu: [
-        {
-          label: '自动分离为独立窗口',
-          type: 'checkbox',
-          checked: !!flickCfg.autoDetach,
-          click() {
-            void ipcRenderer.invoke('flick:flip-plugin-auto-detach', name);
-          },
-        },
-        {
-          label: '独立窗口显示搜索框',
-          type: 'checkbox',
-          checked: !!flickCfg.detachAlwaysShowSearch,
-          click() {
-            void ipcRenderer
-              .invoke('flick:flip-plugin-detach-always-show-search', name)
-              .then((res) => {
-                detachAlwaysShowSearch.value = !!res?.detachAlwaysShowSearch;
-                if (detachAlwaysShowSearch.value && !plugInfo.value.subInput) {
-                  plugInfo.value.subInput = {
-                    value: '',
-                    placeholder: '',
-                  };
-                }
-                updateShowInputFromState();
-              });
-          },
-        },
-      ],
-    });
-  }
-
-  items.push({
-    label: '缩放比例',
-    submenu: [
-      { label: '放大', click: () => zoomPlugin('in') },
-      { label: '缩小', click: () => zoomPlugin('out') },
-      { label: '重置为 100%', click: () => zoomPlugin('reset') },
-    ],
-  });
-
-  Menu.buildFromTemplate(items).popup({ window: getCurrentWindow() });
+  const { name, pluginName, version, description } = plugInfo.value;
+  await api.openPluginMenu({ name, pluginName, version, description });
 };
 
 const minimize = () => {
-  ipcRenderer.send('detach:service', { type: 'minimize' });
+  api.windowAction('minimize');
 };
 
 const maximize = () => {
-  ipcRenderer.send('detach:service', { type: 'maximize' });
+  api.windowAction('maximize');
 };
 
 const close = () => {
-  ipcRenderer.send('detach:service', { type: 'close' });
+  api.windowAction('close');
 };
 
 Object.assign(window, {
@@ -339,20 +261,20 @@ window.unmaximizeTrigger = () => {
   btnMaximize.classList.remove('unmaximize');
 };
 
-if (process.platform === 'darwin') {
+if (platform === 'darwin') {
   window.onkeydown = (e) => {
     if (e.code === 'Escape') {
-      ipcRenderer.send('detach:service', { type: 'endFullScreen' });
+      api.windowAction('endFullScreen');
       return;
     }
     if (e.metaKey && (e.code === 'KeyW' || e.code === 'KeyQ')) {
-      window.handle.close();
+      api.windowAction('close');
     }
   };
 } else {
   window.onkeydown = (e) => {
     if (e.ctrlKey && e.code === 'KeyW') {
-      window.handle.close();
+      api.windowAction('close');
       return;
     }
   };
@@ -364,8 +286,8 @@ html,
 body {
   margin: 0;
   padding: 0;
-  font-family: system-ui, 'PingFang SC', 'Helvetica Neue', 'Microsoft Yahei',
-    sans-serif;
+  font-family:
+    system-ui, 'PingFang SC', 'Helvetica Neue', 'Microsoft Yahei', sans-serif;
   user-select: none;
   overflow: hidden;
 }

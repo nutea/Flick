@@ -83,35 +83,31 @@
         </div>
       </template>
       <a-spin :spinning="!content" tip="内容加载中...">
-        <div v-if="content !== 'error'" v-html="content" class="home-page-container"></div>
+        <div
+          v-if="content !== 'error'"
+          v-html="content"
+          class="home-page-container"
+        ></div>
         <a-result
           class="error-content"
           v-else
+          status="warning"
           sub-title="插件主页内容走丢啦！"
-        >
-          <template #icon>
-            <Vue3Lottie :animationData="notFountJson" :height="240" :width="240" />
-          </template>
-        </a-result>
+        />
       </a-spin>
     </a-drawer>
   </div>
 </template>
 
 <script setup>
-import {
-  CloudDownloadOutlined,
-  ArrowLeftOutlined,
-  SelectOutlined
-} from '@ant-design/icons-vue';
+import { CloudDownloadOutlined, SelectOutlined } from '@ant-design/icons-vue';
 
-import { defineProps, ref, computed } from 'vue';
+import { ref, computed } from 'vue';
 import { useStore } from 'vuex';
 import { message } from 'ant-design-vue';
 import MarkdownIt from 'markdown-it';
 import { useRouter } from 'vue-router';
 import request from '@/assets/request/index';
-import notFountJson from '@/assets/lottie/404.json';
 import { useI18n } from 'vue-i18n';
 const { t } = useI18n();
 
@@ -132,7 +128,9 @@ const props = defineProps({
 const downloadPlugin = async (plugin) => {
   startDownload(plugin.name);
   await window.market.downloadPlugin(plugin);
-  message.success(t('feature.dev.installSuccess', { pluginName: plugin.pluginName }));
+  message.success(
+    t('feature.dev.installSuccess', { pluginName: plugin.pluginName })
+  );
   successDownload(plugin.name);
 };
 
@@ -160,10 +158,10 @@ const showDetail = async (index) => {
 const detail = computed(() => props.list[showIndex.value]);
 
 const openPlugin = (item) => {
-  store.commit('commonUpdate', {active: ['installed']})
+  store.commit('commonUpdate', { active: ['installed'] });
   router.push({
     path: '/installed',
-    query: {plugin: item.name}
+    query: { plugin: item.name },
   });
 };
 </script>
