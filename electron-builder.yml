@@ -1,0 +1,59 @@
+productName: flick
+appId: com.muwoo.flick
+compression: maximum
+directories:
+  output: build
+releaseInfo:
+  releaseName: normal
+  releaseNotesFile: ./release/releaseNotes.md
+removePackageScripts: true
+buildDependenciesFromSource: false
+nodeGypRebuild: false
+electronLanguages:
+  - en-US
+  - zh-CN
+files:
+  - dist/**/*
+  - public/**/*
+  - package.json
+  - "!**/*.{md,ts,map,d.ts,tsbuildinfo,flow,nycrc}"
+  - "!**/*.{coffee,scss,sass,h,c,cc,cpp,hpp,rs,gyp}"
+  - "!**/{__tests__,test,tests,example,examples,powered-test,docs,doc,benchmark,benchmarks}/**"
+  - "!**/{CHANGELOG,HISTORY,AUTHORS,CONTRIBUTORS,README,readme}*"
+  - "!**/{.github,.circleci,.vscode,.idea}/**"
+  - "!**/.DS_Store"
+  - "!**/*.log"
+  - "!**/yarn.lock"
+  - "!**/package-lock.json"
+  - "!**/pnpm-lock.yaml"
+  - "!**/node_modules/flick-native/native/{src,target,build.rs,Cargo.lock,Cargo.toml}"
+  - "!**/node_modules/flick-native/native/target/**"
+  # better-sqlite3: ship only the prebuilt .node + JS wrapper
+  - "!**/node_modules/better-sqlite3/build/Release/*.{iobj,ipdb,lib,exp,pdb}"
+  - "!**/node_modules/better-sqlite3/build/Release/obj/**"
+  - "!**/node_modules/better-sqlite3/build/Release/test_extension.node"
+  - "!**/node_modules/better-sqlite3/build/deps/**"
+  - "!**/node_modules/better-sqlite3/deps/**"
+  - "!**/node_modules/better-sqlite3/src/**"
+  - "!**/node_modules/better-sqlite3/binding.gyp"
+asarUnpack:
+  - "**/*.node"
+  - node_modules/better-sqlite3/build/Release/better_sqlite3.node
+  - node_modules/flick-native/native/flick_native.node
+  - node_modules/flick-native/index.js
+  - node_modules/flick-native/package.json
+extraMetadata:
+  main: dist/main/entry.js
+win:
+  icon: public/icons/icon.ico
+  artifactName: flick-Setup-${version}-x64.exe
+  target:
+    - target: nsis
+      arch:
+        - x64
+nsis:
+  shortcutName: flick
+  oneClick: false
+  allowToChangeInstallationDirectory: true
+  include: public/installer.nsh
+  warningsAsErrors: false

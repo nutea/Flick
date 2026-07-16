@@ -1,0 +1,39 @@
+{
+  "name": "detach",
+  "version": "1.0.0",
+  "private": true,
+  "scripts": {
+    "dev": "vite --port 8082",
+    "build": "vite build",
+    "preview": "vite preview --port 8082",
+    "lint": "eslint src"
+  },
+  "dependencies": {
+    "lodash.throttle": "catalog:",
+    "vue": "catalog:",
+    "vue-router": "catalog:",
+    "vuex": "catalog:"
+  },
+  "devDependencies": {
+    "@eslint/js": "catalog:",
+    "@vitejs/plugin-vue": "catalog:",
+    "@vue/compiler-sfc": "catalog:",
+    "@vue/eslint-config-prettier": "catalog:",
+    "@vue/eslint-config-typescript": "catalog:",
+    "eslint": "catalog:",
+    "eslint-plugin-vue": "catalog:",
+    "less": "catalog:",
+    "prettier": "catalog:",
+    "typescript": "catalog:",
+    "typescript-eslint": "catalog:",
+    "vite": "catalog:"
+  },
+  "browserslist": [
+    "> 1%",
+    "last 2 versions",
+    "not dead"
+  ],
+  "volta": {
+    "node": "22.15.0"
+  }
+}

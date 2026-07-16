@@ -1,0 +1,21 @@
+{
+  "name": "flick-native",
+  "version": "1.0.0",
+  "private": true,
+  "description": "In-repo native runtime package for Flick, implemented from scratch.",
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "license": "UNLICENSED",
+  "scripts": {
+    "build": "tsc -p tsconfig.json && node ./scripts/build-native.mjs --if-available",
+    "dev": "tsc -p tsconfig.json --watch --preserveWatchOutput",
+    "lint": "eslint src --ext .ts",
+    "native:check": "cargo check --manifest-path native/Cargo.toml",
+    "native:build": "node ./scripts/build-native.mjs",
+    "native:build:release": "node ./scripts/build-native.mjs --release"
+  },
+  "devDependencies": {
+    "@types/node": "catalog:",
+    "typescript": "catalog:"
+  }
+}

@@ -1,0 +1,17 @@
+{
+  "compilerOptions": {
+    "target": "ES2019",
+    "module": "CommonJS",
+    "moduleResolution": "node",
+    "lib": ["ES2019", "DOM"],
+    "strict": true,
+    "esModuleInterop": true,
+    "skipLibCheck": true,
+    "outDir": "../../public/superx",
+    "rootDir": "node-src",
+    "declaration": false,
+    "noEmit": false,
+    "types": ["node"]
+  },
+  "include": ["node-src/**/*.ts"]
+}

@@ -1,0 +1,18 @@
+{
+  "name": "flick-system-super-panel",
+  "pluginName": "超级面板",
+  "version": "1.0.0",
+  "description": "Ctrl + W 唤起超级面板（快捷键请在插件市场「超级面板」中设置）",
+  "pluginSetting": {
+    "single": true
+  },
+  "main": "main.html",
+  "entry": "main.js",
+  "logo": "./plugin-logo.png",
+  "pluginType": "system",
+  "features": [],
+  "author": "muwoo",
+  "license": "ISC",
+  "homepage": "https://github.com/flickCenter/flick-system-super-panel#readme",
+  "dependencies": {}
+}

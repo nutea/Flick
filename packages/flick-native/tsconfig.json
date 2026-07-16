@@ -1,0 +1,20 @@
+{
+  "extends": "../../tsconfig.json",
+  "compilerOptions": {
+    "target": "ES2019",
+    "module": "CommonJS",
+    "moduleResolution": "node",
+    "rootDir": "./src",
+    "outDir": "./dist",
+    "composite": false,
+    "declaration": true,
+    "emitDeclarationOnly": false,
+    "importHelpers": false,
+    "types": ["node"],
+    "lib": ["ES2021", "DOM"]
+  },
+  "include": [
+    "src/**/*.ts",
+    "src/**/*.d.ts"
+  ]
+}

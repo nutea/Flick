@@ -1,0 +1,42 @@
+{
+  "name": "flick-system-feature",
+  "pluginSetting": {
+    "single": true
+  },
+  "pluginName": "系统菜单",
+  "description": "系统菜单",
+  "main": "index.html",
+  "logo": "./plugin-logo.png",
+  "version": "1.0.0",
+  "preload":"preload.js",
+  "pluginType": "ui",
+  "features": [
+    {
+      "code": "finder",
+      "explain": "插件市场",
+      "cmds":[
+        "插件市场"
+      ]
+    },{
+      "code": "installed",
+      "explain": "已安装插件",
+      "cmds":[
+        "已安装插件", "installed"
+      ]
+    },{
+      "code": "settings",
+      "explain": "偏好设置",
+      "cmds":[
+        "偏好设置"
+      ]
+    },{
+      "code": "superPanel",
+      "explain": "超级面板快捷键设置",
+      "cmds":[
+        "超级面板",
+        "超级面板设置",
+        "超级面板快捷键"
+      ]
+    }
+  ]
+}

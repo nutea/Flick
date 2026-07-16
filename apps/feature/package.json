@@ -1,0 +1,48 @@
+{
+  "name": "feature",
+  "version": "1.0.0",
+  "private": true,
+  "scripts": {
+    "dev": "vite --port 8081",
+    "build": "vite build",
+    "preview": "vite preview --port 8081",
+    "lint": "eslint src"
+  },
+  "dependencies": {
+    "@ant-design/icons-vue": "catalog:",
+    "ant-design-vue": "catalog:",
+    "axios": "catalog:",
+    "lodash.debounce": "catalog:",
+    "lodash.throttle": "catalog:",
+    "markdown-it": "catalog:",
+    "nanoid": "catalog:",
+    "vue": "catalog:",
+    "vue-i18n": "catalog:",
+    "vue-router": "catalog:",
+    "vue3-carousel": "catalog:",
+    "vue3-lottie": "catalog:",
+    "vuex": "catalog:"
+  },
+  "devDependencies": {
+    "@eslint/js": "catalog:",
+    "@vitejs/plugin-vue": "catalog:",
+    "@vue/compiler-sfc": "catalog:",
+    "@vue/eslint-config-prettier": "catalog:",
+    "@vue/eslint-config-typescript": "catalog:",
+    "eslint": "catalog:",
+    "eslint-plugin-vue": "catalog:",
+    "less": "catalog:",
+    "prettier": "catalog:",
+    "typescript": "catalog:",
+    "typescript-eslint": "catalog:",
+    "vite": "catalog:"
+  },
+  "browserslist": [
+    "> 1%",
+    "last 2 versions",
+    "not dead"
+  ],
+  "volta": {
+    "node": "22.15.0"
+  }
+}

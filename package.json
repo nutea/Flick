@@ -1,0 +1,75 @@
+{
+  "name": "flick",
+  "version": "1.0.0",
+  "author": "nutea <nutgeek@gmail.com>",
+  "private": true,
+  "scripts": {
+    "serve": "electron-vite dev",
+    "packages:build": "pnpm --filter ./packages/** run build",
+    "build": "pnpm packages:build && electron-vite build",
+    "check:runtime-deps": "node scripts/check-runtime-deps.mjs",
+    "lint": "eslint src" ,
+    "dev:all": "concurrently -n apps,electron \"pnpm run dev:apps\" \"electron-vite dev\"",
+    "lint:apps": "pnpm --filter ./apps/** run lint",
+    "dev:apps": "concurrently -n feature,detach,tpl,guide,sx-web,sx-node \"pnpm --filter feature run dev\" \"pnpm --filter detach run dev\" \"pnpm --filter tpl run dev\" \"pnpm --filter guide run dev\" \"pnpm --filter ./apps/superx run dev:web\" \"pnpm --filter ./apps/superx run dev:node\"",
+    "apps:build": "pnpm --filter ./apps/** --parallel run build",
+    "electron:serve": "electron-vite dev",
+    "electron:build": "pnpm packages:build && pnpm apps:build && electron-vite build && electron-builder --config electron-builder.yml --win nsis --x64",
+    "electron:build:local": "pnpm packages:build && pnpm apps:build && electron-vite build && electron-builder --config electron-builder.yml --publish never --win nsis --x64",
+    "release": "pnpm packages:build && pnpm apps:build && electron-vite build && electron-builder --config electron-builder.yml --win nsis --x64",
+    "postinstall": "electron-builder install-app-deps",
+    "postuninstall": "electron-builder install-app-deps"
+  },
+  "main": "dist/main/entry.js",
+  "dependencies": {
+    "@electron/remote": "catalog:",
+    "axios": "catalog:",
+    "better-sqlite3": "^11.10.0",
+    "compressing": "^1.10.4",
+    "cross-spawn": "^7.0.6",
+    "fix-path": "^3.0.0",
+    "fs-extra": "^10.1.0",
+    "plist": "^3.1.0",
+    "flick-native": "workspace:*",
+    "semver": "^7.7.4",
+    "simple-plist": "^0.2.1",
+    "webdav": "^5.8.0"
+  },
+  "devDependencies": {
+    "@ant-design/icons-vue": "catalog:",
+    "@eslint/js": "catalog:",
+    "@vitejs/plugin-vue": "catalog:",
+    "@vue/compiler-sfc": "catalog:",
+    "@vue/eslint-config-prettier": "catalog:",
+    "@vue/eslint-config-typescript": "catalog:",
+    "ant-design-vue": "catalog:",
+    "concurrently": "^9.1.2",
+    "electron": "35.4.0",
+    "electron-builder": "26.9.0",
+    "electron-vite": "^2.3.0",
+    "eslint": "catalog:",
+    "eslint-plugin-vue": "catalog:",
+    "less": "catalog:",
+    "lodash.debounce": "catalog:",
+    "pinyin-match": "^1.2.4",
+    "prettier": "catalog:",
+    "typescript": "catalog:",
+    "typescript-eslint": "catalog:",
+    "vite": "catalog:",
+    "vue": "catalog:",
+    "vue-router": "catalog:",
+    "vuex": "catalog:"
+  },
+  "pnpm": {
+    "onlyBuiltDependencies": [
+      "better-sqlite3",
+      "ejs",
+      "electron",
+      "electron-winstaller",
+      "esbuild"
+    ]
+  },
+  "volta": {
+    "node": "22.15.0"
+  }
+}

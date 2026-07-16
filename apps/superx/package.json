@@ -1,0 +1,34 @@
+{
+  "name": "superx",
+  "private": true,
+  "version": "1.0.0",
+  "scripts": {
+    "typecheck": "vue-tsc --noEmit",
+    "build:web": "vite build",
+    "build:node": "tsc -p tsconfig.node.json",
+    "build": "vite build && tsc -p tsconfig.node.json",
+    "dev:web": "vite dev --port 8085 --strictPort",
+    "dev:node": "tsc -p tsconfig.node.json --watch --preserveWatchOutput",
+    "lint": "eslint src node-src"
+  },
+  "dependencies": {
+    "@ant-design/icons-vue": "catalog:",
+    "ant-design-vue": "catalog:",
+    "vue": "catalog:"
+  },
+  "devDependencies": {
+    "@eslint/js": "catalog:",
+    "@types/node": "catalog:",
+    "@vitejs/plugin-vue": "catalog:",
+    "@vue/eslint-config-prettier": "catalog:",
+    "@vue/eslint-config-typescript": "catalog:",
+    "eslint": "catalog:",
+    "eslint-plugin-vue": "catalog:",
+    "less": "catalog:",
+    "prettier": "catalog:",
+    "typescript": "catalog:",
+    "typescript-eslint": "catalog:",
+    "vite": "catalog:",
+    "vue-tsc": "catalog:"
+  }
+}
