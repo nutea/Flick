@@ -8,8 +8,38 @@ function diagnosticsEnabled(): boolean {
   return (
     !app.isPackaged ||
     !!process.env.ELECTRON_RENDERER_URL ||
-    process.env.FLICK_STARTUP_DIAGNOSTICS === '1'
+    process.env.FLICK_STARTUP_DIAGNOSTICS === '1' ||
+    !!process.env.FLICK_SMOKE_REPORT
   );
+}
+
+export function failAutomatedSmoke(label: string, error?: unknown): boolean {
+  const target = process.env.FLICK_SMOKE_REPORT;
+  if (!target) return false;
+
+  try {
+    fs.mkdirSync(path.dirname(target), { recursive: true });
+    fs.writeFileSync(
+      target,
+      JSON.stringify(
+        {
+          secure: false,
+          platform: process.platform,
+          arch: process.arch,
+          packaged: app.isPackaged,
+          stage: label,
+          error: error == null ? undefined : stringifyError(error),
+        },
+        null,
+        2
+      ),
+      'utf8'
+    );
+  } catch {
+    /* the startup log remains the fallback diagnostic channel */
+  }
+  app.exit(1);
+  return true;
 }
 
 function logFilePath(): string | null {
@@ -55,6 +85,7 @@ export function showStartupError(
   error?: unknown
 ): void {
   writeStartupLog(`${title}: ${message}`, error);
+  if (failAutomatedSmoke(`${title}: ${message}`, error)) return;
   try {
     const detail =
       error == null ? message : `${message}\n\n${stringifyError(error)}`;

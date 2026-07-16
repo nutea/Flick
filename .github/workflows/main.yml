@@ -123,6 +123,7 @@ jobs:
           $env:FLICK_MAIN_SMOKE = '1'
           $env:FLICK_PACKAGED_SMOKE = '1'
           $env:FLICK_SMOKE_REPORT = $reportPath
+          $env:FLICK_STARTUP_DIAGNOSTICS = '1'
           $process = Start-Process `
             -FilePath 'build\win-unpacked\flick.exe' `
             -PassThru
@@ -135,6 +136,11 @@ jobs:
             }
           }
           if (-not (Test-Path $reportPath)) {
+            $startupLog = Join-Path $env:APPDATA 'flick\startup.log'
+            if (Test-Path $startupLog) {
+              Write-Host '--- Flick startup.log ---'
+              Get-Content $startupLog -Raw
+            }
             if (-not $process.HasExited) {
               Stop-Process -Id $process.Id -Force
             }

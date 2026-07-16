@@ -1,6 +1,7 @@
 import path from 'path';
 import { app } from 'electron';
 import {
+  failAutomatedSmoke,
   installProcessErrorHandlers,
   writeStartupLog,
 } from './common/startupDiagnostics';
@@ -17,6 +18,14 @@ function swallowBrokenPipe(stream?: NodeJS.WriteStream): void {
 swallowBrokenPipe(process.stdout);
 swallowBrokenPipe(process.stderr);
 installProcessErrorHandlers();
+
+if (process.env.FLICK_SMOKE_REPORT) {
+  const smokeWatchdog = setTimeout(() => {
+    writeStartupLog('packaged smoke timed out before main window load');
+    failAutomatedSmoke('startup-timeout');
+  }, 30_000);
+  smokeWatchdog.unref();
+}
 
 const staticDir = app.isPackaged
   ? path.join(app.getAppPath(), 'public')
