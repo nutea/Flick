@@ -16,6 +16,11 @@ files:
   - dist/**/*
   - public/**/*
   - package.json
+  # Workspace build output is gitignored, so electron-builder's clean-runner
+  # file discovery must be told explicitly that it is runtime code.
+  - node_modules/flick-native/dist/**/*.js
+  - node_modules/flick-native/native/index.js
+  - node_modules/flick-native/package.json
   - "!**/*.{md,ts,map,d.ts,tsbuildinfo,flow,nycrc}"
   - "!**/*.{coffee,scss,sass,h,c,cc,cpp,hpp,rs,gyp}"
   - "!**/{__tests__,test,tests,example,examples,powered-test,docs,doc,benchmark,benchmarks}/**"
@@ -39,8 +44,9 @@ files:
 asarUnpack:
   - "**/*.node"
   - node_modules/better-sqlite3/build/Release/better_sqlite3.node
+  - node_modules/flick-native/dist/**/*.js
+  - node_modules/flick-native/native/index.js
   - node_modules/flick-native/native/flick_native.node
-  - node_modules/flick-native/index.js
   - node_modules/flick-native/package.json
 extraMetadata:
   main: dist/main/entry.js
