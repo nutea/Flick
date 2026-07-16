@@ -1,4 +1,5 @@
 import { app, BrowserWindow, protocol, nativeTheme } from 'electron';
+import fs from 'fs';
 import path from 'path';
 import { pathToFileURL } from 'url';
 // import versonHandler from '../common/versionHandler';
@@ -139,10 +140,56 @@ export default () => {
             const payload = { secure, preferences, result };
             if (secure) console.log('[flick-main] smoke passed:', payload);
             else console.error('[flick-main] smoke failed:', payload);
+
+            const smokeReportPath = process.env.FLICK_SMOKE_REPORT;
+            if (smokeReportPath) {
+              const report = {
+                secure,
+                platform: process.platform,
+                arch: process.arch,
+                packaged: app.isPackaged,
+                preferences: {
+                  nodeIntegration: preferences.nodeIntegration,
+                  webviewTag: preferences.webviewTag,
+                },
+                result,
+              };
+              fs.mkdirSync(path.dirname(smokeReportPath), {
+                recursive: true,
+              });
+              fs.writeFileSync(
+                smokeReportPath,
+                JSON.stringify(report, null, 2),
+                'utf8'
+              );
+              app.exit(secure ? 0 : 1);
+            }
           })
-          .catch((error) =>
-            console.error('[flick-main] smoke failed to execute:', error)
-          );
+          .catch((error) => {
+            console.error('[flick-main] smoke failed to execute:', error);
+            const smokeReportPath = process.env.FLICK_SMOKE_REPORT;
+            if (smokeReportPath) {
+              fs.mkdirSync(path.dirname(smokeReportPath), {
+                recursive: true,
+              });
+              fs.writeFileSync(
+                smokeReportPath,
+                JSON.stringify(
+                  {
+                    secure: false,
+                    platform: process.platform,
+                    arch: process.arch,
+                    packaged: app.isPackaged,
+                    error: String(error),
+                  },
+                  null,
+                  2
+                ),
+                'utf8'
+              );
+              app.exit(1);
+            }
+          });
       }
     });
 
