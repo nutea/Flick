@@ -39,7 +39,7 @@ jobs:
         run: pnpm check
 
       - name: Build macOS application assets
-        run: pnpm apps:build && pnpm build
+        run: pnpm apps:build && pnpm exec electron-vite build
 
   build-win-x64:
     name: Build Windows x64 Installer
