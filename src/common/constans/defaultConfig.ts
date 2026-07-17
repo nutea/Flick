@@ -9,7 +9,7 @@ export default {
       successColor: '#c0d695',
       infoColor: '#aa8eeB',
       logo: `image://${__static}/logo.png`,
-      placeholder: '你好，Flick！请输入插件关键词',
+      placeholder: '搜索应用、插件或命令…',
       username: 'Flick',
     },
     shortCut: {

@@ -11,6 +11,7 @@ import { input } from 'flick-native';
 import type { NativeInputEvent } from 'flick-native';
 import screenCapture from '@/core/screen-capture';
 import localConfig from '@/main/common/initLocalConfig';
+import { getLoginItemArgs } from '@/main/common/startupMode';
 import commonConst from '@/common/utils/commonConst';
 import winPosition from './getWinPosition';
 import { writeStartupLog } from './startupDiagnostics';
@@ -41,12 +42,19 @@ let doublePressExpectedKeys: string[] = [];
 const registerHotKey = (mainWindow: BrowserWindow): void => {
   const setAutoLogin = async () => {
     const config = await localConfig.getConfig();
-    if (app.getLoginItemSettings().openAtLogin !== config.perf.common.start) {
-      app.setLoginItemSettings({
-        openAtLogin: config.perf.common.start,
-        openAsHidden: true,
-      });
+    const enabled = config.perf.common.start === true;
+    const settings: Electron.Settings = {
+      openAtLogin: enabled,
+    };
+    if (process.platform === 'darwin') {
+      settings.openAsHidden = true;
+    } else if (process.platform === 'win32') {
+      settings.path = process.execPath;
+      settings.args = getLoginItemArgs(process.platform);
     }
+    // Reapply the complete registration even when openAtLogin is already true:
+    // older Windows registrations may not contain the silent-start marker.
+    app.setLoginItemSettings(settings);
   };
 
   const setTheme = async () => {

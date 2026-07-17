@@ -22,16 +22,17 @@
       :currentPlugin="currentPlugin"
       :searchValue="searchValue"
       :currentSelect="currentSelect"
-      :options="options"
+      :options="visibleOptions"
       :clipboardFile="clipboardFile || []"
       @setPluginHistory="setPluginHistory"
       @choosePlugin="choosePlugin"
+      @selectIndex="setCurrentSelect"
     />
   </div>
 </template>
 
 <script setup lang="ts">
-import { watch, ref, toRaw, nextTick } from 'vue';
+import { computed, watch, ref, toRaw, nextTick } from 'vue';
 import Result from './components/result.vue';
 import Search from './components/search.vue';
 import getWindowHeight from '../common/utils/getWindowHeight';
@@ -73,6 +74,14 @@ const menuPluginInfo: any = ref({});
 
 const config: any = ref(localConfig.getConfig());
 
+const visibleOptions = computed(() =>
+  [...options.value]
+    .sort((a, b) => (Number(b.zIndex) || 0) - (Number(a.zIndex) || 0))
+    .slice(0, 20)
+);
+
+const visibleHistory = computed(() => pluginHistory.value.slice(0, 8));
+
 getPluginInfo({
   pluginName: 'feature',
 
@@ -92,7 +101,7 @@ getPluginInfo({
 
 const calcLauncherHeight = () =>
   getWindowHeight(
-    options.value,
+    visibleOptions.value,
     pluginLoading.value || !config.value.perf.common.history
       ? []
       : pluginHistory.value,
@@ -164,7 +173,7 @@ watch(
 );
 
 const changeIndex = (index) => {
-  const len = options.value.length || pluginHistory.value.length;
+  const len = visibleOptions.value.length || visibleHistory.value.length;
   if (!len) return;
   if (currentSelect.value + index > len - 1) {
     currentSelect.value = 0;
@@ -173,6 +182,12 @@ const changeIndex = (index) => {
   } else {
     currentSelect.value = currentSelect.value + index;
   }
+};
+
+const setCurrentSelect = (index: number) => {
+  const len = visibleOptions.value.length || visibleHistory.value.length;
+  if (!Number.isInteger(index) || index < 0 || index >= len) return;
+  currentSelect.value = index;
 };
 
 const openMenu = (ext) => {
@@ -188,12 +203,13 @@ const openMenu = (ext) => {
 window.flick.openMenu = openMenu;
 
 const choosePlugin = (plugin) => {
-  if (options.value.length) {
-    const currentChoose = options.value[currentSelect.value];
-    currentChoose.click();
+  if (visibleOptions.value.length) {
+    const currentChoose = visibleOptions.value[currentSelect.value];
+    currentChoose?.click();
   } else {
     const localPlugins = remote.getGlobal('LOCAL_PLUGINS').getLocalPlugins();
-    const currentChoose = plugin || pluginHistory.value[currentSelect.value];
+    const currentChoose = plugin || visibleHistory.value[currentSelect.value];
+    if (!currentChoose) return;
     let hasRemove = true;
     if (currentChoose.pluginType === 'app') {
       hasRemove = false;
@@ -241,10 +257,46 @@ const clearSearchValue = () => {
 
 <style lang="less">
 @import './assets/var.less';
+html,
+body,
+#app {
+  width: 100%;
+  height: 100%;
+  margin: 0;
+  overflow: hidden;
+}
+
+body {
+  background: var(--color-body-bg);
+  user-select: none;
+}
+
+input,
+textarea {
+  user-select: text;
+}
+
+button,
+input {
+  font: inherit;
+}
+
 #components-layout {
   height: 100vh;
   overflow: hidden;
   background: var(--color-body-bg);
+  color: var(--color-text-content);
+  font-family:
+    Inter,
+    -apple-system,
+    BlinkMacSystemFont,
+    'Segoe UI',
+    'PingFang SC',
+    'Microsoft YaHei',
+    sans-serif;
+  -webkit-font-smoothing: antialiased;
+  border: 1px solid var(--color-border-subtle);
+  box-sizing: border-box;
   ::-webkit-scrollbar {
     width: 0;
   }

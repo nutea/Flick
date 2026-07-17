@@ -12,11 +12,11 @@ const { build } = require(
 
 const root = process.cwd();
 const outDir = path.join(root, '.test-build');
-const outfile = path.join(outDir, 'db.test.cjs');
+const outfile = path.join(outDir, 'index.test.cjs');
 
 await rm(outDir, { recursive: true, force: true });
 await build({
-  entryPoints: [path.join(root, 'tests', 'db.test.ts')],
+  entryPoints: [path.join(root, 'tests', 'index.test.ts')],
   outfile,
   bundle: true,
   platform: 'node',

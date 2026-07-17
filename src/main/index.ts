@@ -22,6 +22,7 @@ import registerSystemPlugin from './common/registerSystemPlugin';
 import registerCdwhereIpc from './common/registerCdwhereIpc';
 import { warmupDevSubAppServers } from './common/devSubAppServers';
 import { showStartupError, writeStartupLog } from './common/startupDiagnostics';
+import { isSilentLoginStartup } from './common/startupMode';
 
 class App {
   public windowCreator: { init: () => void; getWindow: () => BrowserWindow };
@@ -63,11 +64,24 @@ class App {
         await warmupDevSubAppServers();
         writeStartupLog('sub-app server initialization completed');
         registerCdwhereIpc();
-        void checkVersion();
         await localConfig.init();
         writeStartupLog('local configuration initialized');
+        const loginItemSettings = app.getLoginItemSettings();
+        const silentLoginStartup = isSilentLoginStartup({
+          platform: process.platform,
+          argv: process.argv,
+          wasOpenedAtLogin: loginItemSettings.wasOpenedAtLogin,
+          forceSilent: process.env.FLICK_LOGIN_STARTUP === '1',
+        });
+        writeStartupLog('startup mode resolved', {
+          silentLoginStartup,
+          platform: process.platform,
+        });
+        if (!silentLoginStartup) {
+          void checkVersion();
+        }
         const config = await localConfig.getConfig();
-        if (!config.perf.common.guide) {
+        if (!silentLoginStartup && !config.perf.common.guide) {
           guide().init();
           config.perf.common.guide = true;
           localConfig.setConfig(config);
@@ -79,7 +93,11 @@ class App {
         const shouldShowForSmoke =
           (!app.isPackaged && process.env.FLICK_STARTUP_SHOW === '1') ||
           (app.isPackaged && process.env.FLICK_PACKAGED_SMOKE === '1');
-        if (shouldShowForSmoke && !mainWindow.isDestroyed()) {
+        if (
+          !silentLoginStartup &&
+          shouldShowForSmoke &&
+          !mainWindow.isDestroyed()
+        ) {
           mainWindow.show();
           mainWindow.focus();
         }
@@ -95,33 +113,40 @@ class App {
 
         // Windows packaged app can otherwise end up with no visible entry point
         // if tray/hotkey/guide does not become visible in time.
-        if (commonConst.windows() && app.isPackaged) {
-          const openedAtLogin =
-            app.getLoginItemSettings &&
-            app.getLoginItemSettings().wasOpenedAtLogin;
-          if (!openedAtLogin) {
-            setTimeout(() => {
-              const guideWindow = guide().getWindow();
-              const hasVisibleGuide =
-                !!guideWindow &&
-                !guideWindow.isDestroyed() &&
-                guideWindow.isVisible();
-              const hasVisibleMain =
-                !!mainWindow &&
-                !mainWindow.isDestroyed() &&
-                mainWindow.isVisible();
-              if (!hasVisibleGuide && !hasVisibleMain) {
-                writeStartupLog(
-                  'startup fallback showing main window on Windows packaged build'
-                );
-                const { x, y } = winPosition.getPosition();
-                mainWindow.setSkipTaskbar(false);
-                mainWindow.setPosition(x, y);
-                mainWindow.show();
-                mainWindow.focus();
-              }
-            }, 1800);
-          }
+        if (commonConst.windows() && app.isPackaged && !silentLoginStartup) {
+          setTimeout(() => {
+            const guideWindow = guide().getWindow();
+            const hasVisibleGuide =
+              !!guideWindow &&
+              !guideWindow.isDestroyed() &&
+              guideWindow.isVisible();
+            const hasVisibleMain =
+              !!mainWindow &&
+              !mainWindow.isDestroyed() &&
+              mainWindow.isVisible();
+            if (!hasVisibleGuide && !hasVisibleMain) {
+              writeStartupLog(
+                'startup fallback showing main window on Windows packaged build'
+              );
+              const { x, y } = winPosition.getPosition();
+              mainWindow.setSkipTaskbar(false);
+              mainWindow.setPosition(x, y);
+              mainWindow.show();
+              mainWindow.focus();
+            }
+          }, 1800);
+        }
+
+        if (silentLoginStartup) {
+          setTimeout(() => {
+            const visibleWindowCount = BrowserWindow.getAllWindows().filter(
+              (window) => !window.isDestroyed() && window.isVisible()
+            ).length;
+            writeStartupLog('silent login startup visibility verified', {
+              trayAvailable: !!this.tray && !this.tray.isDestroyed(),
+              visibleWindowCount,
+            });
+          }, 1000);
         }
       } catch (error) {
         showStartupError(

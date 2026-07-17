@@ -9,34 +9,60 @@
         config.perf.common.history
       "
     >
-      <a-row>
+      <div class="section-heading">
+        <span>{{ historyLabel }}</span>
+        <span class="section-hint">{{ historyHint }}</span>
+      </div>
+      <a-row role="listbox" :aria-label="historyLabel">
         <a-col
           @click="() => openPlugin(item)"
           @contextmenu.prevent="openMenu($event, item)"
+          @mouseenter="emit('selectIndex', index)"
           :class="
             currentSelect === index ? 'active history-item' : 'history-item'
           "
           :span="3"
-          v-for="(item, index) in pluginHistory"
-          :key="index"
+          v-for="(item, index) in pluginHistory.slice(0, 8)"
+          :key="itemKey(item, index)"
+          role="option"
+          :aria-selected="currentSelect === index"
         >
-          <a-avatar style="width: 28px; height: 28px" :src="item.icon" />
+          <a-avatar class="history-icon" :src="item.icon" />
           <div class="name ellpise">
             {{ item.cmd || item.pluginName || item._name || item.name }}
           </div>
-          <div class="badge" v-if="item.pin"></div>
+          <div class="badge" v-if="item.pin" :title="pinnedLabel"></div>
         </a-col>
       </a-row>
     </div>
+    <div
+      v-else-if="
+        (searchValue || clipboardFile.length) && !displayOptions.length
+      "
+      class="empty-state"
+      role="status"
+      aria-live="polite"
+    >
+      <div class="empty-icon" aria-hidden="true">
+        <SearchOutlined />
+      </div>
+      <div class="empty-title">{{ emptyTitle }}</div>
+      <div class="empty-description">{{ emptyDescription }}</div>
+    </div>
     <a-list
-      v-else-if="options.length || searchValue || clipboardFile.length"
+      v-else-if="displayOptions.length"
       item-layout="horizontal"
-      :dataSource="sort(options)"
+      :dataSource="displayOptions"
+      role="listbox"
+      :aria-label="resultsLabel"
     >
       <template #renderItem="{ item, index }">
         <a-list-item
           @click="() => item.click()"
+          @mouseenter="emit('selectIndex', index)"
           :class="currentSelect === index ? 'active op-item' : 'op-item'"
+          role="option"
+          :aria-selected="currentSelect === index"
         >
           <a-list-item-meta :description="renderDesc(item.desc)">
             <template #title>
@@ -49,17 +75,24 @@
               </span>
             </template>
             <template #avatar>
-              <a-avatar style="border-radius: 0" :src="item.icon" />
+              <a-avatar class="result-icon" :src="item.icon" />
             </template>
           </a-list-item-meta>
+          <span v-if="currentSelect === index" class="open-hint">
+            {{ openHint }}
+          </span>
         </a-list-item>
       </template>
     </a-list>
+    <div class="sr-only" aria-live="polite">
+      {{ resultAnnouncement }}
+    </div>
   </div>
 </template>
 
 <script lang="ts" setup>
-import { reactive, ref, toRaw } from 'vue';
+import { computed, reactive, ref, toRaw } from 'vue';
+import { SearchOutlined } from '@ant-design/icons-vue';
 import localConfig from '../confOp';
 
 const path = window.require('path');
@@ -90,7 +123,30 @@ const props = withDefaults(
   }
 );
 
-const emit = defineEmits(['choosePlugin', 'setPluginHistory']);
+const emit = defineEmits(['choosePlugin', 'setPluginHistory', 'selectIndex']);
+
+const isChinese = computed(() => config.value.perf.common.lang === 'zh-CN');
+const historyLabel = computed(() => (isChinese.value ? '最近使用' : 'Recent'));
+const historyHint = computed(() =>
+  isChinese.value ? '右键可固定或移除' : 'Right-click to pin or remove'
+);
+const pinnedLabel = computed(() => (isChinese.value ? '已固定' : 'Pinned'));
+const resultsLabel = computed(() =>
+  isChinese.value ? '搜索结果' : 'Search results'
+);
+const emptyTitle = computed(() =>
+  isChinese.value ? '没有找到匹配项' : 'No matches found'
+);
+const emptyDescription = computed(() =>
+  props.clipboardFile.length
+    ? isChinese.value
+      ? '当前剪贴板内容没有可用操作'
+      : 'No actions are available for this clipboard content'
+    : isChinese.value
+      ? '试试更短的关键词，或搜索其他应用和命令'
+      : 'Try a shorter keyword or search for another app or command'
+);
+const openHint = computed(() => (isChinese.value ? '回车打开' : 'Enter'));
 
 const titleParts = (title, match) => {
   const value = typeof title === 'string' ? title : '';
@@ -117,18 +173,18 @@ const renderDesc = (desc = '') => {
   return desc;
 };
 
-const sort = (options) => {
-  for (let i = 0; i < options.length; i++) {
-    for (let j = i + 1; j < options.length; j++) {
-      if (options[j].zIndex > options[i].zIndex) {
-        const temp = options[i];
-        options[i] = options[j];
-        options[j] = temp;
-      }
-    }
-  }
-  return options.slice(0, 20);
-};
+const displayOptions = computed(() => props.options.slice(0, 20));
+
+const resultAnnouncement = computed(() => {
+  if (!props.searchValue && !props.clipboardFile.length) return '';
+  const count = displayOptions.value.length;
+  return isChinese.value ? `${count} 个搜索结果` : `${count} search results`;
+});
+
+const itemKey = (item: PluginItem, index: number) =>
+  item.id ||
+  item._id ||
+  `${item.originName || item.name || 'item'}-${item.cmd || index}`;
 
 const openPlugin = (item) => {
   emit('choosePlugin', item);
@@ -209,7 +265,8 @@ initMainCmdMenus();
 }
 
 .matched-title {
-  color: var(--ant-error-color);
+  color: var(--ant-primary-color);
+  font-weight: 650;
 }
 
 .contextmenu {
@@ -235,6 +292,24 @@ initMainCmdMenus();
   max-height: calc(~'100vh - 60px');
   overflow: auto;
   background: var(--color-body-bg);
+  border-top: 1px solid var(--color-border-subtle);
+
+  .section-heading {
+    height: 28px;
+    padding: 8px 12px 0;
+    box-sizing: border-box;
+    display: flex;
+    align-items: flex-start;
+    justify-content: space-between;
+    color: var(--color-text-desc);
+    font-size: 11px;
+    font-weight: 600;
+    letter-spacing: 0.02em;
+    .section-hint {
+      font-weight: 400;
+      color: var(--color-text-muted);
+    }
+  }
 
   /* 无结果时空状态插图不被裁切、居中 */
   .ant-list-empty-text {
@@ -253,61 +328,145 @@ initMainCmdMenus();
   }
   .history-plugins {
     width: 100%;
-    border-top: 1px dashed var(--color-border-light);
     box-sizing: border-box;
     .history-item {
       cursor: pointer;
       box-sizing: border-box;
-      height: 69px;
+      height: 70px;
       display: flex;
       align-items: center;
       justify-content: center;
       flex-direction: column;
       color: var(--color-text-content);
-      border-right: 1px dashed var(--color-border-light);
       position: relative;
+      border-radius: var(--radius-md);
+      transition:
+        background-color var(--motion-fast) ease,
+        transform var(--motion-fast) ease;
+      &:hover {
+        background: var(--color-fill-subtle);
+      }
       .badge {
         position: absolute;
-        top: 2px;
-        right: 2px;
-        width: 0;
-        height: 0;
-        border-radius: 4px;
-        border-top: 6px solid var(--ant-primary-4);
-        border-right: 6px solid var(--ant-primary-4);
-        border-left: 6px solid transparent;
-        border-bottom: 6px solid transparent;
+        top: 8px;
+        right: 10px;
+        width: 6px;
+        height: 6px;
+        border-radius: 50%;
+        background: var(--ant-primary-color);
+        box-shadow: 0 0 0 2px var(--color-body-bg);
       }
       &.active {
         background: var(--color-list-hover);
+        box-shadow: inset 0 0 0 1px var(--color-border-subtle);
       }
+    }
+    .ant-row {
+      padding: 4px 6px 6px;
+    }
+    .history-icon {
+      width: 30px;
+      height: 30px;
+      border-radius: 9px;
+      background: var(--color-fill-subtle);
     }
     .name {
       font-size: 12px;
-      margin-top: 4px;
+      margin-top: 5px;
       width: 100%;
       text-align: center;
     }
   }
   .op-item {
-    padding: 0 10px;
+    padding: 0 14px;
     height: 70px;
     line-height: 50px;
     max-height: 500px;
     overflow: auto;
     background: var(--color-body-bg);
     color: var(--color-text-content);
-    border-color: var(--color-border-light);
-    border-bottom: 1px solid var(--color-border-light) !important;
+    border-color: transparent;
+    border-bottom: 1px solid var(--color-border-subtle) !important;
+    cursor: pointer;
+    transition: background-color var(--motion-fast) ease;
+    &:last-child {
+      border-bottom: 0 !important;
+    }
+    &:hover {
+      background: var(--color-fill-subtle);
+    }
     &.active {
       background: var(--color-list-hover);
+      box-shadow: var(--shadow-selection);
     }
     .ant-list-item-meta-title {
       color: var(--color-text-content);
     }
     .ant-list-item-meta-description {
       color: var(--color-text-desc);
+      font-size: 12px;
+      line-height: 18px;
     }
+    .result-icon {
+      width: 38px;
+      height: 38px;
+      border-radius: 10px;
+      background: var(--color-fill-subtle);
+    }
+    .open-hint {
+      flex: 0 0 auto;
+      margin-left: 12px;
+      padding: 3px 7px;
+      color: var(--color-text-desc);
+      background: var(--color-fill-hover);
+      border: 1px solid var(--color-border-subtle);
+      border-radius: var(--radius-sm);
+      font-size: 11px;
+      line-height: 16px;
+    }
+  }
+  .empty-state {
+    height: 154px;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    padding: 16px;
+    box-sizing: border-box;
+    text-align: center;
+    .empty-icon {
+      width: 38px;
+      height: 38px;
+      margin-bottom: 10px;
+      border-radius: 12px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      color: var(--color-text-desc);
+      background: var(--color-fill-subtle);
+      font-size: 18px;
+    }
+    .empty-title {
+      color: var(--color-text-primary);
+      font-size: 14px;
+      font-weight: 600;
+    }
+    .empty-description {
+      margin-top: 4px;
+      color: var(--color-text-desc);
+      font-size: 12px;
+    }
+  }
+  .sr-only {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    padding: 0;
+    margin: -1px;
+    overflow: hidden;
+    clip: rect(0, 0, 0, 0);
+    white-space: nowrap;
+    border: 0;
   }
 }
 </style>

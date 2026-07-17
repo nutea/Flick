@@ -1,25 +1,53 @@
 :root {
-  --color-text-primary: rgba(0, 0, 0, 0.85);
-  --color-text-content: #141414;
-  --color-text-desc: rgba(0, 0, 0, 0.45);
+  --color-text-primary: #18181b;
+  --color-text-content: #27272a;
+  --color-text-desc: #71717a;
+  --color-text-muted: #a1a1aa;
   // 背景色
   --color-body-bg: #fff;
   --color-menu-bg: rgb(248, 248, 248);
-  --color-list-hover: rgba(247, 247, 247);
+  --color-list-hover: #f4f4f5;
   --color-input-hover: #fff;
+  --color-fill-subtle: #f7f7f8;
+  --color-fill-hover: #ececef;
   // 边框
   --color-border-light: #f0f0f0;
+  --color-border-subtle: #e8e8eb;
+  --color-focus-ring: color-mix(
+    in srgb,
+    var(--ant-primary-color) 55%,
+    transparent
+  );
+  --shadow-selection: inset 3px 0 0 var(--ant-primary-color);
+  --radius-sm: 6px;
+  --radius-md: 9px;
+  --radius-lg: 12px;
+  --motion-fast: 140ms;
 }
 
 .dark {
   --color-text-primary: #e8e8f0;
   --color-text-content: #ccccd8;
   --color-text-desc: #8f8fa6;
+  --color-text-muted: #6f7082;
   // 背景色
   --color-body-bg: #1c1c28;
   --color-menu-bg: #1c1c28;
   --color-list-hover: #2c2f3b;
   --color-input-hover: #444d;
+  --color-fill-subtle: #242531;
+  --color-fill-hover: #30313f;
   // 边框
   --color-border-light: #33333d;
+  --color-border-subtle: #363744;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    scroll-behavior: auto !important;
+    transition-duration: 0.01ms !important;
+    animation-duration: 0.01ms !important;
+  }
 }

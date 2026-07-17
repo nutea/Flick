@@ -1,7 +1,8 @@
 const WINDOW_MAX_HEIGHT = 620;
 const WINDOW_MIN_HEIGHT = 60;
 const PRE_ITEM_HEIGHT = 70;
-const HISTORY_HEIGHT = 70;
+const HISTORY_HEIGHT = 108;
+const EMPTY_STATE_HEIGHT = 154;
 
 export type GetWindowHeightOpts = {
   searchValue?: string | number;
@@ -37,6 +38,9 @@ export default (
   if (!searchList.length) {
     if (showHistoryPanel) {
       return WINDOW_MIN_HEIGHT + HISTORY_HEIGHT;
+    }
+    if (sv || hasClipboard) {
+      return WINDOW_MIN_HEIGHT + EMPTY_STATE_HEIGHT;
     }
     return WINDOW_MIN_HEIGHT;
   }
