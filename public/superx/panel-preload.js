@@ -24,10 +24,13 @@ electron_1.contextBridge.exposeInMainWorld('superPanel', {
     openPlugin: (payload) => electron_1.ipcRenderer.send('msg-trigger', { type: 'openPlugin', data: payload }),
     showMainWindow: () => electron_1.ipcRenderer.send('msg-trigger', { type: 'showMainWindow' }),
     hide: () => electron_1.ipcRenderer.send('superPanel-hidden'),
-    contentApplied: () => electron_1.ipcRenderer.send('superPanel-content-applied'),
-    setHeight: (height) => {
-        if (Number.isFinite(height))
-            electron_1.ipcRenderer.send('superPanel-setSize', height);
+    contentApplied: (requestId) => electron_1.ipcRenderer.send('superPanel-content-applied', requestId),
+    reportLayout: (layout) => {
+        if (!layout || !Number.isInteger(layout.requestId))
+            return;
+        if (!Number.isFinite(layout.height))
+            return;
+        electron_1.ipcRenderer.send('superPanel-report-layout', layout);
     },
     setPinned: (pinned) => electron_1.ipcRenderer.send('trigger-pin', Boolean(pinned)),
     getPinState: () => electron_1.ipcRenderer.invoke('superPanel-get-pin-state'),

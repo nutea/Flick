@@ -1,9 +1,13 @@
 import { createStore } from 'vuex';
 import request from '@/assets/request';
+import { normalizePluginPresentations } from '@/utils/pluginPresentation';
+
+const normalizeMarketPlugins = (value: unknown): Market.Plugin[] =>
+  normalizePluginPresentations<Market.Plugin>(value);
 
 const getTotalPluginsSafe = async (): Promise<Market.Plugin[]> => {
   try {
-    return await request.getTotalPlugins();
+    return normalizeMarketPlugins(await request.getTotalPlugins());
   } catch {
     return [];
   }
@@ -55,9 +59,13 @@ export default createStore({
     async init({ commit }) {
       const tPlugins = await getTotalPluginsSafe();
       const lTPlugins = window.flick.db.get(LOCAL_PLUGIN_JSON);
-      const totalPlugins = tPlugins.concat(JSON.parse(lTPlugins?.data || '[]'));
+      const totalPlugins = normalizeMarketPlugins(
+        tPlugins.concat(JSON.parse(lTPlugins?.data || '[]'))
+      );
 
-      const localPlugins = window.market.getLocalPlugins();
+      const localPlugins = normalizeMarketPlugins(
+        window.market.getLocalPlugins()
+      );
 
       totalPlugins.forEach((origin: Market.Plugin) => {
         origin.isdownload = isDownload(origin, localPlugins);
@@ -85,8 +93,22 @@ export default createStore({
       });
     },
 
+    errorDownload({ commit, state }, name) {
+      const totalPlugins = JSON.parse(JSON.stringify(state.totalPlugins));
+      totalPlugins.forEach((origin: Market.Plugin) => {
+        if (origin.name === name) {
+          origin.isloading = false;
+        }
+      });
+      commit('commonUpdate', {
+        totalPlugins,
+      });
+    },
+
     startUnDownload({ commit }, name) {
-      const localPlugins = window.market.getLocalPlugins();
+      const localPlugins = normalizeMarketPlugins(
+        window.market.getLocalPlugins()
+      );
       localPlugins.forEach((origin: Market.Plugin) => {
         if (origin.name === name) {
           origin.isloading = true;
@@ -98,7 +120,9 @@ export default createStore({
     },
 
     errorUnDownload({ commit }, name) {
-      const localPlugins = window.market.getLocalPlugins();
+      const localPlugins = normalizeMarketPlugins(
+        window.market.getLocalPlugins()
+      );
       // 修复卸载失败，一直转圈的问题。
       localPlugins.forEach((origin: Market.Plugin) => {
         if (origin.name === name) {
@@ -119,7 +143,9 @@ export default createStore({
           origin.isdownload = true;
         }
       });
-      const localPlugins = window.market.getLocalPlugins();
+      const localPlugins = normalizeMarketPlugins(
+        window.market.getLocalPlugins()
+      );
 
       commit('commonUpdate', {
         totalPlugins,
@@ -128,7 +154,9 @@ export default createStore({
     },
 
     async updateLocalPlugin({ commit }) {
-      const localPlugins = window.market.getLocalPlugins();
+      const localPlugins = normalizeMarketPlugins(
+        window.market.getLocalPlugins()
+      );
       const totalPlugins = await getTotalPluginsSafe();
 
       totalPlugins.forEach((origin: Market.Plugin) => {

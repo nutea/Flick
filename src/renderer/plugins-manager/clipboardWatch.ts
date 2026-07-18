@@ -2,10 +2,6 @@ import pluginClickEvent from './pluginClickEvent';
 import localConfig from '../confOp';
 import { ref } from 'vue';
 
-const { clipboard, nativeImage, ipcRenderer } = window.require('electron');
-const { getGlobal } = window.require('@electron/remote');
-const path = window.require('path');
-
 export default ({ currentPlugin, optionsRef, openPlugin, setOptionsRef }) => {
   const clipboardFile: any = ref([]);
   const searchFocus = (files, strict = true) => {
@@ -19,7 +15,7 @@ export default ({ currentPlugin, optionsRef, openPlugin, setOptionsRef }) => {
     if (fileList) {
       window.setSubInputValue({ value: '' });
       clipboardFile.value = fileList;
-      const localPlugins = getGlobal('LOCAL_PLUGINS').getLocalPlugins();
+      const localPlugins = window.flick.getLocalPlugins();
       const options: any = [
         {
           name: '复制路径',
@@ -28,14 +24,18 @@ export default ({ currentPlugin, optionsRef, openPlugin, setOptionsRef }) => {
           icon: '',
           desc: '复制路径到剪切板',
           click: () => {
-            clipboard.writeText(fileList.map((file) => file.path).join(','));
-            ipcRenderer.send('msg-trigger', { type: 'hideMainWindow' });
+            window.flick.clipboard.writeText(
+              fileList.map((file) => file.path).join(',')
+            );
+            window.flick.hideMainWindow();
           },
         },
       ];
       // 判断复制的文件类型是否一直
       const commonLen = fileList.filter(
-        (file) => path.extname(fileList[0].path) === path.extname(file.path)
+        (file) =>
+          window.flick.pathExtension(fileList[0].path) ===
+          window.flick.pathExtension(file.path)
       ).length;
       // 复制路径
       if (commonLen !== fileList.length) {
@@ -50,7 +50,7 @@ export default ({ currentPlugin, optionsRef, openPlugin, setOptionsRef }) => {
           // 系统插件无 features 的情况，不需要再搜索
           if (!feature) return;
           feature.forEach((fe) => {
-            const ext = path.extname(fileList[0].path);
+            const ext = window.flick.pathExtension(fileList[0].path);
             fe.cmds.forEach((cmd) => {
               const regImg = /\.(png|jpg|gif|jpeg|webp)$/;
               if (
@@ -61,7 +61,7 @@ export default ({ currentPlugin, optionsRef, openPlugin, setOptionsRef }) => {
                 const option = {
                   name: cmd.label,
                   value: 'plugin',
-                  icon: plugin.logo,
+                  icon: plugin.logoUrl,
                   desc: fe.explain,
                   type: plugin.pluginType,
                   click: () => {
@@ -72,9 +72,9 @@ export default ({ currentPlugin, optionsRef, openPlugin, setOptionsRef }) => {
                       ext: {
                         code: fe.code,
                         type: cmd.type || 'text',
-                        payload: nativeImage
-                          .createFromPath(fileList[0].path)
-                          .toDataURL(),
+                        payload: window.flick.clipboard.imageFileDataUrl(
+                          fileList[0].path
+                        ),
                       },
                       openPlugin,
                       option,
@@ -92,7 +92,7 @@ export default ({ currentPlugin, optionsRef, openPlugin, setOptionsRef }) => {
                 const option = {
                   name: cmd,
                   value: 'plugin',
-                  icon: plugin.logo,
+                  icon: plugin.logoUrl,
                   desc: fe.explain,
                   type: plugin.pluginType,
                   click: () => {
@@ -118,18 +118,18 @@ export default ({ currentPlugin, optionsRef, openPlugin, setOptionsRef }) => {
         });
       }
       setOptionsRef(options);
-      clipboard.clear();
+      window.flick.clipboard.clear();
       return;
     }
-    const clipboardType = clipboard.availableFormats();
+    const clipboardType = window.flick.clipboard.availableFormats();
     if (!clipboardType.length) return;
     if ('text/plain' === clipboardType[0]) {
-      const contentText = clipboard.readText();
+      const contentText = window.flick.clipboard.readText();
       if (contentText.trim()) {
         clearClipboardFile();
         window.setSubInputValue({ value: contentText });
       }
-      clipboard.clear();
+      window.flick.clipboard.clear();
     }
   };
 
@@ -140,8 +140,7 @@ export default ({ currentPlugin, optionsRef, openPlugin, setOptionsRef }) => {
   // 触发 ctrl + v 主动粘贴时
   const readClipboardContent = () => {
     // read image
-    const img = clipboard.readImage();
-    const dataUrl = img.toDataURL();
+    const dataUrl = window.flick.clipboard.readImageDataUrl();
     if (!dataUrl.replace('data:image/png;base64,', '')) return;
     clipboardFile.value = [
       {
@@ -151,7 +150,7 @@ export default ({ currentPlugin, optionsRef, openPlugin, setOptionsRef }) => {
         dataUrl,
       },
     ];
-    const localPlugins = getGlobal('LOCAL_PLUGINS').getLocalPlugins();
+    const localPlugins = window.flick.getLocalPlugins();
     const options: any = [];
     // 再正则插件
     localPlugins.forEach((plugin) => {
@@ -164,7 +163,7 @@ export default ({ currentPlugin, optionsRef, openPlugin, setOptionsRef }) => {
             const option = {
               name: cmd.label,
               value: 'plugin',
-              icon: plugin.logo,
+              icon: plugin.logoUrl,
               desc: fe.explain,
               type: plugin.pluginType,
               click: () => {

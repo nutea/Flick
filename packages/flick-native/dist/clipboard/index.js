@@ -73,6 +73,18 @@ const writeWindowsFilePaths = (files) => {
     }
 };
 exports.clipboard = {
+    getChangeToken() {
+        const addon = tryLoadNativeAddon();
+        if (typeof (addon === null || addon === void 0 ? void 0 : addon.getClipboardChangeToken) !== 'function')
+            return null;
+        try {
+            const token = addon.getClipboardChangeToken();
+            return Number.isFinite(token) && token > 0 ? token : null;
+        }
+        catch {
+            return null;
+        }
+    },
     async getClipboardContent() {
         const electron = tryLoadElectron();
         if (!electron)

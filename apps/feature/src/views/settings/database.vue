@@ -53,7 +53,7 @@
             </div>
           </template>
           <template #avatar>
-            <a-avatar shape="square" :src="item.plugin?.logo" />
+            <a-avatar shape="square" :src="item.plugin?.logoUrl" />
           </template>
           <template #description>
             <div style="color: var(--color-text-desc)">
@@ -169,6 +169,7 @@ import {
 import { message, Modal } from 'ant-design-vue';
 import { useI18n } from 'vue-i18n';
 import featureLogoUrl from '../../assets/logo.png';
+import { toMarketPayload } from '@/utils/marketPayload';
 
 const { t } = useI18n();
 
@@ -269,12 +270,21 @@ const dataPlugins = computed(() => {
 
 const startDownload = (name) => store.dispatch('startDownload', name);
 const successDownload = (name) => store.dispatch('successDownload', name);
+const errorDownload = (name) => store.dispatch('errorDownload', name);
 
 const downloadPlugin = async (plugin) => {
-  startDownload(plugin.name);
-  await window.market.downloadPlugin(plugin);
-  message.success(t('feature.dev.installSuccess', { pluginName: plugin.name }));
-  successDownload(plugin.name);
+  await startDownload(plugin.name);
+  try {
+    await window.market.downloadPlugin(toMarketPayload(plugin));
+    await successDownload(plugin.name);
+    message.success(
+      t('feature.dev.installSuccess', { pluginName: plugin.name })
+    );
+  } catch (error) {
+    await errorDownload(plugin.name);
+    const reason = error instanceof Error ? error.message : String(error || '');
+    message.error(reason ? `插件安装失败：${reason}` : '插件安装失败，请重试');
+  }
 };
 </script>
 <style lang="less">

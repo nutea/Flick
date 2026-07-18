@@ -13,6 +13,7 @@
     "packages:build": "pnpm --filter flick-native run build",
     "build": "pnpm packages:build && electron-vite build",
     "check:runtime-deps": "node scripts/check-runtime-deps.mjs",
+    "smoke:plugin-preload": "electron scripts/plugin-preload-smoke.cjs",
     "lint": "eslint src --max-warnings=0",
     "lint:all": "pnpm lint && pnpm lint:apps",
     "typecheck": "vue-tsc --noEmit -p tsconfig.json",

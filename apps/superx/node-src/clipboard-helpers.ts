@@ -85,7 +85,7 @@ export function getFilePathFromClipboard(clipboard: ClipboardApi): FileEntry[] {
   return filePath;
 }
 
-/** 用于对比「模拟复制前后」以及「与面板上次处理时」的剪贴板状态 */
+/** 仅用于不支持系统剪贴板变更令牌的平台降级检测。 */
 export interface ClipboardSnap {
   text: string;
   pathStr: string;
@@ -101,17 +101,10 @@ export function snapshotClipboard(clipboard: ClipboardApi): ClipboardSnap {
   return { text, pathStr, hasImage };
 }
 
-export function clipboardSnapsEqual(
-  a: ClipboardSnap,
-  b: ClipboardSnap
-): boolean {
+function clipboardSnapsEqual(a: ClipboardSnap, b: ClipboardSnap): boolean {
   return (
     a.text === b.text && a.pathStr === b.pathStr && a.hasImage === b.hasImage
   );
-}
-
-function snapUnchanged(a: ClipboardSnap, b: ClipboardSnap): boolean {
-  return clipboardSnapsEqual(a, b);
 }
 
 /** 从当前剪贴板解析为面板用的 text / fileUrl（路径优先） */
@@ -131,22 +124,125 @@ export function readClipboardPayload(clipboard: ClipboardApi): {
   };
 }
 
+export type SelectedContentResult =
+  | {
+      status: 'selected';
+      source: 'accessibility' | 'shell' | 'clipboard-copy';
+      text: string;
+      fileUrl: string;
+    }
+  | {
+      status: 'none' | 'timeout';
+      text: '';
+      fileUrl: '';
+    };
+
+export interface SelectedContentOptions {
+  readSelectedText?: () => Promise<string>;
+  readSelectedFilePaths?: () => Promise<string[]>;
+  getClipboardChangeToken?: () => number | null;
+  directReadTimeoutMs?: number;
+  copyTimeoutMs?: number;
+  pollIntervalMs?: number;
+}
+
+const wait = (ms: number) =>
+  new Promise<void>((resolve) => setTimeout(resolve, ms));
+
+async function readDirectSelection(
+  readSelectedText: (() => Promise<string>) | undefined,
+  timeoutMs: number
+): Promise<string> {
+  if (!readSelectedText) return '';
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  try {
+    return await Promise.race([
+      readSelectedText().catch(() => ''),
+      new Promise<string>((resolve) => {
+        timer = setTimeout(() => resolve(''), timeoutMs);
+      }),
+    ]);
+  } finally {
+    if (timer) clearTimeout(timer);
+  }
+}
+
 export async function getSelectedContent(
   clipboard: ClipboardApi,
-  simulateCopy: () => Promise<void>
-): Promise<{ text: string; fileUrl: string }> {
-  const before = snapshotClipboard(clipboard);
-  await simulateCopy();
-  return new Promise((resolve) => {
-    setTimeout(() => {
-      const after = snapshotClipboard(clipboard);
-      if (snapUnchanged(before, after)) {
-        resolve({ text: '', fileUrl: '' });
-        return;
+  simulateCopy: () => Promise<void>,
+  options: SelectedContentOptions = {}
+): Promise<SelectedContentResult> {
+  const directText = await readDirectSelection(
+    options.readSelectedText,
+    options.directReadTimeoutMs ?? 120
+  );
+  if (directText.length > 0) {
+    return {
+      status: 'selected',
+      source: 'accessibility',
+      text: directText,
+      fileUrl: '',
+    };
+  }
+
+  if (options.readSelectedFilePaths) {
+    try {
+      const selectedPaths = await options.readSelectedFilePaths();
+      const firstPath = selectedPaths.find(Boolean);
+      if (firstPath) {
+        return {
+          status: 'selected',
+          source: 'shell',
+          text: '',
+          fileUrl: firstPath,
+        };
       }
-      resolve(readClipboardPayload(clipboard));
-    }, 50);
-  });
+    } catch {
+      /* Shell selection is optional; fall through to a single copy. */
+    }
+  }
+
+  const getChangeToken = options.getClipboardChangeToken;
+  const beforeToken = getChangeToken?.() ?? null;
+  const beforeSnap = beforeToken === null ? snapshotClipboard(clipboard) : null;
+
+  try {
+    await simulateCopy();
+  } catch {
+    return { status: 'none', text: '', fileUrl: '' };
+  }
+
+  const timeoutMs = options.copyTimeoutMs ?? 250;
+  const pollIntervalMs = Math.max(4, options.pollIntervalMs ?? 10);
+  const deadline = Date.now() + timeoutMs;
+
+  while (Date.now() <= deadline) {
+    let changed = false;
+    if (beforeToken !== null && getChangeToken) {
+      const currentToken = getChangeToken();
+      changed = currentToken !== null && currentToken !== beforeToken;
+    } else if (beforeSnap) {
+      changed = !clipboardSnapsEqual(beforeSnap, snapshotClipboard(clipboard));
+    }
+
+    if (changed) {
+      const payload = readClipboardPayload(clipboard);
+      // Some applications empty the clipboard and publish the new formats in
+      // separate steps. Do not treat the intermediate empty state as a copy.
+      if (!payload.text && !payload.fileUrl) {
+        await wait(pollIntervalMs);
+        continue;
+      }
+      return {
+        status: 'selected',
+        source: 'clipboard-copy',
+        ...payload,
+      };
+    }
+    await wait(pollIntervalMs);
+  }
+
+  return { status: 'timeout', text: '', fileUrl: '' };
 }
 
 /**

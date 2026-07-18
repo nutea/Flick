@@ -1,6 +1,6 @@
 import { ipcMain, shell, type WebContents } from 'electron';
 import fs from 'fs';
-import path from 'path';
+import { presentPlugins } from './pluginPresentation';
 
 const CHANNELS = {
   getLocalPlugins: 'feature:get-local-plugins',
@@ -19,23 +19,6 @@ function isFeatureSender(sender: WebContents): boolean {
 
 function cloneForRenderer<T>(value: T): T {
   return JSON.parse(JSON.stringify(value)) as T;
-}
-
-function normalizePluginLogos(value: unknown): unknown {
-  if (!Array.isArray(value)) return cloneForRenderer(value);
-  return value.map((row) => {
-    if (!row || typeof row !== 'object' || Array.isArray(row)) return row;
-    const plugin = cloneForRenderer(row as Record<string, unknown>);
-    const logo = plugin.logo;
-    if (typeof logo === 'string') {
-      if (logo.startsWith('file://')) {
-        plugin.logo = `image://${logo.slice('file://'.length)}`;
-      } else if (path.isAbsolute(logo)) {
-        plugin.logo = `image://${logo}`;
-      }
-    }
-    return plugin;
-  });
 }
 
 function pluginManager(): any {
@@ -68,7 +51,7 @@ export function registerFeatureBridgeIpc(contents: WebContents): void {
       event.returnValue = [];
       return;
     }
-    event.returnValue = normalizePluginLogos(pluginManager().getLocalPlugins());
+    event.returnValue = presentPlugins(pluginManager().getLocalPlugins());
   });
 
   for (const channel of Object.values(CHANNELS).filter(
@@ -83,19 +66,19 @@ export function registerFeatureBridgeIpc(contents: WebContents): void {
 
   ipcMain.handle(CHANNELS.downloadPlugin, async (event, raw: unknown) => {
     if (!isFeatureSender(event.sender)) throw new Error('Untrusted sender');
-    return normalizePluginLogos(
+    return presentPlugins(
       await pluginManager().downloadPlugin(normalizePluginPayload(raw))
     );
   });
   ipcMain.handle(CHANNELS.deletePlugin, async (event, raw: unknown) => {
     if (!isFeatureSender(event.sender)) throw new Error('Untrusted sender');
-    return normalizePluginLogos(
+    return presentPlugins(
       await pluginManager().deletePlugin(normalizePluginPayload(raw))
     );
   });
   ipcMain.handle(CHANNELS.refreshPlugin, async (event, raw: unknown) => {
     if (!isFeatureSender(event.sender)) throw new Error('Untrusted sender');
-    return normalizePluginLogos(
+    return presentPlugins(
       await pluginManager().refreshPlugin(normalizePluginPayload(raw))
     );
   });

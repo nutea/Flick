@@ -24,8 +24,9 @@
       >
         <img
           class="flick-logo"
-          :src="currentPlugin.logo || config.perf.custom.logo"
+          :src="searchLogoUrl"
           alt=""
+          @error="logoLoadFailed = true"
         />
       </button>
       <div class="select-tag" v-show="currentPlugin.cmd">
@@ -100,11 +101,10 @@ import {
   MoreOutlined,
 } from '@ant-design/icons-vue';
 import fileIconUrl from '../assets/file.png';
+import { normalizeDetachInputCapability } from '@/common/utils/detachInput';
+import { resolveRecentPluginNavigation } from '../utils/recentPluginNavigation';
 
-const remote = window.require('@electron/remote');
-const { ipcRenderer } = window.require('electron');
 import localConfig from '../confOp';
-const { Menu, dialog } = remote;
 
 const config: any = ref(localConfig.getConfig());
 const clipboardIcon = ref('');
@@ -134,6 +134,7 @@ const props = withDefaults(
     currentPlugin?: PluginItem;
     pluginLoading?: boolean;
     clipboardFile?: PluginItem[];
+    recentPluginNavigationEnabled?: boolean;
   }>(),
   {
     searchValue: '',
@@ -142,6 +143,22 @@ const props = withDefaults(
     currentPlugin: () => ({}),
     pluginLoading: false,
     clipboardFile: () => [],
+    recentPluginNavigationEnabled: false,
+  }
+);
+
+const logoLoadFailed = ref(false);
+const defaultLogoUrl = config.value.perf.custom.logoUrl;
+const searchLogoUrl = computed(() =>
+  logoLoadFailed.value
+    ? defaultLogoUrl
+    : props.currentPlugin.logoUrl || config.value.perf.custom.logoUrl
+);
+
+watch(
+  () => [props.currentPlugin.logoUrl, config.value.perf.custom.logoUrl],
+  () => {
+    logoLoadFailed.value = false;
   }
 );
 
@@ -185,13 +202,7 @@ const keydownEvent = (e, key: string) => {
   shiftKey && modifiers.push('shift');
   altKey && modifiers.push('alt');
   metaKey && modifiers.push('meta');
-  ipcRenderer.send('msg-trigger', {
-    type: 'sendPluginSomeKeyDownEvent',
-    data: {
-      keyCode: e.code,
-      modifiers,
-    },
-  });
+  window.flick.sendPluginKeyDown(e.code, modifiers);
   const runPluginDisable =
     (e.target.value === '' && !props.pluginHistory.length) ||
     props.currentPlugin.name;
@@ -232,7 +243,7 @@ const checkNeedInit = (e) => {
       props.currentPlugin?.name || props.currentPlugin?.cmd;
     const hasClipboard = !!props.clipboardFile?.length;
     if (hasPluginContext || hasClipboard) {
-      closeTag();
+      void closeTag();
     }
   }
   // 手动粘贴
@@ -252,12 +263,29 @@ const handleKeydown = (e) => {
       props.clipboardFile.length
     ) {
       if (e.target.value) emit('clearSearchValue');
-      else closeTag();
+      else void closeTag();
     } else {
-      ipcRenderer.send('msg-trigger', { type: 'hideMainWindow' });
+      window.flick.hideMainWindow();
     }
     return;
   }
+
+  const recentPluginDirection = resolveRecentPluginNavigation({
+    key: e.key,
+    value: e.target.value,
+    enabled: props.recentPluginNavigationEnabled,
+    isComposing: e.isComposing,
+    ctrlKey: e.ctrlKey,
+    shiftKey: e.shiftKey,
+    altKey: e.altKey,
+    metaKey: e.metaKey,
+  });
+  if (recentPluginDirection) {
+    e.preventDefault();
+    emit('changeCurrent', recentPluginDirection);
+    return;
+  }
+
   const keyMap: Record<string, string> = {
     ArrowDown: 'down',
     ArrowUp: 'up',
@@ -270,106 +298,95 @@ const handleKeydown = (e) => {
 
 const targetSearch = ({ value }) => {
   if (props.currentPlugin.name) {
-    return ipcRenderer.sendSync('msg-trigger', {
-      type: 'sendSubInputChangeEvent',
-      data: { text: value },
-    });
+    return window.flick.sendSubInputChange(value);
   }
 };
 
-const closeTag = () => {
-  emit('changeSelect', {});
-  emit('clearClipbord');
-  ipcRenderer.send('msg-trigger', {
-    type: 'removePlugin',
-  });
+let closingPlugin = false;
+const closeTag = async () => {
+  if (closingPlugin) return;
+  closingPlugin = true;
+  try {
+    await window.flick.removePlugin();
+    emit('changeSelect', {});
+    emit('clearClipbord');
+  } finally {
+    closingPlugin = false;
+  }
 };
 
 const showSeparate = async () => {
   let pluginMenu: any[] = [
     {
+      id: 'toggle-hide-on-blur',
       label: config.value.perf.common.hideOnBlur ? '钉住' : '自动隐藏',
-      click: changeHideOnBlur,
     },
     {
+      id: 'language',
       label:
         config.value.perf.common.lang === 'zh-CN'
           ? '切换语言'
           : 'Change Language',
       submenu: [
         {
+          id: 'language-zh-CN',
           label: '简体中文',
-          click: () => {
-            changeLang('zh-CN');
-          },
         },
         {
+          id: 'language-en-US',
           label: 'English',
-          click: () => {
-            changeLang('en-US');
-          },
         },
       ],
     },
   ];
-  if (props.currentPlugin && props.currentPlugin.logo) {
+  if (props.currentPlugin && props.currentPlugin.logoUrl) {
     const separateKey = config.value.perf.shortCut.separate || 'Ctrl+D';
     const name = props.currentPlugin.name;
     const canFileConfig = name && name !== 'flick-system-super-panel';
     const flickCfg = canFileConfig
-      ? await ipcRenderer.invoke('flick:get-plugin-flick-config', name)
-      : { autoDetach: false, detachAlwaysShowSearch: false };
+      ? await window.flick.getPluginFlickConfig(name)
+      : { autoDetach: false, detachInputPolicy: 'auto' };
     const autoDetachOn = !!flickCfg.autoDetach;
-    const detachAlwaysShowSearchOn = !!flickCfg.detachAlwaysShowSearch;
+    const detachInputPolicy = flickCfg.detachInputPolicy ?? 'auto';
+    const detachInputCapability = normalizeDetachInputCapability(
+      props.currentPlugin.pluginSetting?.detach?.input
+    );
 
     const pluginBlock: any[] = [
       {
+        id: 'detach-plugin',
         label: '分离为独立窗口',
         accelerator: separateKey,
-        click: newWindow,
       },
       { type: 'separator' },
       {
+        id: 'about-plugin',
         label: '关于插件应用',
-        click: () => {
-          const p = props.currentPlugin;
-          const lines = [
-            p.pluginName || p.name,
-            p.version ? `版本：${p.version}` : '',
-            p.description || '',
-          ].filter(Boolean);
-          dialog.showMessageBoxSync({
-            type: 'info',
-            title: '关于插件应用',
-            message: lines[0] || p.name,
-            detail: lines.slice(1).join('\n') || undefined,
-            buttons: ['确定'],
-            noLink: true,
-          });
-        },
       },
     ];
     const settingsSubmenu: any[] = [];
     if (canFileConfig) {
       settingsSubmenu.push({
+        id: 'toggle-auto-detach',
         label: '自动分离为独立窗口',
         type: 'checkbox',
         checked: autoDetachOn,
-        click() {
-          void ipcRenderer.invoke('flick:flip-plugin-auto-detach', name);
-        },
       });
-      settingsSubmenu.push({
-        label: '独立窗口显示搜索框',
-        type: 'checkbox',
-        checked: detachAlwaysShowSearchOn,
-        click() {
-          void ipcRenderer.invoke(
-            'flick:flip-plugin-detach-always-show-search',
-            name
-          );
-        },
-      });
+      if (detachInputCapability === 'optional') {
+        settingsSubmenu.push({
+          id: 'toggle-detach-input-policy',
+          label: '始终显示标题栏输入框',
+          type: 'checkbox',
+          checked: detachInputPolicy === 'always',
+        });
+      } else if (detachInputCapability === 'required') {
+        settingsSubmenu.push({
+          label: '标题栏输入框（插件需要）',
+          type: 'checkbox',
+          checked: true,
+          enabled: false,
+        });
+      }
     }
     if (canFileConfig && settingsSubmenu.length) {
       pluginBlock.push({
@@ -380,30 +397,48 @@ const showSeparate = async () => {
     pluginBlock.push(
       { type: 'separator' },
       {
+        id: 'hide-main-window',
         label: '退出到后台',
         accelerator: 'Escape',
-        click: () => {
-          ipcRenderer.send('msg-trigger', { type: 'hideMainWindow' });
-        },
       },
       {
+        id: 'stop-plugin',
         label: '结束运行',
-        click: () => {
-          ipcRenderer.send('msg-trigger', { type: 'removePlugin' });
-        },
       },
       { type: 'separator' },
       {
+        id: 'open-devtools',
         label: '开发者工具',
-        click: () => {
-          ipcRenderer.send('msg-trigger', { type: 'openPluginDevTools' });
-        },
       }
     );
     pluginMenu = pluginMenu.concat(pluginBlock);
   }
-  const menu = Menu.buildFromTemplate(pluginMenu);
-  menu.popup();
+  const action = await window.flick.showContextMenu(pluginMenu);
+  const name = props.currentPlugin?.name;
+  if (action === 'toggle-hide-on-blur') changeHideOnBlur();
+  else if (action === 'language-zh-CN') changeLang('zh-CN');
+  else if (action === 'language-en-US') changeLang('en-US');
+  else if (action === 'detach-plugin') newWindow();
+  else if (action === 'toggle-auto-detach' && name)
+    await window.flick.flipPluginAutoDetach(name);
+  else if (action === 'toggle-detach-input-policy' && name)
+    await window.flick.flipPluginDetachInputPolicy(name);
+  else if (action === 'hide-main-window') window.flick.hideMainWindow();
+  else if (action === 'stop-plugin') await closeTag();
+  else if (action === 'open-devtools') window.flick.openPluginDevTools();
+  else if (action === 'about-plugin') {
+    const p = props.currentPlugin;
+    const lines = [
+      p.pluginName || p.name,
+      p.version ? `版本：${p.version}` : '',
+      p.description || '',
+    ].filter(Boolean);
+    await window.flick.showMessageBox({
+      title: '关于插件应用',
+      message: lines[0] || p.name,
+      detail: lines.slice(1).join('\n') || undefined,
+    });
+  }
 };
 
 const changeLang = (lang) => {
@@ -458,20 +493,18 @@ watch(
 );
 
 const newWindow = () => {
-  ipcRenderer.send('msg-trigger', {
-    type: 'detachPlugin',
-  });
+  window.flick.detachPlugin();
   // todo
 };
 
 const mainInput = ref(null);
-window.flick.hooks.onShow = () => {
+window.flick.onShow(() => {
   (mainInput.value as unknown as HTMLDivElement).focus();
-};
+});
 
-window.flick.hooks.onHide = () => {
+window.flick.onHide(() => {
   emit('clearSearchValue');
-};
+});
 </script>
 
 <style lang="less">

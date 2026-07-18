@@ -56,12 +56,20 @@ const onSubmit = () => {
 const loading = ref(false);
 const downloadPlugin = async (pluginName) => {
   loading.value = true;
-  await window.market.downloadPlugin({
-    name: pluginName,
-    isDev: true,
-  });
-  message.success(t('feature.dev.installSuccess', { pluginName: pluginName }));
-  loading.value = false;
+  try {
+    await window.market.downloadPlugin({
+      name: pluginName,
+      isDev: true,
+    });
+    message.success(
+      t('feature.dev.installSuccess', { pluginName: pluginName })
+    );
+  } catch (error) {
+    const reason = error instanceof Error ? error.message : String(error || '');
+    message.error(reason ? `插件安装失败：${reason}` : '插件安装失败，请重试');
+  } finally {
+    loading.value = false;
+  }
 };
 
 const refresh = () => {

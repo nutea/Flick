@@ -16,10 +16,11 @@ import {
 } from '@/main/common/devSubAppServers';
 import { secureWebContentsNavigation } from '@/main/common/navigationSecurity';
 import { registerFeatureBridgeIpc } from '@/main/common/featureBridgeIpc';
+import { installImageProtocol } from '@/main/common/imageProtocolService';
 
 /** 通用插件 API 的编译后 preload；脚本自身会跳过 DevTools 与子 frame。 */
 function flickSessionPreloadPath(): string {
-  return path.join(app.getAppPath(), 'dist', 'preload', 'index.js');
+  return path.join(app.getAppPath(), 'dist', 'preload', 'plugin.js');
 }
 
 const registeredSessionPreloads = new WeakMap<Electron.Session, string>();
@@ -119,17 +120,24 @@ const getPreloadPath = (plugin, pluginIndexPath) => {
 export default () => {
   let view;
 
-  const viewReadyFn = async (window, { pluginSetting, ext }) => {
-    if (!view) return;
-    const height = pluginSetting && pluginSetting.height;
-    applyMainWindowContentHeight(window, height || WINDOW_PLUGIN_HEIGHT);
-    view.setBounds({
+  const layoutView = (
+    window: BrowserWindow,
+    targetView: BrowserView,
+    pluginSetting?: { height?: number }
+  ) => {
+    const height = pluginSetting?.height || WINDOW_PLUGIN_HEIGHT;
+    applyMainWindowContentHeight(window, height);
+    targetView.setBounds({
       x: 0,
       y: WINDOW_HEIGHT,
       width: WINDOW_WIDTH,
-      height: height || WINDOW_PLUGIN_HEIGHT - WINDOW_HEIGHT,
+      height: height - WINDOW_HEIGHT,
     });
-    view.setAutoResize({ width: true, height: true });
+    targetView.setAutoResize({ width: true, height: true });
+  };
+
+  const viewReadyFn = async (window, { ext }) => {
+    if (!view) return;
     executeHooks('PluginEnter', ext);
     executeHooks('PluginReady', ext);
     const config = await localConfig.getConfig();
@@ -159,7 +167,10 @@ export default () => {
       //   viewInstance.addView(plugin.name, view);
       // }
 
-      require('@electron/remote/main').enable(view.webContents);
+      const runtimeName = plugin.originName || plugin.name;
+      if (runtimeName !== 'flick-system-feature') {
+        require('@electron/remote/main').enable(view.webContents);
+      }
     }
   };
 
@@ -203,6 +214,7 @@ export default () => {
       : getPreloadPath(runtimePlugin, preloadPath || pluginIndexPath);
 
     const ses = session.fromPartition('<' + name + '>');
+    installImageProtocol(ses);
     if (!secureFeature) ensureSessionPreload(ses);
 
     view = new BrowserView({
@@ -244,6 +256,7 @@ export default () => {
       );
     });
     window.setBrowserView(view);
+    layoutView(window, view, plugin.pluginSetting);
     secureWebContentsNavigation(view.webContents, pluginIndexPath);
     view.webContents.loadURL(pluginIndexPath);
     view.webContents.once('dom-ready', () => {
@@ -305,7 +318,7 @@ export default () => {
     );
   };
 
-  const removeView = (window: BrowserWindow) => {
+  const removeView = (window: BrowserWindow, resetRenderer = true) => {
     if (!view) return;
     if (view.inDetach) {
       view = undefined;
@@ -313,18 +326,26 @@ export default () => {
     }
     executeHooks('PluginOut', null);
     const snapshotView = view;
-    setTimeout(() => {
-      const currentView = window.getBrowserView?.();
-      window.removeBrowserView(snapshotView);
 
-      if (currentView === snapshotView) {
-        window.setBrowserView(null);
-        if (view === snapshotView) {
-          window.webContents?.executeJavaScript(`window.initFlick()`);
-          view = undefined;
-        }
+    /**
+     * 先同步释放 runner 槽位和 BrowserWindow 绑定，再延后销毁 webContents。
+     * 超级面板会在同一个 IPC tick 内 remove -> init；若把释放也放进
+     * setTimeout，新插件会被误判为“已有 view”，随后旧清理还会重置主页。
+     */
+    if (window.getBrowserView?.() === snapshotView) {
+      window.setBrowserView(null);
+    }
+    if (view === snapshotView) {
+      view = undefined;
+      if (resetRenderer) {
+        void window.webContents?.executeJavaScript(`window.initFlick()`);
       }
-      snapshotView.webContents?.destroy();
+    }
+
+    setTimeout(() => {
+      if (!snapshotView.webContents?.isDestroyed()) {
+        snapshotView.webContents.destroy();
+      }
     }, 0);
   };
 

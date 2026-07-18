@@ -4,15 +4,10 @@ import {
 } from '@/core/plugin-handler/types';
 import axios from 'axios';
 
-const nodeRequire =
-  typeof window !== 'undefined' && (window as any).require
-    ? (window as any).require
-    : require;
-const fs = nodeRequire('fs-extra');
-const fixPath = nodeRequire('fix-path');
-const path = nodeRequire('path');
-const { ipcRenderer } = nodeRequire('electron');
-const spawn = nodeRequire('cross-spawn');
+import fs from 'fs-extra';
+import fixPath from 'fix-path';
+import path from 'path';
+import spawn from 'cross-spawn';
 
 const PACKAGE_NAME_RE = /^(?:@[a-z0-9][a-z0-9._-]*\/)?[a-z0-9][a-z0-9._-]*$/i;
 
@@ -81,17 +76,8 @@ class AdapterHandler {
     }
     this.baseDir = options.baseDir;
 
-    let register = options.registry || 'https://registry.npmmirror.com';
+    const register = options.registry || 'https://registry.npmmirror.com';
 
-    try {
-      const dbdata = ipcRenderer.sendSync('msg-trigger', {
-        type: 'dbGet',
-        data: { id: 'flick-localhost-config' },
-      });
-      register = dbdata.data.register;
-    } catch (e) {
-      // ignore
-    }
     this.registry = normalizeRegistry(register);
   }
 
@@ -155,7 +141,14 @@ class AdapterHandler {
     }
     const installCmd = options.isDev ? 'link' : 'install';
     // 安装
-    await this.execCommand(installCmd, adapters);
+    await this.execCommand(installCmd, adapters, {
+      timeoutMs: 120000,
+      quiet: true,
+      extraArgs:
+        installCmd === 'install'
+          ? ['--no-audit', '--no-fund', '--loglevel=warn']
+          : [],
+    });
   }
 
   /**

@@ -12,9 +12,11 @@ import {
 import { secureWebContentsNavigation } from '@/main/common/navigationSecurity';
 import {
   flipPluginAutoDetachSync,
-  flipPluginDetachAlwaysShowSearchSync,
+  flipPluginDetachInputPolicySync,
   readPluginFlickConfigSync,
 } from '@/main/common/pluginFlickConfig';
+import { presentPlugin } from '@/main/common/pluginPresentation';
+import { normalizeDetachInputCapability } from '@/common/utils/detachInput';
 
 const DETACH_TITLEBAR_HEIGHT = 50;
 
@@ -133,7 +135,7 @@ export default () => {
     });
     createWin.on('focus', () => {
       win = createWin;
-      view && win.webContents?.focus();
+      if (!view.webContents.isDestroyed()) view.webContents.focus();
     });
 
     createWin.once('ready-to-show', async () => {
@@ -146,13 +148,17 @@ export default () => {
       createWin.setBrowserView(view);
       view.inDetach = true;
       layoutDetachPluginView(createWin);
+      const presentation = presentPlugin(pluginInfo as Record<string, unknown>);
       createWin.webContents.executeJavaScript(
-        `window.initDetach(${JSON.stringify(pluginInfo)})`
+        `window.initDetach(${JSON.stringify(presentation)})`
       );
-      const subVal = String(
-        (pluginInfo as { subInput?: { value?: string } }).subInput?.value ?? ''
-      );
-      if (subVal) {
+      const detachInput = (
+        pluginInfo as {
+          detachInput?: { visible?: boolean; value?: string };
+        }
+      ).detachInput;
+      const subVal = String(detachInput?.value ?? '');
+      if (detachInput?.visible && subVal) {
         executePluginSubInputChangeHook(view.webContents, subVal);
       }
       win = createWin;
@@ -253,6 +259,7 @@ export default () => {
     'detach:toggle-devtools',
     'detach:get-devtools-state',
     'detach:open-plugin-menu',
+    'detach:focus-plugin',
   ]) {
     try {
       ipcMain.removeHandler(channel);
@@ -284,6 +291,14 @@ export default () => {
     return opened;
   });
 
+  ipcMain.handle('detach:focus-plugin', (event) => {
+    const w = windowFromSender(event.sender);
+    const contents = w && pluginContents(w);
+    if (!contents) return false;
+    contents.focus();
+    return true;
+  });
+
   ipcMain.handle('detach:open-plugin-menu', (event, rawInfo: unknown) => {
     const w = windowFromSender(event.sender);
     if (!w || !rawInfo || typeof rawInfo !== 'object') return false;
@@ -295,12 +310,15 @@ export default () => {
       version: typeof source.version === 'string' ? source.version : '',
       description:
         typeof source.description === 'string' ? source.description : '',
+      detachInputCapability: normalizeDetachInputCapability(
+        source.detachInputCapability
+      ),
     };
     const canConfigure =
       !!info.name && info.name !== 'flick-system-super-panel';
     const config = canConfigure
       ? readPluginFlickConfigSync(info.name)
-      : { autoDetach: false, detachAlwaysShowSearch: false };
+      : { autoDetach: false, detachInputPolicy: 'auto' as const };
     const zoom = (action: 'in' | 'out' | 'reset') => {
       const contents = pluginContents(w);
       if (!contents) return;
@@ -346,15 +364,25 @@ export default () => {
             click: () => void flipPluginAutoDetachSync(info.name),
           },
           {
-            label: '独立窗口显示搜索框',
-            type: 'checkbox',
-            checked: !!config.detachAlwaysShowSearch,
-            click: () => {
-              const enabled = flipPluginDetachAlwaysShowSearchSync(info.name);
-              if (!event.sender.isDestroyed()) {
-                event.sender.send('detach:always-show-search', enabled);
-              }
-            },
+            ...(info.detachInputCapability === 'required'
+              ? {
+                  label: '标题栏输入框（插件需要）',
+                  type: 'checkbox' as const,
+                  checked: true,
+                  enabled: false,
+                }
+              : {
+                  label: '始终显示标题栏输入框',
+                  type: 'checkbox' as const,
+                  checked: config.detachInputPolicy === 'always',
+                  visible: info.detachInputCapability === 'optional',
+                  click: () => {
+                    const policy = flipPluginDetachInputPolicySync(info.name);
+                    if (!event.sender.isDestroyed()) {
+                      event.sender.send('detach:input-policy', policy);
+                    }
+                  },
+                }),
           },
         ],
       });

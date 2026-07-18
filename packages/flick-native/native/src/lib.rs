@@ -10,6 +10,9 @@ mod folder_open_path;
 mod keyboard_win;
 
 #[cfg(windows)]
+mod selection_win;
+
+#[cfg(windows)]
 mod input_hook_win;
 
 use napi::bindgen_prelude::{AsyncTask, Env, JsFunction, Result, Task};
@@ -227,6 +230,87 @@ pub fn get_folder_open_path_async_napi() -> AsyncTask<GetFolderOpenPathTask> {
   AsyncTask::new(GetFolderOpenPathTask)
 }
 
+pub struct GetForegroundFolderPathTask;
+
+impl Task for GetForegroundFolderPathTask {
+  type Output = String;
+  type JsValue = String;
+
+  fn compute(&mut self) -> Result<Self::Output> {
+    #[cfg(windows)]
+    {
+      Ok(folder_open_path::get_foreground_folder_path().unwrap_or_default())
+    }
+    #[cfg(not(windows))]
+    {
+      Ok(String::new())
+    }
+  }
+
+  fn resolve(&mut self, _env: Env, output: Self::Output) -> Result<Self::JsValue> {
+    Ok(output)
+  }
+}
+
+#[napi(js_name = "getForegroundFolderPath")]
+pub fn get_foreground_folder_path_async_napi() -> AsyncTask<GetForegroundFolderPathTask> {
+  AsyncTask::new(GetForegroundFolderPathTask)
+}
+
+pub struct GetSelectedTextTask;
+
+impl Task for GetSelectedTextTask {
+  type Output = String;
+  type JsValue = String;
+
+  fn compute(&mut self) -> Result<Self::Output> {
+    #[cfg(windows)]
+    {
+      Ok(selection_win::get_selected_text())
+    }
+    #[cfg(not(windows))]
+    {
+      Ok(String::new())
+    }
+  }
+
+  fn resolve(&mut self, _env: Env, output: Self::Output) -> Result<Self::JsValue> {
+    Ok(output)
+  }
+}
+
+#[napi(js_name = "getSelectedText")]
+pub fn get_selected_text_async_napi() -> AsyncTask<GetSelectedTextTask> {
+  AsyncTask::new(GetSelectedTextTask)
+}
+
+pub struct GetSelectedFilePathsTask;
+
+impl Task for GetSelectedFilePathsTask {
+  type Output = Vec<String>;
+  type JsValue = Vec<String>;
+
+  fn compute(&mut self) -> Result<Self::Output> {
+    #[cfg(windows)]
+    {
+      Ok(folder_open_path::get_explorer_selected_paths())
+    }
+    #[cfg(not(windows))]
+    {
+      Ok(Vec::new())
+    }
+  }
+
+  fn resolve(&mut self, _env: Env, output: Self::Output) -> Result<Self::JsValue> {
+    Ok(output)
+  }
+}
+
+#[napi(js_name = "getSelectedFilePaths")]
+pub fn get_selected_file_paths_async_napi() -> AsyncTask<GetSelectedFilePathsTask> {
+  AsyncTask::new(GetSelectedFilePathsTask)
+}
+
 /// Synchronous variant retained for `event.returnValue` IPC handlers (e.g.
 /// `registerCdwhereIpc`) that cannot await a Promise. Prefer the async form.
 #[napi(js_name = "getFolderOpenPathSync")]
@@ -295,5 +379,20 @@ pub fn write_clipboard_file_paths_napi(files: Vec<String>) -> Result<()> {
   {
     let _ = files;
     Ok(())
+  }
+}
+
+/// Returns the Windows clipboard sequence number without opening, reading, or
+/// writing the clipboard. A copy of identical bytes still produces a new
+/// sequence when the source republishes the clipboard contents.
+#[napi(js_name = "getClipboardChangeToken")]
+pub fn get_clipboard_change_token_napi() -> u32 {
+  #[cfg(windows)]
+  unsafe {
+    return windows::Win32::System::DataExchange::GetClipboardSequenceNumber();
+  }
+  #[cfg(not(windows))]
+  {
+    0
   }
 }

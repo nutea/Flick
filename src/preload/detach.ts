@@ -22,6 +22,7 @@ contextBridge.exposeInMainWorld('detach', {
     ipcRenderer.invoke('detach:set-pinned', Boolean(pinned)),
   toggleDevTools: () => ipcRenderer.invoke('detach:toggle-devtools'),
   getDevToolsState: () => ipcRenderer.invoke('detach:get-devtools-state'),
+  focusPlugin: () => ipcRenderer.invoke('detach:focus-plugin'),
   onDevToolsState: (callback: (opened: boolean) => void) => {
     const listener = (_event: Electron.IpcRendererEvent, opened: unknown) =>
       callback(Boolean(opened));
@@ -30,11 +31,10 @@ contextBridge.exposeInMainWorld('detach', {
   },
   openPluginMenu: (pluginInfo: unknown) =>
     ipcRenderer.invoke('detach:open-plugin-menu', pluginInfo),
-  onAlwaysShowSearch: (callback: (enabled: boolean) => void) => {
-    const listener = (_event: Electron.IpcRendererEvent, enabled: unknown) =>
-      callback(Boolean(enabled));
-    ipcRenderer.on('detach:always-show-search', listener);
-    return () =>
-      ipcRenderer.removeListener('detach:always-show-search', listener);
+  onInputPolicy: (callback: (policy: 'auto' | 'always') => void) => {
+    const listener = (_event: Electron.IpcRendererEvent, policy: unknown) =>
+      callback(policy === 'always' ? 'always' : 'auto');
+    ipcRenderer.on('detach:input-policy', listener);
+    return () => ipcRenderer.removeListener('detach:input-policy', listener);
   },
 });

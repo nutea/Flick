@@ -1,5 +1,5 @@
 <template>
-  <div class="main" id="app" :class="{ pinned }">
+  <div class="main" :class="{ pinned }">
     <div class="panel-caption" :class="{ draggable: pinned }">
       <span class="panel-caption-text">超级面板</span>
       <button
@@ -24,6 +24,14 @@
       </div>
       <div class="selected-main ellpise">{{ selectedPreview.title }}</div>
       <div class="selected-sub ellpise">{{ selectedPreview.subtitle }}</div>
+    </div>
+    <div v-else class="selected-content kind-none">
+      <div class="selected-header">
+        <span class="selected-title">当前选中</span>
+        <span class="selected-type">无选中</span>
+      </div>
+      <div class="selected-main">未检测到选中内容</div>
+      <div class="selected-sub">可直接使用下方固定插件</div>
     </div>
 
     <div v-if="translate || loading" class="translate-content">
@@ -80,13 +88,8 @@
           class="plugin-item"
           @click="runPluginClick(item, $event)"
         >
-          <component
-            :is="iconFor(item)"
-            v-if="item.type === 'default'"
-            class="plugin-default-icon"
-          />
-          <img v-else width="30" :src="item.logo" alt="" />
-          <div>{{ displayPluginLabel(item.name) }}</div>
+          <PluginIcon :logo="item.logo" :builtin="item.icon" />
+          <div>{{ item.name }}</div>
         </div>
       </div>
     </div>
@@ -100,7 +103,7 @@
           class="plugin-item"
           @click="runPluginClick(item, $event)"
         >
-          <img width="30" :src="item.logo" alt="" />
+          <PluginIcon :logo="item.logo" />
           <div>{{ item.pluginName }}</div>
         </div>
       </div>
@@ -110,20 +113,16 @@
 
 <script setup lang="ts">
 import { computed, onMounted, onUnmounted, ref } from 'vue';
-import {
-  CodeOutlined,
-  CopyOutlined,
-  FileAddOutlined,
-  PushpinOutlined,
-} from '@ant-design/icons-vue';
+import { PushpinOutlined } from '@ant-design/icons-vue';
+import PluginIcon from './PluginIcon.vue';
 import { useSuperPanel } from './use-super-panel';
-import type { MatchPluginItem } from './types';
 
 const {
   translate,
   loading,
   selectedText,
   selectedFileUrl,
+  selectedFileIsDirectory,
   matchPlugins,
   userPlugins,
   pinned,
@@ -132,21 +131,6 @@ const {
 } = useSuperPanel();
 
 const fullTranslationVisible = ref(false);
-
-const defaultIconByName: Record<string, typeof CodeOutlined> = {
-  终端打开: CodeOutlined,
-  新建文件: FileAddOutlined,
-  复制路径: CopyOutlined,
-  复制当前路径: CopyOutlined,
-};
-
-function iconFor(item: MatchPluginItem) {
-  return defaultIconByName[item.name] || CopyOutlined;
-}
-
-function displayPluginLabel(name: string) {
-  return name === '复制当前路径' ? '复制路径' : name;
-}
 
 function normalizePath(raw: string): string {
   return raw.replace(/^file:\/\//, '');
@@ -169,6 +153,14 @@ const selectedPreview = computed(() => {
   const fullPath = normalizePath(rawPath);
   const seg = fullPath.split(/[/\\]/).filter(Boolean);
   const filename = seg[seg.length - 1] || fullPath;
+  if (selectedFileIsDirectory.value) {
+    return {
+      kind: 'folder',
+      typeLabel: '文件夹',
+      title: filename,
+      subtitle: fullPath,
+    };
+  }
   const ext = filename.includes('.')
     ? filename.split('.').pop()?.toLowerCase() || ''
     : '';
@@ -305,7 +297,7 @@ body {
 
 <style scoped>
 .main {
-  min-height: 100%;
+  min-height: 50px;
   box-sizing: border-box;
   padding: 8px 0 10px;
 }
@@ -438,6 +430,10 @@ body {
   background: #e2e8f0;
   color: #334155;
 }
+.kind-none .selected-type {
+  background: #f1f5f9;
+  color: #64748b;
+}
 .translate-target {
   color: #334155;
   font-size: 13px;
@@ -496,13 +492,9 @@ body {
   box-shadow: 0 4px 10px rgba(15, 23, 42, 0.08);
   transform: translateY(-1px);
 }
-.plugin-item img,
-.plugin-default-icon {
+.plugin-item :deep(.plugin-logo),
+.plugin-item :deep(.plugin-fallback-icon) {
   padding-bottom: 6px;
-}
-.plugin-default-icon {
-  font-size: 28px;
-  color: #574778;
 }
 .plugin-item div {
   width: 100%;

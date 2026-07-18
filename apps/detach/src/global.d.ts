@@ -5,9 +5,10 @@ interface DetachApi {
   setPinned(pinned: boolean): Promise<boolean>;
   toggleDevTools(): Promise<boolean>;
   getDevToolsState(): Promise<boolean>;
+  focusPlugin(): Promise<boolean>;
   onDevToolsState(callback: (opened: boolean) => void): () => void;
   openPluginMenu(pluginInfo: unknown): Promise<boolean>;
-  onAlwaysShowSearch(callback: (enabled: boolean) => void): () => void;
+  onInputPolicy(callback: (policy: 'auto' | 'always') => void): () => void;
 }
 
 interface Window {

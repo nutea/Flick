@@ -53,14 +53,10 @@ const BTN = {
 const LONG_PRESS_MS = 450;
 /** 首次注册延迟，避免与 Flick 其它 globalShortcut 抢注册冲突；热更新时为 0 */
 const INITIAL_KEYBOARD_REGISTER_MS = 1000;
-/** 窗口顶边略低于光标，避免无边框窗顶缘与指针重合触发系统调整大小 */
-const SUPER_PANEL_TOP_CURSOR_GAP_PX = 12;
 function isMouseTrigger(s) {
     return Object.values(SP_MOUSE).includes(s);
 }
 function createPlugin() {
-    /** 上次呼出面板时记录的剪贴板快照；与当前不一致且无选区复制时，仍用当前剪贴板处理一次 */
-    let lastPanelClipboardSnap = null;
     let lastRegisteredKey = null;
     let removeInputSubscription = null;
     let longPressTimer = null;
@@ -83,32 +79,36 @@ function createPlugin() {
             const { clipboard, screen, globalShortcut, API, ipcMain, nativeImage } = ctx;
             const panelInstance = (0, panel_window_1.default)(ctx);
             panelInstance.init();
+            let requestSequence = 0;
             const showSuperPanel = async (trigger) => {
+                const requestId = ++requestSequence;
                 const { x, y } = screen.getCursorScreenPoint();
                 if (trigger === 'keyboard') {
                     await new Promise((resolve) => setTimeout(resolve, 40));
                 }
-                let copyResult = await (0, clipboard_helpers_1.getSelectedContent)(clipboard, simulateCopy);
-                const snapNow = (0, clipboard_helpers_1.snapshotClipboard)(clipboard);
+                const copyResult = await (0, clipboard_helpers_1.getSelectedContent)(clipboard, simulateCopy, {
+                    readSelectedText: native_1.getSelectedText,
+                    readSelectedFilePaths: native_1.getSelectedFilePaths,
+                    getClipboardChangeToken: native_1.getClipboardChangeToken,
+                });
+                if (requestId !== requestSequence)
+                    return;
                 if (!copyResult.text && !copyResult.fileUrl) {
-                    if (lastPanelClipboardSnap === null ||
-                        !(0, clipboard_helpers_1.clipboardSnapsEqual)(snapNow, lastPanelClipboardSnap)) {
-                        copyResult = (0, clipboard_helpers_1.readClipboardPayload)(clipboard);
-                    }
+                    copyResult.fileUrl = await (0, native_1.getActiveWindowFallbackPath)();
                 }
-                if (!copyResult.text && !copyResult.fileUrl) {
-                    const nativeWinInfo = await (0, native_1.getActiveWindowInfo)();
-                    copyResult.fileUrl = (nativeWinInfo === null || nativeWinInfo === void 0 ? void 0 : nativeWinInfo.path) || copyResult.fileUrl;
-                }
-                lastPanelClipboardSnap = (0, clipboard_helpers_1.snapshotClipboard)(clipboard);
+                if (requestId !== requestSequence)
+                    return;
                 const win = panelInstance.getWindow();
                 if (!win)
+                    return;
+                await panelInstance.whenReady();
+                if (requestId !== requestSequence || win.isDestroyed())
                     return;
                 if (panelInstance.isPinned() && win.isVisible()) {
                     panelInstance.resetPin();
                     win.hide();
                 }
-                const localPlugins = global.LOCAL_PLUGINS.getLocalPlugins();
+                const localPlugins = API.getLocalPlugins();
                 let selectedFileIsDirectory = false;
                 let selectedFileDataUrl = '';
                 if (typeof copyResult.fileUrl === 'string' && copyResult.fileUrl) {
@@ -129,39 +129,20 @@ function createPlugin() {
                     }
                 }
                 const cursor = (0, clipboard_helpers_1.getPos)(screen, { x, y }, isMacOS);
-                const placePanelAtCursor = () => {
-                    if (!win ||
-                        (typeof win.isDestroyed === 'function' && win.isDestroyed()))
-                        return;
-                    const bounds = win.getBounds();
-                    let left = Math.round(cursor.x - bounds.width / 2);
-                    let top = Math.round(cursor.y + SUPER_PANEL_TOP_CURSOR_GAP_PX);
-                    try {
-                        const disp = screen.getDisplayNearestPoint({
-                            x: cursor.x,
-                            y: cursor.y,
-                        });
-                        const wa = disp.workArea;
-                        left = Math.max(wa.x, Math.min(left, wa.x + wa.width - bounds.width));
-                        top = Math.max(wa.y, Math.min(top, wa.y + wa.height - bounds.height));
-                    }
-                    catch {
-                        /* ignore clamp if display API fails */
-                    }
-                    win.setPosition(left, top);
-                    panelInstance.setPanelPositionAnchor(left, top);
-                };
+                panelInstance.beginPlacement(requestId, cursor);
                 await new Promise((resolve) => {
                     const ms = 800;
                     const timer = setTimeout(() => {
                         ipcMain.removeListener('superPanel-content-applied', onApplied);
                         resolve();
                     }, ms);
-                    const onApplied = (event) => {
+                    const onApplied = (event, appliedRequestId) => {
                         if (!win ||
                             (typeof win.isDestroyed === 'function' && win.isDestroyed()))
                             return;
                         if (event.sender.id !== win.webContents.id)
+                            return;
+                        if (appliedRequestId !== requestId)
                             return;
                         clearTimeout(timer);
                         ipcMain.removeListener('superPanel-content-applied', onApplied);
@@ -169,18 +150,18 @@ function createPlugin() {
                     };
                     ipcMain.on('superPanel-content-applied', onApplied);
                     win.webContents.send('trigger-super-panel', {
+                        requestId,
                         ...copyResult,
                         optionPlugin: localPlugins,
                         selectedFileIsDirectory,
                         selectedFileDataUrl,
                     });
                 });
-                placePanelAtCursor();
+                if (requestId !== requestSequence)
+                    return;
                 win.setAlwaysOnTop(true);
-                win.setVisibleOnAllWorkspaces(true, { visibleOnFullScreen: true });
-                win.focus();
-                win.setVisibleOnAllWorkspaces(false, { visibleOnFullScreen: true });
                 win.show();
+                win.focus();
                 if (process.env.FLICK_SUPER_PANEL_SMOKE === '1') {
                     const result = await win.webContents.executeJavaScript(`({
             bridgeAvailable: typeof window.superPanel === 'object',

@@ -1,5 +1,8 @@
 <template>
-  <div v-show="!currentPlugin.name" class="options">
+  <div
+    v-show="!currentPlugin.name"
+    :class="['options', { 'keyboard-navigation': keyboardNavigation }]"
+  >
     <div
       class="history-plugins"
       v-if="
@@ -17,7 +20,7 @@
         <a-col
           @click="() => openPlugin(item)"
           @contextmenu.prevent="openMenu($event, item)"
-          @mouseenter="emit('selectIndex', index)"
+          @mousemove="emit('selectIndex', index)"
           :class="
             currentSelect === index ? 'active history-item' : 'history-item'
           "
@@ -27,7 +30,7 @@
           role="option"
           :aria-selected="currentSelect === index"
         >
-          <a-avatar class="history-icon" :src="item.icon" />
+          <a-avatar class="history-icon" :src="item.icon || item.logoUrl" />
           <div class="name ellpise">
             {{ item.cmd || item.pluginName || item._name || item.name }}
           </div>
@@ -59,7 +62,7 @@
       <template #renderItem="{ item, index }">
         <a-list-item
           @click="() => item.click()"
-          @mouseenter="emit('selectIndex', index)"
+          @mousemove="emit('selectIndex', index)"
           :class="currentSelect === index ? 'active op-item' : 'op-item'"
           role="option"
           :aria-selected="currentSelect === index"
@@ -91,14 +94,11 @@
 </template>
 
 <script lang="ts" setup>
-import { computed, reactive, ref, toRaw } from 'vue';
+import { computed, ref, toRaw } from 'vue';
 import { SearchOutlined } from '@ant-design/icons-vue';
 import localConfig from '../confOp';
-
-const path = window.require('path');
-const remote = window.require('@electron/remote');
-
-declare const __static: string;
+import { recentPluginItemKey } from '../utils/recentPluginNavigation';
+import { recentPluginTaskKey } from '../plugins-manager/pluginHistory';
 
 const config: any = ref(localConfig.getConfig());
 
@@ -112,6 +112,7 @@ const props = withDefaults(
     currentPlugin?: PluginItem;
     pluginHistory?: PluginItem[];
     clipboardFile?: PluginItem[];
+    keyboardNavigation?: boolean;
   }>(),
   {
     searchValue: '',
@@ -120,6 +121,7 @@ const props = withDefaults(
     currentPlugin: () => ({}),
     pluginHistory: () => [],
     clipboardFile: () => [],
+    keyboardNavigation: true,
   }
 );
 
@@ -181,78 +183,54 @@ const resultAnnouncement = computed(() => {
   return isChinese.value ? `${count} 个搜索结果` : `${count} search results`;
 });
 
-const itemKey = (item: PluginItem, index: number) =>
-  item.id ||
-  item._id ||
-  `${item.originName || item.name || 'item'}-${item.cmd || index}`;
+const itemKey = recentPluginItemKey;
 
 const openPlugin = (item) => {
   emit('choosePlugin', item);
 };
 
-const menuState: any = reactive({
-  plugin: null,
-});
-let mainMenus;
-
-const openMenu = (e, item) => {
-  const pinToMain = mainMenus.getMenuItemById('pinToMain');
-  const unpinFromMain = mainMenus.getMenuItemById('unpinFromMain');
-  pinToMain.visible = !item.pin;
-  unpinFromMain.visible = item.pin;
-  mainMenus.popup({
-    x: e.pageX,
-    y: e.pageY,
-  });
-  menuState.plugin = item;
+const openMenu = async (e, item) => {
+  const action = await window.flick.showContextMenu(
+    [
+      {
+        id: 'remove-recent',
+        label: '从"使用记录"中删除',
+      },
+      ...(item.pin
+        ? []
+        : [
+            {
+              id: 'pin',
+              label: '固定到"搜索面板"',
+            },
+          ]),
+      ...(item.pin
+        ? [
+            {
+              id: 'unpin',
+              label: '从"搜索面板"取消固定',
+            },
+          ]
+        : []),
+    ],
+    { x: e.pageX, y: e.pageY }
+  );
+  if (action === 'remove-recent') {
+    const history = props.pluginHistory.filter(
+      (candidate) =>
+        recentPluginTaskKey(candidate) !== recentPluginTaskKey(item)
+    );
+    emit('setPluginHistory', toRaw(history));
+  } else if (action === 'pin' || action === 'unpin') {
+    const pin = action === 'pin';
+    const history = props.pluginHistory.map((candidate) =>
+      recentPluginTaskKey(candidate) === recentPluginTaskKey(item)
+        ? { ...candidate, pin }
+        : candidate
+    );
+    emit('setPluginHistory', toRaw(history));
+  }
 };
-
-const initMainCmdMenus = () => {
-  const menu = [
-    {
-      id: 'removeRecentCmd',
-      label: '从"使用记录"中删除',
-      icon: path.join(__static, 'icons', 'delete@2x.png'),
-      click: () => {
-        const history = props.pluginHistory.filter(
-          (item) => item.name !== menuState.plugin.name
-        );
-        emit('setPluginHistory', toRaw(history));
-      },
-    },
-    {
-      id: 'pinToMain',
-      label: '固定到"搜索面板"',
-      icon: path.join(__static, 'icons', 'pin@2x.png'),
-      click: () => {
-        const history = props.pluginHistory.map((item) => {
-          if (item.name === menuState.plugin.name) {
-            item.pin = true;
-          }
-          return item;
-        });
-        emit('setPluginHistory', toRaw(history));
-      },
-    },
-    {
-      id: 'unpinFromMain',
-      label: '从"搜索面板"取消固定',
-      icon: path.join(__static, 'icons', 'unpin@2x.png'),
-      click: () => {
-        const history = props.pluginHistory.map((item) => {
-          if (item.name === menuState.plugin.name) {
-            item.pin = false;
-          }
-          return item;
-        });
-        emit('setPluginHistory', toRaw(history));
-      },
-    },
-  ];
-  mainMenus = remote.Menu.buildFromTemplate(menu);
-};
-
-initMainCmdMenus();
 </script>
 
 <style lang="less">
@@ -467,6 +445,13 @@ initMainCmdMenus();
     clip: rect(0, 0, 0, 0);
     white-space: nowrap;
     border: 0;
+  }
+}
+
+.options.keyboard-navigation {
+  .history-item:hover:not(.active),
+  .op-item:hover:not(.active) {
+    background: transparent;
   }
 }
 </style>

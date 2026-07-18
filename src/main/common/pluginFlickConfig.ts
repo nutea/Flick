@@ -1,6 +1,7 @@
 import fs from 'fs';
 import path from 'path';
 import { PLUGIN_INSTALL_DIR as baseDir } from '@/common/constans/main';
+import type { DetachInputUserPolicy } from '@/common/types/detachInput';
 
 /** 合并存储：各插件 UI 设置，顶层 key 为插件 `name` */
 export const PLUGIN_UI_SETTINGS_FILE = 'flick-plugin-ui-settings.json';
@@ -23,7 +24,9 @@ export function isValidPluginFlickConfigName(name: unknown): name is string {
 
 export type PluginFlickConfig = {
   autoDetach?: boolean;
-  /** 独立窗口顶栏是否始终显示搜索框（否则仍按 subInput 是否有内容切换） */
+  /** 标题栏输入框策略；是否显示仍受插件声明的 input capability 约束。 */
+  detachInputPolicy?: DetachInputUserPolicy;
+  /** @deprecated 旧配置字段，仅用于读取迁移。 */
   detachAlwaysShowSearch?: boolean;
 };
 
@@ -42,11 +45,13 @@ function ensureBaseDir(): void {
 function cloneRow(v: unknown): PluginFlickConfig {
   if (!v || typeof v !== 'object' || Array.isArray(v)) return {};
   const o = v as PluginFlickConfig;
+  const detachInputPolicy: DetachInputUserPolicy =
+    o.detachInputPolicy === 'always' || o.detachAlwaysShowSearch === true
+      ? 'always'
+      : 'auto';
   return {
     ...(typeof o.autoDetach === 'boolean' ? { autoDetach: o.autoDetach } : {}),
-    ...(typeof o.detachAlwaysShowSearch === 'boolean'
-      ? { detachAlwaysShowSearch: o.detachAlwaysShowSearch }
-      : {}),
+    detachInputPolicy,
   };
 }
 
@@ -75,7 +80,12 @@ function loadStore(): SettingsMap {
   }
   try {
     const raw = fs.readFileSync(p, 'utf8');
-    return parseStoreFile(JSON.parse(raw) as unknown);
+    const parsed = JSON.parse(raw) as unknown;
+    const normalized = parseStoreFile(parsed);
+    if (JSON.stringify(parsed) !== JSON.stringify(normalized)) {
+      saveStore(normalized);
+    }
+    return normalized;
   } catch {
     return {};
   }
@@ -123,9 +133,11 @@ export function flipPluginAutoDetachSync(name: string): boolean {
   return next;
 }
 
-export function flipPluginDetachAlwaysShowSearchSync(name: string): boolean {
-  const cur = readPluginFlickConfigSync(name).detachAlwaysShowSearch === true;
-  const next = !cur;
-  writePluginFlickConfigSync(name, { detachAlwaysShowSearch: next });
+export function flipPluginDetachInputPolicySync(
+  name: string
+): DetachInputUserPolicy {
+  const cur = readPluginFlickConfigSync(name).detachInputPolicy ?? 'auto';
+  const next: DetachInputUserPolicy = cur === 'always' ? 'auto' : 'always';
+  writePluginFlickConfigSync(name, { detachInputPolicy: next });
   return next;
 }

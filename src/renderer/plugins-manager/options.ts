@@ -4,9 +4,6 @@ import PinyinMatch from 'pinyin-match';
 import pluginClickEvent from './pluginClickEvent';
 import useFocus from './clipboardWatch';
 
-const { ipcRenderer } = window.require('electron');
-const { getGlobal } = window.require('@electron/remote');
-
 function formatReg(regStr) {
   const flags = regStr.replace(/.*\/([gimy]*)$/, '$1');
   const pattern = regStr.replace(new RegExp('^/(.*?)/' + flags + '$'), '$1');
@@ -37,7 +34,7 @@ const optionsManager = ({
   const optionsRef = ref([]);
 
   // 全局快捷键
-  ipcRenderer.on('global-short-key', (e, msg) => {
+  window.flick.onGlobalShortcut((msg) => {
     const options = getOptionsFromSearchValue(msg, true);
     options[0].click();
   });
@@ -54,7 +51,7 @@ const optionsManager = ({
   };
 
   const getOptionsFromSearchValue = (value, strict = false) => {
-    const localPlugins = getGlobal('LOCAL_PLUGINS').getLocalPlugins();
+    const localPlugins = window.flick.getLocalPlugins();
     let options: any = [];
     // todo 先搜索 plugin
     localPlugins.forEach((plugin) => {
@@ -69,7 +66,7 @@ const optionsManager = ({
             const option = {
               name: cmd.label || cmd,
               value: 'plugin',
-              icon: plugin.logo,
+              icon: plugin.logoUrl,
               desc: fe.explain,
               type: plugin.pluginType,
               match: PinyinMatch.match(cmd.label || cmd, value),

@@ -29,12 +29,12 @@ ConfigProvider.config({
   theme: config.perf.custom || {},
 });
 
-window.flick.changeTheme = () => {
+window.flick.onThemeChange(() => {
   const config: any = localConfig.getConfig();
   ConfigProvider.config({
     theme: config.perf.custom || {},
   });
-};
+});
 
 createApp(App)
   .use(Button)

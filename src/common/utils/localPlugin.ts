@@ -4,15 +4,18 @@ import https from 'https';
 import { PluginHandler } from '@/core';
 import { PLUGIN_INSTALL_DIR as baseDir } from '@/common/constans/main';
 import API from '@/main/common/api';
+import { imageProtocolSource } from '@/common/utils/imageProtocol';
 
 declare const __static: string;
 
 const configPath = path.join(baseDir, './flick-local-plugin.json');
-const BUILTIN_SUPER_PANEL_PKG = path.join(__static, 'superx', 'package.json');
+const BUILTIN_PLUGIN_PACKAGES = [
+  path.join(__static, 'feature', 'package.json'),
+  path.join(__static, 'superx', 'package.json'),
+];
 
-function ensureBuiltinSuperPanelInList(): void {
+function ensureBuiltinPluginsInList(): void {
   try {
-    if (!fs.existsSync(BUILTIN_SUPER_PANEL_PKG)) return;
     if (fs.existsSync(configPath)) {
       const raw = JSON.parse(fs.readFileSync(configPath, 'utf-8'));
       if (Array.isArray(raw) && raw.some((p) => p.name === 'flick-superx')) {
@@ -21,20 +24,29 @@ function ensureBuiltinSuperPanelInList(): void {
         global.LOCAL_PLUGINS.PLUGINS = [];
       }
     }
-    const plugins = global.LOCAL_PLUGINS.getLocalPlugins();
-    const info = JSON.parse(fs.readFileSync(BUILTIN_SUPER_PANEL_PKG, 'utf-8'));
-    const payload = { ...info, isDev: false };
-    const idx = plugins.findIndex((p) => p.name === 'flick-system-super-panel');
-    if (idx === -1) {
-      global.LOCAL_PLUGINS.addPlugin(payload);
-    } else {
-      const next = [...plugins];
-      next[idx] = normalizePluginLogoLocalPath({ ...next[idx], ...payload });
-      global.LOCAL_PLUGINS.PLUGINS = next;
-      fs.writeFileSync(configPath, JSON.stringify(next));
+    for (const packagePath of BUILTIN_PLUGIN_PACKAGES) {
+      if (!fs.existsSync(packagePath)) continue;
+      const plugins = global.LOCAL_PLUGINS.getLocalPlugins();
+      const info = JSON.parse(fs.readFileSync(packagePath, 'utf-8'));
+      const payload = {
+        ...info,
+        isDev: false,
+        // Runtime-only fields from another checkout/build must never persist.
+        indexPath: undefined,
+        icon: undefined,
+      };
+      const idx = plugins.findIndex((p) => p.name === payload.name);
+      if (idx === -1) {
+        global.LOCAL_PLUGINS.addPlugin(payload);
+      } else {
+        const next = [...plugins];
+        next[idx] = normalizePluginLogoLocalPath({ ...next[idx], ...payload });
+        global.LOCAL_PLUGINS.PLUGINS = next;
+        fs.writeFileSync(configPath, JSON.stringify(next));
+      }
     }
   } catch (e) {
-    console.warn('[flick] ensureBuiltinSuperPanelInList', e);
+    console.warn('[flick] ensureBuiltinPluginsInList', e);
   }
 }
 
@@ -86,6 +98,15 @@ function toPluginScopedAbsolutePath(
     return null;
   }
   return candidate;
+}
+
+function imageUrlToPathSafe(v: string): string | null {
+  return imageProtocolSource(v);
+}
+
+function portablePluginLogo(pluginName: string, absolute: string): string {
+  const relative = path.relative(pluginDiskRoot(pluginName), absolute);
+  return `./${relative.split(path.sep).join('/')}`;
 }
 
 function downloadToFile(
@@ -152,6 +173,14 @@ async function normalizeInstalledPluginLogo(
 
   if (isDataUrl(s)) return plugin;
 
+  if (/^image:/i.test(s)) {
+    const p = imageUrlToPathSafe(s);
+    const abs = p && toPluginScopedAbsolutePath(pluginName, p);
+    return abs
+      ? { ...plugin, logo: portablePluginLogo(pluginName, abs) }
+      : { ...plugin, logo: '' };
+  }
+
   if (isHttpUrl(s)) {
     try {
       const pluginRoot = pluginNmDir(pluginName);
@@ -160,7 +189,7 @@ async function normalizeInstalledPluginLogo(
       const ext = path.extname(parsed.pathname || '').slice(0, 16) || '.png';
       const filePath = path.join(pluginRoot, `.flick-logo${ext}`);
       await downloadToFile(s, filePath);
-      return { ...plugin, logo: filePath };
+      return { ...plugin, logo: portablePluginLogo(pluginName, filePath) };
     } catch {
       return plugin;
     }
@@ -170,11 +199,15 @@ async function normalizeInstalledPluginLogo(
     const p = fileUrlToPathSafe(s);
     if (!p) return plugin;
     const abs = toPluginScopedAbsolutePath(pluginName, p);
-    return abs ? { ...plugin, logo: abs } : plugin;
+    return abs
+      ? { ...plugin, logo: portablePluginLogo(pluginName, abs) }
+      : plugin;
   }
 
   const abs = toPluginScopedAbsolutePath(pluginName, s);
-  return abs ? { ...plugin, logo: abs } : plugin;
+  return abs
+    ? { ...plugin, logo: portablePluginLogo(pluginName, abs) }
+    : plugin;
 }
 
 function normalizePluginLogoLocalPath(
@@ -187,15 +220,47 @@ function normalizePluginLogoLocalPath(
 
   if (isDataUrl(s) || isHttpUrl(s)) return plugin;
 
+  if (/^image:/i.test(s)) {
+    const p = imageUrlToPathSafe(s);
+    const abs = p && toPluginScopedAbsolutePath(pluginName, p);
+    return abs
+      ? { ...plugin, logo: portablePluginLogo(pluginName, abs) }
+      : { ...plugin, logo: '' };
+  }
+
   if (isFileUrl(s)) {
     const p = fileUrlToPathSafe(s);
     if (!p) return plugin;
     const abs = toPluginScopedAbsolutePath(pluginName, p);
-    return abs ? { ...plugin, logo: abs } : plugin;
+    return abs
+      ? { ...plugin, logo: portablePluginLogo(pluginName, abs) }
+      : plugin;
   }
 
   const abs = toPluginScopedAbsolutePath(pluginName, s);
-  return abs ? { ...plugin, logo: abs } : plugin;
+  return abs
+    ? { ...plugin, logo: portablePluginLogo(pluginName, abs) }
+    : plugin;
+}
+
+function normalizePluginForStorage(
+  plugin: Record<string, unknown>
+): Record<string, unknown> {
+  const {
+    logoUrl: _logoUrl,
+    indexUrl: _indexUrl,
+    indexPath: _indexPath,
+    tplPath: _tplPath,
+    icon: _icon,
+    ...persisted
+  } = plugin;
+  return normalizePluginLogoLocalPath(persisted);
+}
+
+function migrateCatalog(value: unknown): Record<string, unknown>[] {
+  return (Array.isArray(value) ? value : [])
+    .filter((plugin) => plugin && plugin.name !== 'flick-superx')
+    .map((plugin) => normalizePluginForStorage(plugin));
 }
 
 /**
@@ -265,6 +330,7 @@ global.LOCAL_PLUGINS = {
     await pluginInstance.upgrade(name);
   },
   async downloadPlugin(plugin) {
+    if (!pluginInstance) throw new Error('Plugin manager is unavailable');
     await pluginInstance.install([plugin.name], { isDev: plugin.isDev });
     if (plugin.isDev) {
       // 获取 dev 插件信息
@@ -311,9 +377,11 @@ global.LOCAL_PLUGINS = {
     try {
       if (!global.LOCAL_PLUGINS.PLUGINS.length) {
         const raw = JSON.parse(fs.readFileSync(configPath, 'utf-8'));
-        global.LOCAL_PLUGINS.PLUGINS = (Array.isArray(raw) ? raw : []).filter(
-          (p) => p && p.name !== 'flick-superx'
-        );
+        const migrated = migrateCatalog(raw);
+        global.LOCAL_PLUGINS.PLUGINS = migrated;
+        if (JSON.stringify(raw) !== JSON.stringify(migrated)) {
+          fs.writeFileSync(configPath, JSON.stringify(migrated));
+        }
       }
       return global.LOCAL_PLUGINS.PLUGINS;
     } catch (e) {
@@ -322,7 +390,7 @@ global.LOCAL_PLUGINS = {
     }
   },
   addPlugin(plugin) {
-    plugin = normalizePluginLogoLocalPath(plugin);
+    plugin = normalizePluginForStorage(plugin);
     let has = false;
     const currentPlugins = global.LOCAL_PLUGINS.getLocalPlugins();
     currentPlugins.some((p) => {
@@ -336,6 +404,7 @@ global.LOCAL_PLUGINS = {
     }
   },
   updatePlugin(plugin) {
+    plugin = normalizePluginForStorage(plugin);
     global.LOCAL_PLUGINS.PLUGINS = global.LOCAL_PLUGINS.PLUGINS.map(
       (origin) => {
         if (origin.name === plugin.name) {
@@ -353,6 +422,7 @@ global.LOCAL_PLUGINS = {
     ) {
       return global.LOCAL_PLUGINS.getLocalPlugins();
     }
+    if (!pluginInstance) throw new Error('Plugin manager is unavailable');
     try {
       await pluginInstance.uninstall([plugin.name], { isDev: plugin.isDev });
     } catch (_e) {
@@ -367,15 +437,21 @@ global.LOCAL_PLUGINS = {
   reloadPluginsFromDisk() {
     try {
       const raw = JSON.parse(fs.readFileSync(configPath, 'utf-8'));
-      global.LOCAL_PLUGINS.PLUGINS = (Array.isArray(raw) ? raw : []).filter(
-        (p) => p && p.name !== 'flick-superx'
-      );
+      global.LOCAL_PLUGINS.PLUGINS = migrateCatalog(raw);
+      if (
+        JSON.stringify(raw) !== JSON.stringify(global.LOCAL_PLUGINS.PLUGINS)
+      ) {
+        fs.writeFileSync(
+          configPath,
+          JSON.stringify(global.LOCAL_PLUGINS.PLUGINS)
+        );
+      }
     } catch (e) {
       global.LOCAL_PLUGINS.PLUGINS = [];
     }
-    ensureBuiltinSuperPanelInList();
+    ensureBuiltinPluginsInList();
     return global.LOCAL_PLUGINS.PLUGINS;
   },
 };
 
-ensureBuiltinSuperPanelInList();
+ensureBuiltinPluginsInList();

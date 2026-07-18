@@ -1,5 +1,6 @@
 import defaultConfig from '@/common/constans/defaultConfig';
 import DBInstance from './db';
+import { migrateConfiguredLogo } from './configPresentation';
 const LOCAL_CONFIG_KEY = 'flick-local-config';
 
 const db = new DBInstance();
@@ -7,22 +8,43 @@ const db = new DBInstance();
 const localConfig = {
   async init(): Promise<any> {
     const localConfig: any = await db.dbGet({ data: { id: LOCAL_CONFIG_KEY } });
-    if (
-      !localConfig ||
-      !localConfig.data ||
-      localConfig.data.version !== defaultConfig.version
-    ) {
-      const data: any = {
-        _id: LOCAL_CONFIG_KEY,
-        data: defaultConfig,
-      };
-      if (localConfig && localConfig) {
-        data._rev = localConfig._rev;
-      }
-      await db.dbPut({
-        data: { data },
-      });
-    }
+    const previous = localConfig?.data || {};
+    const next = {
+      ...defaultConfig,
+      ...previous,
+      version: defaultConfig.version,
+      perf: {
+        ...defaultConfig.perf,
+        ...previous.perf,
+        custom: {
+          ...defaultConfig.perf.custom,
+          ...previous.perf?.custom,
+          logo: migrateConfiguredLogo(previous.perf?.custom?.logo),
+        },
+        shortCut: {
+          ...defaultConfig.perf.shortCut,
+          ...previous.perf?.shortCut,
+        },
+        common: {
+          ...defaultConfig.perf.common,
+          ...previous.perf?.common,
+        },
+        local: {
+          ...defaultConfig.perf.local,
+          ...previous.perf?.local,
+        },
+      },
+    };
+    if (JSON.stringify(previous) === JSON.stringify(next)) return;
+    await db.dbPut({
+      data: {
+        data: {
+          _id: LOCAL_CONFIG_KEY,
+          ...(localConfig?._rev ? { _rev: localConfig._rev } : {}),
+          data: next,
+        },
+      },
+    });
   },
   async getConfig(): Promise<any> {
     const data: any =

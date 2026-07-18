@@ -34,7 +34,7 @@
                 <span class="ellipse">{{ item.pluginName }}</span>
               </template>
               <template #avatar>
-                <a-avatar :src="item.logo" />
+                <a-avatar :src="item.logoUrl" />
               </template>
             </a-list-item-meta>
           </a-list-item>
@@ -54,7 +54,7 @@
       <template #title>
         <div class="plugin-title-info">
           <div class="info">
-            <img :src="detail.logo" class="plugin-icon" />
+            <img :src="detail.logoUrl" class="plugin-icon" />
             <div class="plugin-desc">
               <div>
                 <div class="title">
@@ -108,6 +108,7 @@ import { message } from 'ant-design-vue';
 import MarkdownIt from 'markdown-it';
 import { useRouter } from 'vue-router';
 import request from '@/assets/request/index';
+import { toMarketPayload } from '@/utils/marketPayload';
 import { useI18n } from 'vue-i18n';
 const { t } = useI18n();
 
@@ -116,6 +117,7 @@ const router = useRouter();
 
 const startDownload = (name) => store.dispatch('startDownload', name);
 const successDownload = (name) => store.dispatch('successDownload', name);
+const errorDownload = (name) => store.dispatch('errorDownload', name);
 
 const props = defineProps({
   list: {
@@ -126,12 +128,18 @@ const props = defineProps({
 });
 
 const downloadPlugin = async (plugin) => {
-  startDownload(plugin.name);
-  await window.market.downloadPlugin(plugin);
-  message.success(
-    t('feature.dev.installSuccess', { pluginName: plugin.pluginName })
-  );
-  successDownload(plugin.name);
+  await startDownload(plugin.name);
+  try {
+    await window.market.downloadPlugin(toMarketPayload(plugin));
+    await successDownload(plugin.name);
+    message.success(
+      t('feature.dev.installSuccess', { pluginName: plugin.pluginName })
+    );
+  } catch (error) {
+    await errorDownload(plugin.name);
+    const reason = error instanceof Error ? error.message : String(error || '');
+    message.error(reason ? `插件安装失败：${reason}` : '插件安装失败，请重试');
+  }
 };
 
 const visible = ref(false);

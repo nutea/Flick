@@ -1,2 +1,13 @@
 import './db.test';
 import './startup-mode.test';
+import './superx-selection.test';
+import './superx-plugin-icon.test';
+import './ipc-payload.test';
+import './renderer-architecture.test';
+import './detach-input.test';
+import './plugin-view-lifecycle.test';
+import './recent-plugin-navigation.test';
+import './plugin-history.test';
+import './search-input-lifecycle.test';
+import './window-geometry.test';
+import './window-geometry-architecture.test';

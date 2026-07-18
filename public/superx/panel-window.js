@@ -27,25 +27,54 @@ exports.default = createPanelWindow;
 const path = __importStar(require("path"));
 const fs = __importStar(require("fs"));
 const child_process_1 = require("child_process");
+const panel_geometry_1 = require("./panel-geometry");
+const PANEL_WIDTH = 240;
+const LINUX_PROGRAMMATIC_MOVE_GUARD_MS = 150;
 /** Flick 注入的 ctx，与历史 `panel-window.js` 一致 */
 function createPanelWindow(ctx) {
-    const { BrowserWindow, ipcMain, dialog, shell } = ctx;
+    const { BrowserWindow, ipcMain, dialog, shell, screen } = ctx;
     const shouldOpenPanelDevtools = process.env.FLICK_OPEN_SUBAPP_DEVTOOLS === '1';
     let win;
+    let readyPromise = Promise.resolve();
     let pinned = false;
     let ipcHandlersAttached = false;
-    /** 主进程 placePanelAtCursor 算出的意图坐标；Win 高 DPI 下 getBounds 与 setBounds 舍入不一致，勿用 b.x/b.y 做二次缩放锚点 */
-    let panelPositionAnchor = null;
-    const syncPanelPositionAnchorFromWindow = () => {
-        if (!win || (typeof win.isDestroyed === 'function' && win.isDestroyed()))
+    let screenHandlersAttached = false;
+    let placement = null;
+    let manualMoveInProgress = false;
+    let suppressLinuxMoveUntil = 0;
+    const sameBounds = (a, b) => a.x === b.x && a.y === b.y && a.width === b.width && a.height === b.height;
+    const applyPanelLayout = (requestId, height) => {
+        if (!win || win.isDestroyed() || (placement === null || placement === void 0 ? void 0 : placement.requestId) !== requestId)
             return;
-        try {
-            const b = win.getBounds();
-            panelPositionAnchor = { x: Math.round(b.x), y: Math.round(b.y) };
+        const safeSize = {
+            width: PANEL_WIDTH,
+            height: Math.max(50, Math.min(900, Math.round(height))),
+        };
+        const current = win.getBounds();
+        let target;
+        if (!placement.userPositioned) {
+            const display = screen.getDisplayNearestPoint(placement.anchor);
+            target = (0, panel_geometry_1.placePanelNearPoint)(placement.anchor, safeSize, display.workArea);
         }
-        catch {
-            /* ignore */
+        else {
+            const display = screen.getDisplayNearestPoint({
+                x: current.x + current.width / 2,
+                y: current.y + current.height / 2,
+            });
+            target = (0, panel_geometry_1.constrainPanelBounds)({ x: current.x, y: current.y, ...safeSize }, display.workArea);
         }
+        if (sameBounds(current, target))
+            return;
+        suppressLinuxMoveUntil = Date.now() + LINUX_PROGRAMMATIC_MOVE_GUARD_MS;
+        win.setBounds(target, false);
+    };
+    const trackUserMove = () => {
+        if (!win || win.isDestroyed())
+            return;
+        const isConfirmedManualMove = manualMoveInProgress ||
+            (process.platform === 'linux' && Date.now() > suppressLinuxMoveUntil);
+        if (placement && isConfirmedManualMove)
+            placement.userPositioned = true;
     };
     const emitPinState = (pin) => {
         win === null || win === void 0 ? void 0 : win.webContents.send('superPanel-pin-state', pin);
@@ -135,7 +164,7 @@ function createPanelWindow(ctx) {
                 return;
             console.warn(`[flick-system-super-panel] renderer ${details.level}: ${details.message || ''}`);
         });
-        win.loadURL(panelUrl);
+        readyPromise = win.loadURL(panelUrl).then(() => undefined, () => undefined);
         if (shouldOpenPanelDevtools) {
             win.webContents.once('did-finish-load', () => {
                 if (!win ||
@@ -148,10 +177,17 @@ function createPanelWindow(ctx) {
         }
         win.on('closed', () => {
             win = undefined;
-            panelPositionAnchor = null;
+            placement = null;
+            manualMoveInProgress = false;
         });
-        // 拖动后同步锚点，避免后续 superPanel-setSize 仍按旧坐标 setBounds 导致闪回原位
-        win.on('move', syncPanelPositionAnchorFromWindow);
+        win.on('will-move', () => {
+            manualMoveInProgress = true;
+        });
+        win.on('move', trackUserMove);
+        win.on('moved', () => {
+            trackUserMove();
+            manualMoveInProgress = false;
+        });
         win.on('blur', () => {
             if (!pinned)
                 hideWindow();
@@ -175,7 +211,7 @@ function createPanelWindow(ctx) {
         ipcHandlersAttached = true;
         for (const channel of [
             'superPanel-hidden',
-            'superPanel-setSize',
+            'superPanel-report-layout',
             'trigger-pin',
         ]) {
             ipcMain.removeAllListeners(channel);
@@ -199,20 +235,14 @@ function createPanelWindow(ctx) {
                 return;
             hideWindow();
         });
-        ipcMain.on('superPanel-setSize', (event, height) => {
+        ipcMain.on('superPanel-report-layout', (event, layout) => {
             if (!isPanelSender(event))
                 return;
-            if (!win || typeof height !== 'number' || !Number.isFinite(height))
+            const requestId = Number(layout === null || layout === void 0 ? void 0 : layout.requestId);
+            const height = Number(layout === null || layout === void 0 ? void 0 : layout.height);
+            if (!Number.isInteger(requestId) || !Number.isFinite(height))
                 return;
-            const h = Math.max(50, Math.min(900, Math.round(height)));
-            const ax = panelPositionAnchor === null || panelPositionAnchor === void 0 ? void 0 : panelPositionAnchor.x;
-            const ay = panelPositionAnchor === null || panelPositionAnchor === void 0 ? void 0 : panelPositionAnchor.y;
-            if (ax != null && ay != null) {
-                win.setBounds({ x: ax, y: ay, width: 240, height: h }, false);
-                return;
-            }
-            const b = win.getBounds();
-            win.setBounds({ x: b.x, y: b.y, width: 240, height: h }, false);
+            applyPanelLayout(requestId, height);
         });
         ipcMain.on('trigger-pin', (event, pin) => {
             if (!isPanelSender(event))
@@ -326,14 +356,36 @@ function createPanelWindow(ctx) {
     const init = () => {
         attachIpcOnce();
         ensurePanelWindow();
+        if (!screenHandlersAttached) {
+            screenHandlersAttached = true;
+            const revalidate = () => {
+                if (!win || win.isDestroyed() || !win.isVisible() || !placement)
+                    return;
+                const bounds = win.getBounds();
+                applyPanelLayout(placement.requestId, bounds.height);
+            };
+            screen.on('display-added', revalidate);
+            screen.on('display-removed', revalidate);
+            screen.on('display-metrics-changed', revalidate);
+        }
     };
     const getWindow = () => {
         ensurePanelWindow();
         return win;
     };
-    const setPanelPositionAnchor = (x, y) => {
-        panelPositionAnchor = { x: Math.round(x), y: Math.round(y) };
+    const whenReady = () => readyPromise;
+    const beginPlacement = (requestId, anchor) => {
+        placement = {
+            requestId,
+            anchor: { x: Math.round(anchor.x), y: Math.round(anchor.y) },
+            userPositioned: false,
+        };
+        manualMoveInProgress = false;
+        if (win && !win.isDestroyed()) {
+            const bounds = win.getBounds();
+            applyPanelLayout(requestId, bounds.height);
+        }
     };
     const isPinned = () => pinned;
-    return { init, getWindow, setPanelPositionAnchor, isPinned, resetPin };
+    return { init, getWindow, whenReady, beginPlacement, isPinned, resetPin };
 }

@@ -1,4 +1,4 @@
-import { app, BrowserWindow, protocol, nativeTheme } from 'electron';
+import { app, BrowserWindow, nativeTheme } from 'electron';
 import fs from 'fs';
 import path from 'path';
 import { pathToFileURL } from 'url';
@@ -15,6 +15,7 @@ import {
   writeStartupLog,
 } from '@/main/common/startupDiagnostics';
 import { secureWebContentsNavigation } from '@/main/common/navigationSecurity';
+import { windowGeometryController } from '@/main/common/windowGeometryController';
 
 require('@electron/remote/main').initialize();
 
@@ -28,8 +29,6 @@ export default () => {
 
   const init = () => {
     createWindow();
-
-    require('@electron/remote/main').enable(win.webContents);
   };
 
   const createWindow = async () => {
@@ -47,7 +46,7 @@ export default () => {
       webPreferences: {
         webSecurity: true,
         backgroundThrottling: false,
-        contextIsolation: false,
+        contextIsolation: true,
         sandbox: false,
         webviewTag: false,
         nodeIntegration: false,
@@ -56,6 +55,7 @@ export default () => {
         spellcheck: false,
       },
     });
+    windowGeometryController.attachMainWindow(win);
     const devServerUrl = process.env.ELECTRON_RENDERER_URL;
     const targetUrl = devServerUrl
       ? devServerUrl
@@ -64,10 +64,6 @@ export default () => {
         ).toString();
     secureWebContentsNavigation(win.webContents, targetUrl);
     void win.loadURL(targetUrl);
-    protocol.interceptFileProtocol('image', (req, callback) => {
-      const url = req.url.substr(8);
-      callback(decodeURI(url));
-    });
     win.on('closed', () => {
       win = undefined;
     });
@@ -118,25 +114,19 @@ export default () => {
         void win.webContents
           .executeJavaScript(
             `(() => {
-            const denied = (name) => {
-              try { window.require(name); return false; } catch { return true; }
-            };
             return {
               flickBridge: !!window.flick,
-              pathFacade: typeof window.require('path').join === 'function',
-              childProcessDenied: denied('child_process'),
-              fsExtraDenied: denied('fs-extra')
+              nodeRequireType: typeof window.require
             };
           })()`
           )
           .then((result) => {
             const secure =
               preferences.nodeIntegration === false &&
+              preferences.contextIsolation === true &&
               preferences.webviewTag === false &&
               result?.flickBridge === true &&
-              result?.pathFacade === true &&
-              result?.childProcessDenied === true &&
-              result?.fsExtraDenied === true;
+              result?.nodeRequireType === 'undefined';
             const payload = { secure, preferences, result };
             if (secure) console.log('[flick-main] smoke passed:', payload);
             else console.error('[flick-main] smoke failed:', payload);
@@ -149,7 +139,10 @@ export default () => {
                 arch: process.arch,
                 packaged: app.isPackaged,
                 preferences: {
+                  contextIsolation: preferences.contextIsolation,
                   nodeIntegration: preferences.nodeIntegration,
+                  sandbox: preferences.sandbox,
+                  webSecurity: preferences.webSecurity,
                   webviewTag: preferences.webviewTag,
                 },
                 result,
@@ -196,9 +189,7 @@ export default () => {
     win.on('show', () => {
       if (!canUseWindow()) return;
       // 触发主窗口的 onShow hook
-      void win.webContents.executeJavaScript(
-        `window.flick && window.flick.hooks && typeof window.flick.hooks.onShow === "function" && window.flick.hooks.onShow()`
-      );
+      win.webContents.send('flick:window-show');
       // versonHandler.checkUpdate();
       // win.webContents.openDevTools();
     });
@@ -206,9 +197,7 @@ export default () => {
     win.on('hide', () => {
       if (!canUseWindow()) return;
       // 触发主窗口的 onHide hook
-      void win.webContents.executeJavaScript(
-        `window.flick && window.flick.hooks && typeof window.flick.hooks.onHide === "function" && window.flick.hooks.onHide()`
-      );
+      win.webContents.send('flick:window-hide');
     });
 
     // 判断失焦是否隐藏

@@ -1,5 +1,11 @@
 'use strict';
-import electron, { app, globalShortcut, BrowserWindow, Tray } from 'electron';
+import electron, {
+  app,
+  globalShortcut,
+  BrowserWindow,
+  session,
+  Tray,
+} from 'electron';
 import { main, guide } from './browsers';
 import commonConst from '../common/utils/commonConst';
 // eslint-disable-next-line @typescript-eslint/ban-ts-comment
@@ -8,7 +14,7 @@ import API from './common/api';
 import createTray from './common/tray';
 import registerHotKey from './common/registerHotKey';
 import localConfig from './common/initLocalConfig';
-import winPosition from './common/getWinPosition';
+import { windowGeometryController } from './common/windowGeometryController';
 import {
   getSearchFiles,
   putFileToFlick,
@@ -23,6 +29,12 @@ import registerCdwhereIpc from './common/registerCdwhereIpc';
 import { warmupDevSubAppServers } from './common/devSubAppServers';
 import { showStartupError, writeStartupLog } from './common/startupDiagnostics';
 import { isSilentLoginStartup } from './common/startupMode';
+import {
+  installImageProtocol,
+  registerImageProtocolPrivileges,
+} from './common/imageProtocolService';
+
+registerImageProtocolPrivileges();
 
 class App {
   public windowCreator: { init: () => void; getWindow: () => BrowserWindow };
@@ -61,6 +73,7 @@ class App {
     const readyFunction = async () => {
       try {
         writeStartupLog('ready initialization started');
+        installImageProtocol(session.defaultSession);
         await warmupDevSubAppServers();
         writeStartupLog('sub-app server initialization completed');
         registerCdwhereIpc();
@@ -98,8 +111,7 @@ class App {
           shouldShowForSmoke &&
           !mainWindow.isDestroyed()
         ) {
-          mainWindow.show();
-          mainWindow.focus();
+          windowGeometryController.showMainWindow(mainWindow);
         }
         this.tray = await createTray(() => this.windowCreator.getWindow());
         writeStartupLog('tray created');
@@ -128,11 +140,8 @@ class App {
               writeStartupLog(
                 'startup fallback showing main window on Windows packaged build'
               );
-              const { x, y } = winPosition.getPosition();
               mainWindow.setSkipTaskbar(false);
-              mainWindow.setPosition(x, y);
-              mainWindow.show();
-              mainWindow.focus();
+              windowGeometryController.showMainWindow(mainWindow);
             }
           }, 1800);
         }
@@ -173,11 +182,8 @@ class App {
         if (win.isMinimized()) {
           win.restore();
         }
-        const { x, y } = winPosition.getPosition();
-        win.setPosition(x, y);
         // 第二实例被拒绝后，确保主窗口可见，避免仅 focus 但窗口仍隐藏
-        win.show();
-        win.focus();
+        windowGeometryController.showMainWindow(win);
         if (files.length > 0) {
           putFileToFlick(win.webContents, files);
         }

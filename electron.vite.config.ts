@@ -18,17 +18,6 @@ export default defineConfig({
       alias: {
         '@': path.resolve(__dirname, 'src'),
         'original-fs': 'fs',
-        electron: path.resolve(__dirname, 'src/renderer/shims/electron.ts'),
-        '@electron/remote': path.resolve(
-          __dirname,
-          'src/renderer/shims/electron-remote.ts'
-        ),
-        child_process: path.resolve(
-          __dirname,
-          'src/renderer/shims/child_process.ts'
-        ),
-        path: path.resolve(__dirname, 'src/renderer/shims/path.ts'),
-        fs: path.resolve(__dirname, 'src/renderer/shims/fs.ts'),
       },
     },
     define: {
@@ -59,6 +48,7 @@ export default defineConfig({
       rollupOptions: {
         input: {
           index: path.resolve(__dirname, 'src/preload/main.ts'),
+          plugin: path.resolve(__dirname, 'src/preload/plugin.ts'),
           guide: path.resolve(__dirname, 'src/preload/guide.ts'),
           detach: path.resolve(__dirname, 'src/preload/detach.ts'),
           feature: path.resolve(__dirname, 'src/preload/feature.ts'),

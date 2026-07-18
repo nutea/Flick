@@ -85,6 +85,17 @@ const writeWindowsFilePaths = (files: string[]): boolean => {
 };
 
 export const clipboard: NativeClipboardApi = {
+  getChangeToken(): number | null {
+    const addon = tryLoadNativeAddon();
+    if (typeof addon?.getClipboardChangeToken !== 'function') return null;
+    try {
+      const token = addon.getClipboardChangeToken();
+      return Number.isFinite(token) && token > 0 ? token : null;
+    } catch {
+      return null;
+    }
+  },
+
   async getClipboardContent(): Promise<NativeClipboardContent> {
     const electron = tryLoadElectron();
     if (!electron) return null;

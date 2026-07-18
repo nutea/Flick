@@ -3,7 +3,7 @@ import path from 'path';
 import pkg from '../../../package.json';
 import commonConst from '@/common/utils/commonConst';
 import { guide } from '../browsers';
-import winPosition from './getWinPosition';
+import { windowGeometryController } from './windowGeometryController';
 
 function getUsableWindow(
   getWindow: () => BrowserWindow | undefined
@@ -27,12 +27,8 @@ function createTray(getWindow: () => BrowserWindow | undefined): Promise<Tray> {
     const openSettings = () => {
       const window = getUsableWindow(getWindow);
       if (!window) return;
-      const { x, y } = winPosition.getPosition();
-      void window.webContents.executeJavaScript(
-        `window.flick && window.flick.openMenu && window.flick.openMenu({ code: "settings" })`
-      );
-      window.setPosition(x, y);
-      window.show();
+      window.webContents.send('flick:open-menu', { code: 'settings' });
+      windowGeometryController.showMainWindow(window);
     };
 
     const createContextMenu = () =>
@@ -65,9 +61,7 @@ function createTray(getWindow: () => BrowserWindow | undefined): Promise<Tray> {
           click() {
             const window = getUsableWindow(getWindow);
             if (!window) return;
-            const { x, y } = winPosition.getPosition();
-            window.setPosition(x, y);
-            window.show();
+            windowGeometryController.showMainWindow(window);
           },
         },
         {

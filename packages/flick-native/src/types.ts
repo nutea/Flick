@@ -58,8 +58,18 @@ export interface NativeWindowInfo {
 
 export interface NativeSystemApi {
   getFolderOpenPath(): Promise<string>;
+  /** Returns only the foreground Explorer folder, never the desktop. */
+  getForegroundFolderPath(): Promise<string>;
   getFolderOpenPathSync(): string;
   getActiveWindow(): Promise<NativeWindowInfo | null>;
+  /**
+   * Reads the text selection exposed by the currently focused native control.
+   * Returns an empty string when the platform or focused control does not
+   * expose a readable text selection.
+   */
+  getSelectedText(): Promise<string>;
+  /** Reads selected items from the foreground platform file manager. */
+  getSelectedFilePaths(): Promise<string[]>;
 }
 
 export interface NativeInputApi {
@@ -70,6 +80,11 @@ export interface NativeInputApi {
 
 export interface NativeClipboardApi {
   getClipboardContent(): Promise<NativeClipboardContent>;
+  /**
+   * Returns a platform clipboard generation counter without reading or
+   * writing clipboard data. `null` means the platform has no native counter.
+   */
+  getChangeToken(): number | null;
   /**
    * Reads the file paths currently held on the OS clipboard.
    * Returns an empty array on platforms or formats where no file list exists.

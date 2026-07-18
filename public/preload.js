@@ -1,4 +1,4 @@
-const { ipcRenderer, shell } = require('electron');
+const { clipboard, ipcRenderer, nativeImage, shell } = require('electron');
 const { BrowserWindow, nativeTheme, screen, app } = require('@electron/remote');
 const os = require('os');
 const path = require('path');
@@ -69,6 +69,15 @@ window.flick = {
   onHide(cb) {
     typeof cb === 'function' && (window.flick.hooks.onHide = cb);
   },
+  onThemeChange(cb) {
+    typeof cb === 'function' && (window.flick.hooks.onThemeChange = cb);
+  },
+  changeTheme() {
+    window.flick.hooks.onThemeChange?.();
+  },
+  onOpenMenu(cb) {
+    typeof cb === 'function' && (window.flick.hooks.onOpenMenu = cb);
+  },
   // 窗口交互
   hideMainWindow() {
     ipcSendSync('hideMainWindow');
@@ -82,6 +91,12 @@ window.flick = {
   showSaveDialog(options) {
     return ipcSendSync('showSaveDialog', options);
   },
+  showContextMenu(items, point) {
+    return ipcInvoke('showContextMenu', { items, ...(point || {}) });
+  },
+  showMessageBox(options) {
+    return ipcInvoke('showMessageBox', options);
+  },
 
   setExpendHeight(height) {
     ipcSendSync('setExpendHeight', height);
@@ -94,12 +109,38 @@ window.flick = {
       isFocus,
     });
   },
+  detachInput: {
+    show(options = {}, onChange) {
+      typeof onChange === 'function' &&
+        (window.flick.hooks.onSubInputChange = onChange);
+      ipcSendSync('setSubInput', {
+        placeholder: String(options.placeholder || ''),
+        isFocus: options.focus === true,
+        role: options.role || 'search',
+      });
+      if (Object.prototype.hasOwnProperty.call(options, 'value')) {
+        ipcSendSync('setSubInputValue', { text: String(options.value ?? '') });
+      }
+    },
+    hide() {
+      window.flick.removeSubInput();
+    },
+    setValue(text) {
+      window.flick.setSubInputValue(text);
+    },
+  },
   removeSubInput() {
     delete window.flick.hooks.onSubInputChange;
     ipcSendSync('removeSubInput');
   },
   setSubInputValue(text) {
     ipcSendSync('setSubInputValue', { text });
+  },
+  sendSubInputChange(text) {
+    return ipcSendSync('sendSubInputChangeEvent', { text });
+  },
+  sendPluginKeyDown(keyCode, modifiers) {
+    ipcSend('sendPluginSomeKeyDownEvent', { keyCode, modifiers });
   },
   subInputBlur() {
     ipcSendSync('subInputBlur');
@@ -119,6 +160,16 @@ window.flick = {
   copyFile: (file) => {
     return ipcSendSync('copyFile', { file });
   },
+  clipboard: {
+    availableFormats: () => clipboard.availableFormats(),
+    clear: () => clipboard.clear(),
+    readText: () => clipboard.readText(),
+    readImageDataUrl: () => clipboard.readImage().toDataURL(),
+    writeText: (text) => clipboard.writeText(String(text || '')),
+    imageFileDataUrl: (filePath) =>
+      nativeImage.createFromPath(String(filePath || '')).toDataURL(),
+  },
+  pathExtension: (filePath) => path.extname(String(filePath || '')),
   db: {
     put: (data) => ipcSendSync('dbPut', { data }),
     get: (id) => ipcSendSync('dbGet', { id }),
@@ -198,6 +249,36 @@ window.flick = {
   removePlugin() {
     ipcSend('removePlugin');
   },
+  detachPlugin() {
+    ipcSend('detachPlugin');
+  },
+  openPluginDevTools() {
+    ipcSend('openPluginDevTools');
+  },
+  moveWindow(bounds) {
+    ipcSend('windowMoving', bounds);
+  },
+  tryRedirectSingletonDetach(plugin) {
+    return ipcRenderer.invoke('flick:try-redirect-singleton-detach', plugin);
+  },
+  getPluginFlickConfig(name) {
+    return ipcRenderer.invoke('flick:get-plugin-flick-config', name);
+  },
+  flipPluginAutoDetach(name) {
+    return ipcRenderer.invoke('flick:flip-plugin-auto-detach', name);
+  },
+  flipPluginDetachAlwaysShowSearch(name) {
+    return ipcRenderer.invoke(
+      'flick:flip-plugin-detach-always-show-search',
+      name
+    );
+  },
+  onGlobalShortcut(callback) {
+    if (typeof callback !== 'function') return () => {};
+    const listener = (_event, value) => callback(value);
+    ipcRenderer.on('global-short-key', listener);
+    return () => ipcRenderer.removeListener('global-short-key', listener);
+  },
 
   shellShowItemInFolder: (path) => {
     ipcSend('shellShowItemInFolder', { path });
@@ -215,6 +296,15 @@ window.flick = {
 
   getPluginInfo: (pluginName, pluginPath) =>
     ipcInvoke('getPluginInfo', { pluginName, pluginPath }),
+  getBuiltinPlugin: (name) => ipcInvoke('getBuiltinPlugin', { name }),
+
+  getLocalPlugins: () => ipcSendSync('getLocalPlugins'),
+  getInstalledApps: () => ipcInvoke('getInstalledApps'),
+
+  updateLocalPlugin: (plugin) => ipcSendSync('updateLocalPlugin', plugin),
+
+  resolveConfiguredLogo: (logo) =>
+    ipcSendSync('resolveConfiguredLogo', { logo }),
 
   upgradePlugin: (name) => ipcInvoke('upgradePlugin', { name }),
 
@@ -285,3 +375,7 @@ window.flick = {
 if (!window.rubick) {
   window.rubick = window.flick;
 }
+
+ipcRenderer.on('flick:open-menu', (_event, payload) => {
+  window.flick.hooks.onOpenMenu?.(payload);
+});

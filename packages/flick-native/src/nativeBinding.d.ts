@@ -32,11 +32,20 @@ declare module '../../native' {
     /** Async variant. Iterates Explorer windows over COM on a worker thread. */
     getFolderOpenPath?: () => Promise<string>;
 
+    /** Foreground Explorer folder only; never falls back to the desktop. */
+    getForegroundFolderPath?: () => Promise<string>;
+
     /**
      * Synchronous variant retained only for `event.returnValue` IPC paths
      * (e.g. `registerCdwhereIpc`). Prefer the async form everywhere else.
      */
     getFolderOpenPathSync?: () => string;
+
+    /** Reads the focused control's current text selection via UI Automation. */
+    getSelectedText?: () => Promise<string>;
+
+    /** Reads selected filesystem items from the foreground File Explorer. */
+    getSelectedFilePaths?: () => Promise<string[]>;
 
     sendKeyboardChord?: (modifiers: string[], key: string) => void;
 
@@ -45,9 +54,7 @@ declare module '../../native' {
      * `(payload) => …`. We still type variadic args for forward-compat with
      * a future `CalleeHandled` rebuild.
      */
-    startInputHook?: (
-      callback: (...args: unknown[]) => void
-    ) => () => void;
+    startInputHook?: (callback: (...args: unknown[]) => void) => () => void;
 
     /**
      * Reads file paths currently on the OS clipboard (Windows `CF_HDROP`).
@@ -55,6 +62,9 @@ declare module '../../native' {
      * platforms. Synchronous; a single call is in the sub-millisecond range.
      */
     readClipboardFilePaths?: () => string[];
+
+    /** Windows clipboard sequence number; changes on a new copy operation. */
+    getClipboardChangeToken?: () => number;
 
     /**
      * Publishes file paths to the OS clipboard as a `CF_HDROP` payload (and

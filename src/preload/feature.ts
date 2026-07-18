@@ -1,4 +1,5 @@
 import { contextBridge, ipcRenderer, webUtils } from 'electron';
+import { toIpcPayload } from './ipcPayload';
 
 type Callback = (...args: any[]) => void;
 
@@ -44,10 +45,38 @@ const flick = {
     callbacks.theme = callback;
   },
   changeTheme: () => callbacks.theme?.(),
-  openPlugin: (plugin: unknown) => sendSync('loadPlugin', plugin),
+  openPlugin: (plugin: unknown) => invoke('loadPlugin', plugin),
   setSubInput: (callback: Callback, placeholder = '', isFocus?: boolean) => {
     callbacks.subInput = callback;
     return sendSync('setSubInput', { placeholder, isFocus });
+  },
+  detachInput: {
+    show: (
+      options: {
+        value?: unknown;
+        placeholder?: unknown;
+        focus?: boolean;
+        role?: 'search' | 'filter' | 'command';
+      } = {},
+      callback?: Callback
+    ) => {
+      if (callback) callbacks.subInput = callback;
+      const result = sendSync('setSubInput', {
+        placeholder: String(options.placeholder ?? ''),
+        isFocus: options.focus === true,
+        role: options.role ?? 'search',
+      });
+      if (Object.prototype.hasOwnProperty.call(options, 'value')) {
+        sendSync('setSubInputValue', { text: String(options.value ?? '') });
+      }
+      return result;
+    },
+    hide: () => {
+      delete callbacks.subInput;
+      return sendSync('removeSubInput');
+    },
+    setValue: (text: unknown) =>
+      sendSync('setSubInputValue', { text: String(text ?? '') }),
   },
   removeSubInput: () => {
     delete callbacks.subInput;
@@ -56,6 +85,8 @@ const flick = {
   showOpenDialog: (options: unknown) => sendSync('showOpenDialog', options),
   getFileIcon: (filePath: string) =>
     invoke('getFileIcon', { path: String(filePath || '') }),
+  resolveConfiguredLogo: (logo: unknown) =>
+    sendSync('resolveConfiguredLogo', { logo }),
   shellOpenExternal: (url: string) =>
     ipcRenderer.invoke('feature:open-external', String(url || '')),
   isWindows: () => process.platform === 'win32',
@@ -91,11 +122,11 @@ const market = {
   getLocalPlugins: () =>
     ipcRenderer.sendSync('feature:get-local-plugins') as unknown[],
   downloadPlugin: (plugin: unknown) =>
-    ipcRenderer.invoke('feature:download-plugin', plugin),
+    ipcRenderer.invoke('feature:download-plugin', toIpcPayload(plugin)),
   deletePlugin: (plugin: unknown) =>
-    ipcRenderer.invoke('feature:delete-plugin', plugin),
+    ipcRenderer.invoke('feature:delete-plugin', toIpcPayload(plugin)),
   refreshPlugin: (plugin: unknown) =>
-    ipcRenderer.invoke('feature:refresh-plugin', plugin),
+    ipcRenderer.invoke('feature:refresh-plugin', toIpcPayload(plugin)),
   addLocalStartPlugin: (plugin: unknown) =>
     ipcRenderer.send('msg-trigger', {
       type: 'addLocalStartPlugin',

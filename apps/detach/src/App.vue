@@ -1,15 +1,24 @@
 <template>
   <div :class="[platform, 'detach']">
     <div class="info">
-      <img :src="plugInfo.logo" />
-      <input
-        autofocus
-        @input="changeValue"
+      <img :src="plugInfo.logoUrl" />
+      <div
         v-if="showInput"
-        :value="plugInfo.subInput?.value"
-        :placeholder="plugInfo.subInput?.placeholder"
-      />
-      <span v-else>{{ plugInfo.pluginName }}</span>
+        class="detach-input-frame"
+        :data-role="detachInput.role"
+      >
+        <input
+          ref="inputElement"
+          @input="changeValue"
+          @keydown.esc.prevent="focusPlugin"
+          :value="detachInput.value"
+          :placeholder="detachInput.placeholder"
+          :aria-label="detachInput.role === 'filter' ? '筛选' : '搜索'"
+          autocomplete="off"
+          :spellcheck="false"
+        />
+      </div>
+      <span v-else class="plugin-title">{{ plugInfo.pluginName }}</span>
     </div>
     <div class="handle-container">
       <div class="handle">
@@ -84,7 +93,11 @@
 
 <script setup>
 import throttle from 'lodash.throttle';
-import { ref } from 'vue';
+import { nextTick, ref } from 'vue';
+import {
+  normalizeDetachInputRequest,
+  resolveDetachInputState,
+} from '../../../src/common/utils/detachInput';
 
 const api = window.detach;
 const platform = api.platform;
@@ -93,7 +106,14 @@ const pinned = ref(false);
 /** 插件 BrowserView 的开发者工具是否打开（与壳页无关） */
 const devToolsActive = ref(false);
 const showInput = ref(false);
-const detachAlwaysShowSearch = ref(false);
+const inputElement = ref(null);
+const detachInput = ref(
+  resolveDetachInputState({
+    capability: 'optional',
+    policy: 'auto',
+    request: null,
+  })
+);
 
 const storeInfo = localStorage.getItem('flick-system-detach') || '{}';
 const plugInfo = ref({});
@@ -147,47 +167,46 @@ api.onDevToolsState((opened) => {
   devToolsActive.value = opened;
 });
 
-api.onAlwaysShowSearch((enabled) => {
-  detachAlwaysShowSearch.value = enabled;
-  ensureSubInputStubWhenAlwaysShow();
-  updateShowInputFromState();
+api.onInputPolicy((policy) => {
+  detachInput.value.policy = policy;
+  updateShowInputFromState(false);
 });
 
-function ensureSubInputStubWhenAlwaysShow() {
-  if (detachAlwaysShowSearch.value && !plugInfo.value.subInput) {
-    plugInfo.value.subInput = { value: '', placeholder: '' };
-  }
+function focusPlugin() {
+  void api.focusPlugin();
 }
 
-function updateShowInputFromState() {
-  if (detachAlwaysShowSearch.value) {
-    ensureSubInputStubWhenAlwaysShow();
-    showInput.value = true;
-    return;
+function updateShowInputFromState(focusWhenRequested = true) {
+  detachInput.value = resolveDetachInputState({
+    capability: detachInput.value.capability,
+    policy: detachInput.value.policy,
+    request: detachInput.value,
+  });
+  showInput.value = detachInput.value.visible;
+  if (focusWhenRequested && detachInput.value.focus) {
+    void nextTick(() => inputElement.value?.focus());
+  } else {
+    focusPlugin();
   }
-  const si = plugInfo.value.subInput;
-  showInput.value = !!(si && (!!si.value || !!si.placeholder));
 }
 
 window.initDetach = (pluginInfo) => {
-  if (
-    typeof pluginInfo.logo === 'string' &&
-    pluginInfo.logo.startsWith('file://')
-  ) {
-    pluginInfo.logo = `image://${pluginInfo.logo.slice('file://'.length)}`;
-  }
   plugInfo.value = pluginInfo;
-  detachAlwaysShowSearch.value = !!pluginInfo.detachAlwaysShowSearch;
-  if (detachAlwaysShowSearch.value && !plugInfo.value.subInput) {
-    plugInfo.value.subInput = { value: '', placeholder: '' };
-  }
-  showInput.value =
-    detachAlwaysShowSearch.value ||
-    (pluginInfo.subInput &&
-      (!!pluginInfo.subInput.value || !!pluginInfo.subInput.placeholder));
+  const source = pluginInfo.detachInput || {};
+  detachInput.value = resolveDetachInputState({
+    capability: source.capability,
+    policy: source.policy === 'always' ? 'always' : 'auto',
+    request: source,
+  });
+  showInput.value = detachInput.value.visible;
   localStorage.setItem('flick-system-detach', JSON.stringify(pluginInfo));
   loadPinFromStorage();
   scheduleDevToolsListenerSetup();
+  if (detachInput.value.focus) {
+    void nextTick(() => inputElement.value?.focus());
+  } else {
+    focusPlugin();
+  }
 };
 
 try {
@@ -196,13 +215,32 @@ try {
   // ...
 }
 
-const changeValue = throttle((e) => {
-  api.sendInput(e.target.value);
+const sendInputChange = throttle((value) => {
+  api.sendInput(value);
 }, 500);
+
+const changeValue = (e) => {
+  const value = String(e.target?.value ?? '');
+  detachInput.value.value = value;
+  sendInputChange(value);
+};
+
+const focusDetachInput = () => {
+  if (!showInput.value) return false;
+  inputElement.value?.focus();
+  inputElement.value?.select();
+  return true;
+};
 
 const openPluginMenu = async () => {
   const { name, pluginName, version, description } = plugInfo.value;
-  await api.openPluginMenu({ name, pluginName, version, description });
+  await api.openPluginMenu({
+    name,
+    pluginName,
+    version,
+    description,
+    detachInputCapability: detachInput.value.capability,
+  });
 };
 
 const minimize = () => {
@@ -219,23 +257,35 @@ const close = () => {
 
 Object.assign(window, {
   setSubInputValue: ({ value }) => {
-    if (!plugInfo.value.subInput) plugInfo.value.subInput = {};
-    plugInfo.value.subInput.value = value;
-    updateShowInputFromState();
+    detachInput.value.value = String(value ?? '');
+    updateShowInputFromState(false);
   },
   setSubInput: (payload) => {
     const placeholder =
       payload != null && typeof payload === 'object' && 'placeholder' in payload
         ? payload.placeholder
         : payload;
-    if (!plugInfo.value.subInput) plugInfo.value.subInput = {};
-    plugInfo.value.subInput.placeholder =
-      placeholder != null ? String(placeholder) : '';
+    const request = normalizeDetachInputRequest({
+      ...detachInput.value,
+      requested: true,
+      placeholder: placeholder != null ? String(placeholder) : '',
+      focus:
+        payload != null && typeof payload === 'object'
+          ? payload.isFocus === true
+          : false,
+      role:
+        payload != null && typeof payload === 'object'
+          ? payload.role
+          : 'search',
+    });
+    Object.assign(detachInput.value, request);
     updateShowInputFromState();
   },
   removeSubInput: () => {
-    plugInfo.value.subInput = null;
-    updateShowInputFromState();
+    detachInput.value.requested = false;
+    detachInput.value.focus = false;
+    detachInput.value.placeholder = '';
+    updateShowInputFromState(false);
   },
 });
 
@@ -263,6 +313,10 @@ window.unmaximizeTrigger = () => {
 
 if (platform === 'darwin') {
   window.onkeydown = (e) => {
+    if (e.metaKey && e.code === 'KeyL' && focusDetachInput()) {
+      e.preventDefault();
+      return;
+    }
     if (e.code === 'Escape') {
       api.windowAction('endFullScreen');
       return;
@@ -273,6 +327,10 @@ if (platform === 'darwin') {
   };
 } else {
   window.onkeydown = (e) => {
+    if (e.ctrlKey && e.code === 'KeyL' && focusDetachInput()) {
+      e.preventDefault();
+      return;
+    }
     if (e.ctrlKey && e.code === 'KeyW') {
       api.windowAction('close');
       return;
@@ -309,6 +367,8 @@ body {
   font-weight: 500;
   box-sizing: border-box;
   justify-content: space-between;
+  background: var(--color-body-bg);
+  box-shadow: inset 0 -1px 0 var(--color-border-light);
 }
 
 .detach.darwin {
@@ -324,30 +384,76 @@ body {
   width: 36px;
   height: 36px;
   margin-right: 10px;
+  flex: 0 0 auto;
 }
 
-.detach input {
-  background-color: var(--color-body-bg);
-  color: var(--color-text-primary);
-  width: 360px;
-  height: 36px;
-  line-height: 36px;
-  border-radius: 4px;
-  font-size: 14px;
-  border: none;
-  padding: 0 10px;
-  outline: none;
+.detach-input-frame {
+  width: clamp(160px, 32vw, 420px);
+  max-width: calc(100% - 56px);
+  height: 34px;
+  display: flex;
+  align-items: center;
+  box-sizing: border-box;
+  overflow: hidden;
+  background: var(--color-fill-subtle);
+  border: 1px solid var(--color-border-subtle);
+  border-radius: var(--radius-md);
+  box-shadow: var(--shadow-control);
+  transition:
+    border-color var(--motion-fast) ease,
+    background-color var(--motion-fast) ease,
+    box-shadow var(--motion-fast) ease;
   -webkit-app-region: no-drag;
 }
 
-.detach input::-webkit-input-placeholder {
-  color: #aaa;
+.detach-input-frame:hover {
+  background: var(--color-input-hover);
+  border-color: var(--color-border-hover);
+}
+
+.detach-input-frame:focus-within {
+  background: var(--color-body-bg);
+  border-color: var(--color-accent);
+  box-shadow:
+    0 0 0 2px var(--color-focus-ring),
+    var(--shadow-control);
+}
+
+.detach-input-frame input {
+  background: transparent;
+  color: var(--color-text-primary);
+  width: 100%;
+  min-width: 0;
+  height: 32px;
+  line-height: 32px;
+  font-size: 14px;
+  border: none;
+  padding: 0 11px;
+  outline: none;
+  box-sizing: border-box;
+  caret-color: var(--color-accent);
+  -webkit-app-region: no-drag;
+}
+
+.detach-input-frame input::placeholder {
+  color: var(--color-text-desc);
   user-select: none;
 }
 
 .detach .info {
   display: flex;
   align-items: center;
+  flex: 1 1 auto;
+  min-width: 0;
+  height: 100%;
+  overflow: hidden;
+}
+
+.plugin-title {
+  min-width: 0;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
 }
 
 .handle {
@@ -364,7 +470,7 @@ body {
 }
 
 .handle > div:hover {
-  background-color: #dee2e6;
+  background-color: var(--color-list-hover);
 }
 
 .handle .plugin-menu-btn {
@@ -412,6 +518,7 @@ body {
 .handle-container {
   display: flex;
   align-items: center;
+  flex: 0 0 auto;
 }
 
 .window-handle {
@@ -428,7 +535,7 @@ body {
 }
 
 .window-handle > div:hover {
-  background-color: #dee2e6;
+  background-color: var(--color-list-hover);
 }
 
 .window-handle .minimize {

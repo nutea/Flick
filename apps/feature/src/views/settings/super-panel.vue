@@ -33,7 +33,7 @@
               <span class="ellipse">{{ item.pluginName }}</span>
             </template>
             <template #avatar>
-              <a-avatar :src="item.logo" />
+              <a-avatar :src="item.logoUrl" />
             </template>
           </a-list-item-meta>
         </a-list-item>

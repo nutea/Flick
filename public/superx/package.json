@@ -4,7 +4,10 @@
   "version": "1.0.0",
   "description": "Ctrl + W 唤起超级面板（快捷键请在插件市场「超级面板」中设置）",
   "pluginSetting": {
-    "single": true
+    "single": true,
+    "detach": {
+      "input": "none"
+    }
   },
   "main": "main.html",
   "entry": "main.js",

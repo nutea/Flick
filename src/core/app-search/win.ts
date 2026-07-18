@@ -1,118 +1,91 @@
-const nodeRequire =
-  typeof window !== 'undefined' && (window as any).require
-    ? (window as any).require
-    : require;
-const fs = nodeRequire('fs');
-const path = nodeRequire('path');
-const os = nodeRequire('os');
-const { shell } = nodeRequire('electron');
-const flickApi =
-  typeof window !== 'undefined' ? ((window as any).flick ?? null) : null;
+import fs from 'fs';
+import path from 'path';
+import { app, shell } from 'electron';
 
-const filePath = path.resolve(
-  'C:\\ProgramData\\Microsoft\\Windows\\Start Menu\\Programs'
-);
-
-const appData = path.join(os.homedir(), './AppData/Roaming');
-
-const startMenu = path.join(
-  appData,
-  'Microsoft\\Windows\\Start Menu\\Programs'
-);
-
-const fileLists: any = [];
 const isZhRegex = /[\u4e00-\u9fa5]/;
 
-const getico = async (targetPath: string) => {
-  try {
-    return (await flickApi?.getFileIcon?.(targetPath)) || '';
-  } catch (e) {
-    console.log(e, targetPath);
-    return '';
-  }
-};
-
-async function fileDisplay(currentPath: string) {
-  // 根据文件路径读取文件，返回文件列表
-  let files: string[] = [];
+async function fileDisplay(currentPath: string, target: any[]): Promise<void> {
+  let files: string[];
   try {
     files = await fs.promises.readdir(currentPath);
-  } catch (err) {
-    console.warn(err);
+  } catch {
     return;
   }
 
   for (const filename of files) {
-    const filedir = path.join(currentPath, filename);
-    let stats;
+    const filePath = path.join(currentPath, filename);
+    let stat: fs.Stats;
     try {
-      stats = await fs.promises.stat(filedir);
+      stat = await fs.promises.stat(filePath);
     } catch {
-      console.warn('获取文件 stats 失败');
+      continue;
+    }
+    if (stat.isDirectory()) {
+      await fileDisplay(filePath, target);
+      continue;
+    }
+    if (!stat.isFile() || path.extname(filePath).toLowerCase() !== '.lnk') {
       continue;
     }
 
-    const isFile = stats.isFile(); // 是文件?
-    const isDir = stats.isDirectory(); // 是文件夹
+    let detail: Electron.ShortcutDetails;
+    try {
+      detail = shell.readShortcutLink(filePath);
+    } catch {
+      continue;
+    }
+    if (!detail.target || detail.target.toLowerCase().includes('unin'))
+      continue;
 
-    if (isFile) {
-      const appName = filename.split('.')[0];
-      const keyWords = [appName];
-      let appDetail: any = {};
-      try {
-        appDetail = shell.readShortcutLink(filedir);
-      } catch {
-        //
-      }
-
-      if (
-        !appDetail.target ||
-        appDetail.target.toLowerCase().indexOf('unin') >= 0
-      ) {
-        continue;
-      }
-
-      // C:/program/cmd.exe => cmd
-      keyWords.push(path.basename(appDetail.target, '.exe'));
-
-      if (isZhRegex.test(appName)) {
-        // const [, pinyinArr] = translate(appName);
-        // const zh_firstLatter = pinyinArr.map((py) => py[0]);
-        // // 拼音
-        // keyWords.push(pinyinArr.join(''));
-        // 缩写
-        // keyWords.push(zh_firstLatter.join(''));
-      } else {
-        const firstLatter = appName
+    const appName = path.basename(filename, path.extname(filename));
+    const targetName = path.basename(detail.target, '.exe');
+    const keyWords = [appName];
+    if (targetName) keyWords.push(targetName);
+    if (!isZhRegex.test(appName)) {
+      keyWords.push(
+        appName
           .split(' ')
           .map((name) => name[0])
-          .join('');
-        keyWords.push(firstLatter);
-      }
-
-      const appInfo = {
-        value: 'plugin',
-        desc: appDetail.target,
-        type: 'app',
-        icon: await getico(appDetail.target),
-        pluginType: 'app',
-        action: `start "dummyclient" "${appDetail.target}"`,
-        keyWords: keyWords,
-        name: appName,
-        names: JSON.parse(JSON.stringify(keyWords)),
-      };
-      fileLists.push(appInfo);
+          .join('')
+      );
     }
-
-    if (isDir) {
-      await fileDisplay(filedir); // 递归，如果是文件夹，就继续遍历该文件夹下面的文件
+    let icon = '';
+    try {
+      icon = (
+        await app.getFileIcon(detail.target, { size: 'normal' })
+      ).toDataURL();
+    } catch {
+      // Entries without an icon remain searchable.
     }
+    target.push({
+      value: 'plugin',
+      desc: detail.target,
+      type: 'app',
+      icon,
+      pluginType: 'app',
+      keyWords,
+      name: appName,
+      names: [...keyWords],
+    });
   }
 }
 
-export default async () => {
-  fileLists.length = 0;
-  await fileDisplay(filePath);
-  await fileDisplay(startMenu);
-  return fileLists;
-};
+export default async function getWindowsApps(): Promise<any[]> {
+  const result: any[] = [];
+  const programData = process.env.ProgramData || 'C:\\ProgramData';
+  await fileDisplay(
+    path.join(programData, 'Microsoft', 'Windows', 'Start Menu', 'Programs'),
+    result
+  );
+  await fileDisplay(
+    path.join(
+      app.getPath('appData'),
+      'Microsoft',
+      'Windows',
+      'Start Menu',
+      'Programs'
+    ),
+    result
+  );
+  return result;
+}

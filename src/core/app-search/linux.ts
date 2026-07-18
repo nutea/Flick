@@ -4,7 +4,7 @@ import originfs from 'original-fs';
 const app_paths = [
   '/usr/share/applications',
   '/var/lib/snapd/desktop/applications',
-  `${window.process.env.HOME}/.local/share/applications`,
+  `${process.env.HOME}/.local/share/applications`,
 ];
 const emptyIcon = '';
 
@@ -80,7 +80,7 @@ function convertEntryFile2Feature(appPath) {
   ) {
     return null;
   }
-  let os = String(window.process.env.DESKTOP_SESSION).toLowerCase();
+  let os = String(process.env.DESKTOP_SESSION || '').toLowerCase();
   if (os === 'ubuntu') {
     os = 'gnome';
     if (
@@ -106,21 +106,17 @@ function convertEntryFile2Feature(appPath) {
   ) {
     icon = getIcon(icon);
   } else {
-    if (
-      !appPath.startsWith(
-        (window as any).process.env.HOME + '/.local/share/applications'
-      )
-    )
+    if (!appPath.startsWith(process.env.HOME + '/.local/share/applications'))
       return null;
     appPath = path.join(
-      (window as any).process.env.HOME,
+      process.env.HOME || '',
       '.local/share/icons',
       appPath + '.png'
     );
     originfs.existsSync(appPath) || (appPath = emptyIcon);
   }
   let desc = '';
-  const LANG = (window as any).process.env.LANG.split('.')[0];
+  const LANG = String(process.env.LANG || '').split('.')[0];
   if (`Comment[${LANG}]` in targetAppInfo) {
     desc = targetAppInfo[`Comment[${LANG}]`];
   } else if (targetAppInfo.Comment) {

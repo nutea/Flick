@@ -54,7 +54,7 @@
           <template #icon>
             <a-avatar :size="32">
               <template #icon>
-                <img :src="featureImageUrl(perf.custom.logo)" />
+                <img :src="perf.custom.logoUrl" />
               </template>
             </a-avatar>
           </template>
@@ -123,7 +123,6 @@ import {
 } from '@ant-design/icons-vue';
 import { useStore } from 'vuex';
 import localConfig from '@/confOp';
-import { featureImageUrl } from '@/utils/imageUrl';
 
 const store = useStore();
 const router = useRouter();

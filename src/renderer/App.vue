@@ -1,5 +1,5 @@
 <template>
-  <div id="components-layout" @mousedown="onMouseDown">
+  <div id="components-layout">
     <Search
       :currentPlugin="currentPlugin"
       @changeCurrent="changeIndex"
@@ -11,6 +11,7 @@
       :pluginLoading="pluginLoading"
       :pluginHistory="pluginHistory"
       :clipboardFile="clipboardFile || []"
+      :recentPluginNavigationEnabled="recentPluginNavigationEnabled"
       @choosePlugin="choosePlugin"
       @focus="searchFocus"
       @clear-search-value="clearSearchValue"
@@ -22,6 +23,7 @@
       :currentPlugin="currentPlugin"
       :searchValue="searchValue"
       :currentSelect="currentSelect"
+      :keyboardNavigation="keyboardNavigation"
       :options="visibleOptions"
       :clipboardFile="clipboardFile || []"
       @setPluginHistory="setPluginHistory"
@@ -37,18 +39,14 @@ import Result from './components/result.vue';
 import Search from './components/search.vue';
 import getWindowHeight from '../common/utils/getWindowHeight';
 import createPluginManager from './plugins-manager';
-import useDrag from '../common/utils/dragWindow';
 import { PLUGIN_HISTORY } from '@/common/constans/renderer';
 import { message } from 'ant-design-vue';
 import debounce from 'lodash.debounce';
 import localConfig from './confOp';
 
-const { onMouseDown } = useDrag();
-const remote = window.require('@electron/remote');
-
 const {
   initPlugins,
-  getPluginInfo,
+  getBuiltinPlugin,
   options,
   onSearch,
   searchValue,
@@ -70,6 +68,7 @@ const {
 initPlugins();
 
 const currentSelect = ref(0);
+const keyboardNavigation = ref(true);
 const menuPluginInfo: any = ref({});
 
 const config: any = ref(localConfig.getConfig());
@@ -82,22 +81,21 @@ const visibleOptions = computed(() =>
 
 const visibleHistory = computed(() => pluginHistory.value.slice(0, 8));
 
-getPluginInfo({
-  pluginName: 'feature',
+const recentPluginNavigationEnabled = computed(
+  () =>
+    !currentPlugin.value.name &&
+    String(searchValue.value ?? '').length === 0 &&
+    !clipboardFile.value?.length &&
+    config.value.perf.common.history &&
+    !visibleOptions.value.length &&
+    visibleHistory.value.length > 0
+);
 
-  pluginPath: `${__static}/feature/package.json`,
-}).then((res) => {
+getBuiltinPlugin('flick-system-feature').then((res) => {
   menuPluginInfo.value = res;
-  remote.getGlobal('LOCAL_PLUGINS').addPlugin(res);
 });
 
-getPluginInfo({
-  pluginName: 'flick-system-super-panel',
-
-  pluginPath: `${__static}/superx/package.json`,
-}).then((res) => {
-  remote.getGlobal('LOCAL_PLUGINS').addPlugin(res);
-});
+getBuiltinPlugin('flick-system-super-panel');
 
 const calcLauncherHeight = () =>
   getWindowHeight(
@@ -113,16 +111,23 @@ const calcLauncherHeight = () =>
   );
 
 let heightApplyToken = 0;
+let lastCommittedLauncherHeight = 0;
 
 const applyHeightAfterPaint = async () => {
-  if (currentPlugin.value.name) return;
+  if (currentPlugin.value.name) {
+    lastCommittedLauncherHeight = 0;
+    return;
+  }
   const token = ++heightApplyToken;
   await nextTick();
   await new Promise<void>((resolve) => {
     requestAnimationFrame(() => resolve());
   });
   if (token !== heightApplyToken || currentPlugin.value.name) return;
-  window.flick.setExpendHeight(calcLauncherHeight());
+  const height = calcLauncherHeight();
+  if (height === lastCommittedLauncherHeight) return;
+  lastCommittedLauncherHeight = height;
+  window.flick.setExpendHeight(height);
 };
 
 const flushExpendHeight = debounce(() => {
@@ -132,6 +137,13 @@ const flushExpendHeight = debounce(() => {
 const flushEmptySearchHeight = debounce(() => {
   void applyHeightAfterPaint();
 }, 120);
+
+window.refreshLauncherHeight = () => {
+  lastCommittedLauncherHeight = 0;
+  flushEmptySearchHeight.cancel();
+  flushExpendHeight.cancel();
+  void applyHeightAfterPaint();
+};
 
 watch(
   [
@@ -143,6 +155,7 @@ watch(
   ],
   () => {
     currentSelect.value = 0;
+    keyboardNavigation.value = true;
     flushEmptySearchHeight.cancel();
     flushExpendHeight();
   },
@@ -156,6 +169,7 @@ watch(
   searchValue,
   () => {
     currentSelect.value = 0;
+    keyboardNavigation.value = true;
     if (currentPlugin.value.name) return;
     if (!searchValue.value) {
       flushEmptySearchHeight.cancel();
@@ -175,6 +189,7 @@ watch(
 const changeIndex = (index) => {
   const len = visibleOptions.value.length || visibleHistory.value.length;
   if (!len) return;
+  keyboardNavigation.value = true;
   if (currentSelect.value + index > len - 1) {
     currentSelect.value = 0;
   } else if (currentSelect.value + index < 0) {
@@ -187,6 +202,7 @@ const changeIndex = (index) => {
 const setCurrentSelect = (index: number) => {
   const len = visibleOptions.value.length || visibleHistory.value.length;
   if (!Number.isInteger(index) || index < 0 || index >= len) return;
+  keyboardNavigation.value = false;
   currentSelect.value = index;
 };
 
@@ -200,14 +216,14 @@ const openMenu = (ext) => {
   });
 };
 
-window.flick.openMenu = openMenu;
+window.flick.onOpenMenu(openMenu);
 
-const choosePlugin = (plugin) => {
+const choosePlugin = async (plugin) => {
   if (visibleOptions.value.length) {
     const currentChoose = visibleOptions.value[currentSelect.value];
     currentChoose?.click();
   } else {
-    const localPlugins = remote.getGlobal('LOCAL_PLUGINS').getLocalPlugins();
+    const localPlugins = window.flick.getLocalPlugins();
     const currentChoose = plugin || visibleHistory.value[currentSelect.value];
     if (!currentChoose) return;
     let hasRemove = true;
@@ -235,18 +251,24 @@ const choosePlugin = (plugin) => {
       return message.warning('插件已被卸载！');
     }
     changePluginHistory(currentChoose);
-    window.flick.openPlugin(
-      JSON.parse(
-        JSON.stringify({
-          ...currentChoose,
-          ext: {
-            code: currentChoose.feature.code,
-            type: currentChoose.cmd.type || 'text',
-            payload: null,
-          },
-        })
-      )
-    );
+    try {
+      await window.flick.openPlugin(
+        JSON.parse(
+          JSON.stringify({
+            ...currentChoose,
+            ext: {
+              code: currentChoose.feature.code,
+              type: currentChoose.cmd.type || 'text',
+              payload: null,
+            },
+          })
+        )
+      );
+    } catch (error) {
+      message.error(
+        error instanceof Error ? error.message : '插件启动失败，请重试'
+      );
+    }
   }
 };
 

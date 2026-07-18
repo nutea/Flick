@@ -1,5 +1,5 @@
 export default {
-  version: 7,
+  version: 8,
   perf: {
     custom: {
       theme: 'SUMMER',
@@ -8,7 +8,7 @@ export default {
       warningColor: '#e5a84b',
       successColor: '#c0d695',
       infoColor: '#aa8eeB',
-      logo: `image://${__static}/logo.png`,
+      logo: 'flick-asset:app-logo',
       placeholder: '搜索应用、插件或命令…',
       username: 'Flick',
     },

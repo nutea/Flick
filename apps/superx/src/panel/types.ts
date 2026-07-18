@@ -15,10 +15,12 @@ export interface FeatureItem {
 export interface OptionPlugin {
   name: string;
   logo: string;
+  logoUrl?: string;
   features: FeatureItem[];
 }
 
 export interface TriggerSuperPanelPayload {
+  requestId: number;
   text?: string;
   fileUrl?: string | null;
   optionPlugin?: OptionPlugin[];
@@ -26,14 +28,18 @@ export interface TriggerSuperPanelPayload {
   selectedFileDataUrl?: string;
 }
 
+export type BuiltinPluginIcon = 'terminal' | 'create-file' | 'copy';
+
 export interface MatchPluginItem {
   type: 'default' | 'ext';
   name: string;
   logo: string;
+  icon?: BuiltinPluginIcon;
   click: (ev?: Event) => void;
 }
 
 export interface UserPluginItem {
+  name?: string;
   pluginName: string;
   logo: string;
   cmd: CmdItem;

@@ -26,9 +26,12 @@ contextBridge.exposeInMainWorld('superPanel', {
   showMainWindow: () =>
     ipcRenderer.send('msg-trigger', { type: 'showMainWindow' }),
   hide: () => ipcRenderer.send('superPanel-hidden'),
-  contentApplied: () => ipcRenderer.send('superPanel-content-applied'),
-  setHeight: (height: number) => {
-    if (Number.isFinite(height)) ipcRenderer.send('superPanel-setSize', height);
+  contentApplied: (requestId: number) =>
+    ipcRenderer.send('superPanel-content-applied', requestId),
+  reportLayout: (layout: { requestId: number; height: number }) => {
+    if (!layout || !Number.isInteger(layout.requestId)) return;
+    if (!Number.isFinite(layout.height)) return;
+    ipcRenderer.send('superPanel-report-layout', layout);
   },
   setPinned: (pinned: boolean) =>
     ipcRenderer.send('trigger-pin', Boolean(pinned)),

@@ -7,6 +7,7 @@
         </div>
         <div class="settings-item-li">
           <a-radio-group
+            class="theme-selector"
             @change="changeTheme"
             v-model:value="theme"
             button-style="solid"
@@ -47,7 +48,7 @@
             {{ $t('feature.settings.account.logo') }}
           </div>
           <div class="img-container">
-            <img class="custom-img" :src="featureImageUrl(custom.logo)" />
+            <img class="custom-img" :src="custom.logoUrl" />
             <a-button
               class="btn"
               @click="changeLogo"
@@ -69,7 +70,6 @@ import { reactive, toRefs, watch, ref } from 'vue';
 import debounce from 'lodash.debounce';
 import localConfig from '@/confOp';
 import * as Themes from '@/assets/constans';
-import { featureImageUrl } from '@/utils/imageUrl';
 const state = reactive({
   custom: {},
 });
@@ -105,7 +105,9 @@ const changeLogo = () => {
     filters: [{ name: 'images', extensions: ['png'] }],
     properties: ['openFile'],
   });
+  if (!logoPath) return;
   state.custom.logo = `file://${logoPath}`;
+  state.custom.logoUrl = window.flick.resolveConfiguredLogo(state.custom.logo);
 };
 
 const changeTheme = () => {
@@ -132,6 +134,10 @@ const changeTheme = () => {
 .ant-radio-button-wrapper {
   background: var(--color-body-bg);
   color: var(--color-text-content);
+}
+.theme-selector {
+  overflow: hidden;
+  border-radius: 2px;
 }
 .user-info-result {
   padding: 0;

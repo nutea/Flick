@@ -3,6 +3,7 @@
 import getMacApps from './get-mac-app';
 import fs from 'fs';
 import path from 'path';
+import { toImageProtocolUrl } from '@/common/utils/imageProtocol';
 
 import os from 'os';
 
@@ -72,13 +73,9 @@ export default async (nativeImage: any) => {
   });
   for (const app of apps) {
     if (await getAppIcon(app.path, nativeImage, app._name)) {
-      app.icon =
-        'image://' +
-        path.join(
-          os.tmpdir(),
-          'ProcessIcon',
-          `${encodeURIComponent(app._name)}.png`
-        );
+      app.icon = toImageProtocolUrl(
+        path.join(os.tmpdir(), 'ProcessIcon', `${app._name}.png`)
+      );
     }
     // todo getApp size
   }

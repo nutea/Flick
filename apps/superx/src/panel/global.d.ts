@@ -18,8 +18,8 @@ interface SuperPanelBridge {
   openPlugin(payload: unknown): void;
   showMainWindow(): void;
   hide(): void;
-  contentApplied(): void;
-  setHeight(height: number): void;
+  contentApplied(requestId: number): void;
+  reportLayout(layout: { requestId: number; height: number }): void;
   setPinned(pinned: boolean): void;
   getPinState(): Promise<boolean>;
   createFile(directory: string): Promise<boolean>;

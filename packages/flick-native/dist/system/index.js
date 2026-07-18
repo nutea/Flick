@@ -36,7 +36,54 @@ const readFolderPathAsync = async () => {
         return '';
     }
 };
+const readForegroundFolderPath = async () => {
+    var _a;
+    const addon = tryLoadAddon();
+    if (!(addon === null || addon === void 0 ? void 0 : addon.getForegroundFolderPath))
+        return '';
+    try {
+        return String((_a = (await addon.getForegroundFolderPath())) !== null && _a !== void 0 ? _a : '');
+    }
+    catch {
+        return '';
+    }
+};
+const readSelectedText = async () => {
+    var _a;
+    const addon = tryLoadAddon();
+    if (!(addon === null || addon === void 0 ? void 0 : addon.getSelectedText))
+        return '';
+    try {
+        return String((_a = (await addon.getSelectedText())) !== null && _a !== void 0 ? _a : '');
+    }
+    catch {
+        return '';
+    }
+};
+const readSelectedFilePaths = async () => {
+    const addon = tryLoadAddon();
+    if (!(addon === null || addon === void 0 ? void 0 : addon.getSelectedFilePaths))
+        return [];
+    try {
+        const paths = await addon.getSelectedFilePaths();
+        return Array.isArray(paths)
+            ? paths.filter((value) => Boolean(value && typeof value === 'string'))
+            : [];
+    }
+    catch {
+        return [];
+    }
+};
 exports.system = {
+    async getForegroundFolderPath() {
+        return readForegroundFolderPath();
+    },
+    async getSelectedFilePaths() {
+        return readSelectedFilePaths();
+    },
+    async getSelectedText() {
+        return readSelectedText();
+    },
     async getFolderOpenPath() {
         return readFolderPathAsync();
     },

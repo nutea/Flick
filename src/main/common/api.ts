@@ -6,10 +6,10 @@ import {
   Notification,
   nativeImage,
   clipboard,
-  screen,
   shell,
   IpcMainEvent,
   IpcMainInvokeEvent,
+  Menu,
 } from 'electron';
 import fs from 'fs';
 import { screenCapture } from '@/core';
@@ -25,8 +25,9 @@ import getCopyFiles from '@/common/utils/getCopyFiles';
 import mainInstance from '../index';
 import { runner, detach } from '../browsers';
 import DBInstance from './db';
-import getWinPosition from './getWinPosition';
+import { windowGeometryController } from './windowGeometryController';
 import path from 'path';
+import { toImageProtocolUrl } from '@/common/utils/imageProtocol';
 import { copyFilesToWindowsClipboard } from './windowsClipboard';
 import {
   exportPluginBundle,
@@ -38,7 +39,7 @@ import {
   readPluginFlickConfigSync,
   writePluginFlickConfigSync,
   flipPluginAutoDetachSync,
-  flipPluginDetachAlwaysShowSearchSync,
+  flipPluginDetachInputPolicySync,
 } from './pluginFlickConfig';
 import { executePluginSubInputChangeHook } from './pluginSubInputHook';
 import {
@@ -46,6 +47,13 @@ import {
   devSubAppHttpUrl,
   warmupDevSubAppServers,
 } from './devSubAppServers';
+import { presentPlugin, presentPlugins } from './pluginPresentation';
+import { resolveConfiguredLogo } from './configPresentation';
+import getInstalledApps from '@/core/app-search';
+import {
+  normalizeDetachInputRequest,
+  resolveDetachInputState,
+} from '@/common/utils/detachInput';
 
 /**
  *  sanitize input files 剪贴板文件合法性校验
@@ -97,6 +105,9 @@ const ALLOWED_IPC_METHODS = new Set<string>([
   'getFeatures',
   'getFileIcon',
   'getLocalId',
+  'getLocalPlugins',
+  'getInstalledApps',
+  'getBuiltinPlugin',
   'getPath',
   'getPluginInfo',
   'hideMainWindow',
@@ -110,6 +121,7 @@ const ALLOWED_IPC_METHODS = new Set<string>([
   'removeLocalStartPlugin',
   'removePlugin',
   'removeSubInput',
+  'resolveConfiguredLogo',
   'screenCapture',
   'sendPluginSomeKeyDownEvent',
   'sendSubInputChangeEvent',
@@ -120,16 +132,117 @@ const ALLOWED_IPC_METHODS = new Set<string>([
   'shellBeep',
   'shellShowItemInFolder',
   'showMainWindow',
+  'showContextMenu',
+  'showMessageBox',
   'showNotification',
   'showOpenDialog',
   'showSaveDialog',
   'simulateKeyboardTap',
   'subInputBlur',
   'upgradePlugin',
-  'windowMoving',
+  'updateLocalPlugin',
 ]);
 
 class API extends DBInstance {
+  public getBuiltinPlugin({ data }: { data?: { name?: unknown } }) {
+    const name = typeof data?.name === 'string' ? data.name : '';
+    const manifest =
+      name === 'flick-system-feature'
+        ? path.join(__static, 'feature', 'package.json')
+        : name === 'flick-system-super-panel'
+          ? path.join(__static, 'superx', 'package.json')
+          : '';
+    if (!manifest) throw new Error('Unknown built-in plugin');
+    return presentPlugin(JSON.parse(fs.readFileSync(manifest, 'utf8')));
+  }
+
+  public showContextMenu(
+    { data }: { data?: { items?: unknown; x?: unknown; y?: unknown } },
+    mainWindow: BrowserWindow
+  ): Promise<string | null> {
+    type RawItem = {
+      id?: unknown;
+      label?: unknown;
+      type?: unknown;
+      checked?: unknown;
+      enabled?: unknown;
+      accelerator?: unknown;
+      submenu?: unknown;
+    };
+    const convert = (
+      values: unknown,
+      choose: (id: string) => void
+    ): Electron.MenuItemConstructorOptions[] => {
+      const result: Electron.MenuItemConstructorOptions[] = [];
+      for (const value of (Array.isArray(values) ? values : []).slice(0, 50)) {
+        if (!value || typeof value !== 'object') continue;
+        const item = value as RawItem;
+        if (item.type === 'separator') {
+          result.push({ type: 'separator' });
+          continue;
+        }
+        const id = typeof item.id === 'string' ? item.id : '';
+        const label =
+          typeof item.label === 'string' ? item.label.slice(0, 200) : '';
+        if (!id || !label) continue;
+        result.push({
+          id,
+          label,
+          type:
+            item.type === 'checkbox'
+              ? ('checkbox' as const)
+              : ('normal' as const),
+          checked: item.type === 'checkbox' ? !!item.checked : undefined,
+          enabled: item.enabled !== false,
+          accelerator:
+            typeof item.accelerator === 'string' ? item.accelerator : undefined,
+          submenu: Array.isArray(item.submenu)
+            ? convert(item.submenu, choose)
+            : undefined,
+          click: () => choose(id),
+        });
+      }
+      return result;
+    };
+
+    return new Promise((resolve) => {
+      let settled = false;
+      const finish = (id: string | null) => {
+        if (settled) return;
+        settled = true;
+        resolve(id);
+      };
+      const menu = Menu.buildFromTemplate(
+        convert(data?.items, (id) => finish(id))
+      );
+      const x = Number(data?.x);
+      const y = Number(data?.y);
+      menu.popup({
+        window: mainWindow,
+        ...(Number.isFinite(x) && Number.isFinite(y)
+          ? { x: Math.round(x), y: Math.round(y) }
+          : {}),
+        callback: () => finish(null),
+      });
+    });
+  }
+
+  public showMessageBox(
+    {
+      data,
+    }: { data?: { title?: unknown; message?: unknown; detail?: unknown } },
+    mainWindow: BrowserWindow
+  ) {
+    return dialog.showMessageBox(mainWindow, {
+      type: 'info',
+      title: typeof data?.title === 'string' ? data.title : 'Flick',
+      message: typeof data?.message === 'string' ? data.message : 'Flick',
+      detail: typeof data?.detail === 'string' ? data.detail : undefined,
+      buttons: ['确定'],
+      noLink: true,
+    });
+  }
+
   public getPluginInfo({
     data,
   }: {
@@ -155,7 +268,41 @@ class API extends DBInstance {
     if (!stat.isFile() || stat.size > 1024 * 1024) {
       throw new Error('Plugin metadata file is invalid');
     }
-    return JSON.parse(fs.readFileSync(resolved, 'utf8'));
+    const plugin = JSON.parse(fs.readFileSync(resolved, 'utf8'));
+    if (plugin.name !== pluginName && pluginName !== 'feature') {
+      throw new Error('Plugin metadata name does not match');
+    }
+    return presentPlugin(plugin);
+  }
+
+  public getLocalPlugins() {
+    return presentPlugins(global.LOCAL_PLUGINS?.getLocalPlugins?.());
+  }
+
+  public getInstalledApps() {
+    return getInstalledApps();
+  }
+
+  public updateLocalPlugin({ data }: { data?: Record<string, unknown> }) {
+    const payload = data || {};
+    const name = typeof payload.name === 'string' ? payload.name : '';
+    if (!name) throw new Error('Plugin name is required');
+    const manager = global.LOCAL_PLUGINS;
+    const stored = manager.getLocalPlugins().find((item) => item.name === name);
+    if (!stored) throw new Error('Plugin is not installed');
+    // Runtime presentation fields must never be written to the plugin catalog.
+    const {
+      logoUrl: _logoUrl,
+      indexUrl: _indexUrl,
+      icon: _icon,
+      ...patch
+    } = payload;
+    manager.updatePlugin({ ...stored, ...patch, logo: stored.logo });
+    return presentPlugin({ ...stored, ...patch, logo: stored.logo });
+  }
+
+  public resolveConfiguredLogo({ data }: { data?: { logo?: unknown } }) {
+    return resolveConfiguredLogo(data?.logo);
   }
 
   public async upgradePlugin({ data }: { data?: { name?: unknown } }) {
@@ -205,6 +352,7 @@ class API extends DBInstance {
       'flick:set-plugin-flick-config',
       'flick:flip-plugin-auto-detach',
       'flick:flip-plugin-detach-always-show-search',
+      'flick:flip-plugin-detach-input-policy',
       'flick:detach-adjust-plugin-zoom',
     ] as const;
     for (const ch of flickIpcChannels) {
@@ -218,11 +366,11 @@ class API extends DBInstance {
       'flick:get-plugin-flick-config',
       (_e, pluginName: unknown) => {
         const name = typeof pluginName === 'string' ? pluginName : '';
-        if (!name) return { autoDetach: false, detachAlwaysShowSearch: false };
+        if (!name) return { autoDetach: false, detachInputPolicy: 'auto' };
         const cfg = readPluginFlickConfigSync(name);
         return {
           autoDetach: !!cfg.autoDetach,
-          detachAlwaysShowSearch: !!cfg.detachAlwaysShowSearch,
+          detachInputPolicy: cfg.detachInputPolicy ?? 'auto',
         };
       }
     );
@@ -231,7 +379,7 @@ class API extends DBInstance {
         name?: string;
         pluginName?: string;
         autoDetach?: boolean;
-        detachAlwaysShowSearch?: boolean;
+        detachInputPolicy?: 'auto' | 'always';
       };
       const id =
         typeof p?.name === 'string'
@@ -240,10 +388,10 @@ class API extends DBInstance {
             ? p.pluginName
             : '';
       if (!id) return false;
-      const patch: Record<string, boolean> = {};
+      const patch: Record<string, boolean | string> = {};
       if (typeof p.autoDetach === 'boolean') patch.autoDetach = p.autoDetach;
-      if (typeof p.detachAlwaysShowSearch === 'boolean')
-        patch.detachAlwaysShowSearch = p.detachAlwaysShowSearch;
+      if (p.detachInputPolicy === 'auto' || p.detachInputPolicy === 'always')
+        patch.detachInputPolicy = p.detachInputPolicy;
       if (!Object.keys(patch).length) return false;
       return writePluginFlickConfigSync(id, patch);
     });
@@ -256,12 +404,12 @@ class API extends DBInstance {
       }
     );
     ipcMain.handle(
-      'flick:flip-plugin-detach-always-show-search',
+      'flick:flip-plugin-detach-input-policy',
       (_e, pluginName: unknown) => {
         const name = typeof pluginName === 'string' ? pluginName : '';
-        if (!name) return { detachAlwaysShowSearch: false };
+        if (!name) return { detachInputPolicy: 'auto' };
         return {
-          detachAlwaysShowSearch: flipPluginDetachAlwaysShowSearchSync(name),
+          detachInputPolicy: flipPluginDetachInputPolicySync(name),
         };
       }
     );
@@ -381,40 +529,31 @@ class API extends DBInstance {
     }
   };
 
-  public windowMoving({ data: { mouseX, mouseY, width, height } }, window, e) {
-    const geometry = [mouseX, mouseY, width, height].map(Number);
-    if (geometry.some((value) => !Number.isFinite(value))) return false;
-    const [safeMouseX, safeMouseY, rawWidth, rawHeight] = geometry;
-    const safeWidth = Math.max(240, Math.min(4096, Math.round(rawWidth)));
-    const safeHeight = Math.max(60, Math.min(2160, Math.round(rawHeight)));
-    const { x, y } = screen.getCursorScreenPoint();
-    const originWindow = this.getCurrentWindow(window, e);
-    if (!originWindow) return false;
-    const nx = Math.round(x - safeMouseX);
-    const ny = Math.round(y - safeMouseY);
-    originWindow.setContentBounds({
-      x: nx,
-      y: ny,
-      width: safeWidth,
-      height: safeHeight,
-    });
-    getWinPosition.setPosition(nx, ny);
-    return true;
-  }
-
-  public async loadPlugin({ data: plugin }, window) {
+  public async loadPlugin(
+    { data: plugin },
+    window: BrowserWindow,
+    event?: IpcMainEvent
+  ) {
     if (this.tryRedirectSingletonDetach({ data: plugin }, window)) {
       return;
     }
-    if (this.isSingletonAlreadyInMainWindow(plugin)) {
-      window.show();
+    if (this.isSingletonAlreadyInMainWindow(plugin, window)) {
+      windowGeometryController.showMainWindow(window);
       return;
     }
-    /** 与 preload 内联脚本同一 tick：先快照再 loadPlugin，避免仅走主进程打开时读不到启动关键词 */
-    void window.webContents.executeJavaScript(
-      `if (window.captureSearchSnapshotForNextDetach) window.captureSearchSnapshotForNextDetach();
+    const openedFromMainRenderer = event?.sender.id === window.webContents.id;
+    /**
+     * 主页面在发起同步 IPC 前已经 capture + initFlick + loadPlugin；若主进程再
+     * await 同一个渲染进程，会形成 sendSync <-> executeJavaScript 死锁。
+     * 插件 BrowserView 发起的跳转没有经过主页生命周期，因此只在该路径等待
+     * 主页完成快照和输入契约重置。
+     */
+    if (!openedFromMainRenderer) {
+      await window.webContents.executeJavaScript(
+        `if (window.captureSearchSnapshotForNextDetach) window.captureSearchSnapshotForNextDetach();
 void window.loadPlugin(${JSON.stringify(plugin)});`
-    );
+      );
+    }
     await this.openPlugin({ data: plugin }, window);
   }
 
@@ -469,7 +608,7 @@ void window.loadPlugin(${JSON.stringify(plugin)});`
   /**
    * 主页搜索框为空时，用本次打开插件的 ext.payload 补全（超级面板选中文本 / 文件路径等不经主页搜索框）。
    */
-  private mergeMainInputWithPluginExt(
+  private resolveLaunchText(
     mainInput: { value?: string; placeholder?: string } | null | undefined,
     plugin: { ext?: { payload?: unknown } } | null | undefined
   ): { value: string; placeholder: string } {
@@ -504,13 +643,24 @@ void window.loadPlugin(${JSON.stringify(plugin)});`
   /**
    * 单例插件已在主窗口运行时返回 true，防止 removePlugin + init 破坏当前实例。
    */
-  private isSingletonAlreadyInMainWindow(plugin: {
-    name?: string;
-    originName?: string;
-    pluginSetting?: { single?: boolean };
-  }): boolean {
+  private isSingletonAlreadyInMainWindow(
+    plugin: {
+      name?: string;
+      originName?: string;
+      pluginSetting?: { single?: boolean };
+    },
+    window: BrowserWindow
+  ): boolean {
     if (plugin.pluginSetting?.single === false) return false;
     if (!this.currentPlugin) return false;
+    const currentView = runnerInstance.getView();
+    if (
+      !currentView?.webContents ||
+      currentView.webContents.isDestroyed() ||
+      window.getBrowserView() !== currentView
+    ) {
+      return false;
+    }
     const currentName =
       this.currentPlugin.originName || this.currentPlugin.name;
     if (!currentName) return false;
@@ -546,12 +696,13 @@ void window.loadPlugin(${JSON.stringify(plugin)});`
     if (this.tryRedirectSingletonDetach({ data: plugin }, window)) {
       return;
     }
-    if (this.isSingletonAlreadyInMainWindow(plugin)) {
-      window.show();
+    if (this.isSingletonAlreadyInMainWindow(plugin, window)) {
+      windowGeometryController.showMainWindow(window);
       return;
     }
     applyMainWindowContentHeight(window, 60);
-    this.removePlugin(null, window);
+    runnerInstance.removeView(window, false);
+    this.currentPlugin = null;
 
     // 模板文件
     if (!plugin.main) {
@@ -560,7 +711,7 @@ void window.loadPlugin(${JSON.stringify(plugin)});`
       if (tplHttp) plugin.tplPath = tplHttp;
     }
     if (plugin.name === 'flick-system-feature') {
-      plugin.logo = plugin.logo || `image://${__static}/logo.png`;
+      plugin.logo = plugin.logo || toImageProtocolUrl(`${__static}/logo.png`);
       plugin.indexPath = `file://${__static}/feature/index.html`;
       const featureHttp = devSubAppHttpUrl(DEV_APP_PORTS.feature, '/');
       if (featureHttp) plugin.indexPath = featureHttp;
@@ -579,14 +730,23 @@ void window.loadPlugin(${JSON.stringify(plugin)});`
         plugin.main || ''
       )}`;
     }
-    runnerInstance.init(plugin, window);
+    try {
+      runnerInstance.init(plugin, window);
+    } catch (error) {
+      this.currentPlugin = null;
+      await window.webContents.executeJavaScript(
+        `window.initFlick(); window.refreshLauncherHeight && window.refreshLauncherHeight();`
+      );
+      windowGeometryController.showMainWindow(window);
+      throw error;
+    }
     this.currentPlugin = plugin;
     window.webContents.executeJavaScript(
       `window.setCurrentPlugin(${JSON.stringify({
         currentPlugin: this.currentPlugin,
       })})`
     );
-    window.show();
+    windowGeometryController.showMainWindow(window);
     const view = runnerInstance.getView();
     if (!view.inited) {
       view.webContents.on('before-input-event', (event, input) =>
@@ -608,7 +768,7 @@ void window.loadPlugin(${JSON.stringify(plugin)});`
       const info = (await mainWindow.webContents.executeJavaScript(
         `window.getMainInputInfo()`
       )) as { value?: string; placeholder?: string };
-      const merged = this.mergeMainInputWithPluginExt(info, launchPlugin);
+      const merged = this.resolveLaunchText(info, launchPlugin);
       const value = merged.value;
       const placeholder = merged.placeholder;
       await mainWindow.webContents.executeJavaScript(
@@ -623,9 +783,6 @@ void window.loadPlugin(${JSON.stringify(plugin)});`
           var p = ${payload};
           if (typeof window.setSubInputValue === 'function') {
             window.setSubInputValue({ value: p.value });
-          }
-          if (typeof window.setSubInput === 'function') {
-            window.setSubInput({ placeholder: p.placeholder });
           }
         })()`
       );
@@ -683,11 +840,11 @@ void window.loadPlugin(${JSON.stringify(plugin)});`
         : typeof data?.pluginName === 'string'
           ? data.pluginName
           : '';
-    if (!id) return { autoDetach: false, detachAlwaysShowSearch: false };
+    if (!id) return { autoDetach: false, detachInputPolicy: 'auto' };
     const cfg = readPluginFlickConfigSync(id);
     return {
       autoDetach: !!cfg.autoDetach,
-      detachAlwaysShowSearch: !!cfg.detachAlwaysShowSearch,
+      detachInputPolicy: cfg.detachInputPolicy ?? 'auto',
     };
   }
 
@@ -698,7 +855,7 @@ void window.loadPlugin(${JSON.stringify(plugin)});`
       name?: string;
       pluginName?: string;
       autoDetach?: boolean;
-      detachAlwaysShowSearch?: boolean;
+      detachInputPolicy?: 'auto' | 'always';
     };
   }) {
     const id =
@@ -707,12 +864,12 @@ void window.loadPlugin(${JSON.stringify(plugin)});`
         : typeof data?.pluginName === 'string'
           ? data.pluginName
           : '';
-    const { autoDetach, detachAlwaysShowSearch } = data || {};
+    const { autoDetach, detachInputPolicy } = data || {};
     if (!id) return false;
-    const patch: Record<string, boolean> = {};
+    const patch: Record<string, boolean | string> = {};
     if (typeof autoDetach === 'boolean') patch.autoDetach = autoDetach;
-    if (typeof detachAlwaysShowSearch === 'boolean')
-      patch.detachAlwaysShowSearch = detachAlwaysShowSearch;
+    if (detachInputPolicy === 'auto' || detachInputPolicy === 'always')
+      patch.detachInputPolicy = detachInputPolicy;
     if (!Object.keys(patch).length) return false;
     return writePluginFlickConfigSync(id, patch);
   }
@@ -772,9 +929,7 @@ void window.loadPlugin(${JSON.stringify(plugin)});`
   }
 
   public showMainWindow(arg, window) {
-    const { x, y } = getWinPosition.getPosition();
-    window.setPosition(x, y);
-    window.show();
+    windowGeometryController.showMainWindow(window);
   }
 
   public showOpenDialog({ data }, window) {
@@ -797,6 +952,8 @@ void window.loadPlugin(${JSON.stringify(plugin)});`
     originWindow.webContents.executeJavaScript(
       `window.setSubInput(${JSON.stringify({
         placeholder: data.placeholder,
+        isFocus: data.isFocus === true,
+        role: data.role,
       })})`
     );
   }
@@ -982,16 +1139,18 @@ void window.loadPlugin(${JSON.stringify(plugin)});`
         void window.webContents.executeJavaScript(
           `window.clearSearchSnapshotAfterDetach && window.clearSearchSnapshotAfterDetach()`
         );
-        const subInput = this.mergeMainInputWithPluginExt(
-          res as { value?: string; placeholder?: string },
-          this.currentPlugin
-        );
+        const config = readPluginFlickConfigSync(pluginName);
+        const capability =
+          this.currentPlugin?.pluginSetting?.detach?.input ?? 'optional';
+        const detachInput = resolveDetachInputState({
+          capability,
+          policy: config.detachInputPolicy ?? 'auto',
+          request: normalizeDetachInputRequest(res),
+        });
         detachInstance.init(
           {
             ...this.currentPlugin,
-            subInput,
-            detachAlwaysShowSearch:
-              !!readPluginFlickConfigSync(pluginName).detachAlwaysShowSearch,
+            detachInput,
           },
           window.getBounds(),
           view,

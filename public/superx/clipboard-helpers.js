@@ -2,7 +2,6 @@
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.getFilePathFromClipboard = getFilePathFromClipboard;
 exports.snapshotClipboard = snapshotClipboard;
-exports.clipboardSnapsEqual = clipboardSnapsEqual;
 exports.readClipboardPayload = readClipboardPayload;
 exports.getSelectedContent = getSelectedContent;
 exports.getPos = getPos;
@@ -92,9 +91,6 @@ function snapshotClipboard(clipboard) {
 function clipboardSnapsEqual(a, b) {
     return (a.text === b.text && a.pathStr === b.pathStr && a.hasImage === b.hasImage);
 }
-function snapUnchanged(a, b) {
-    return clipboardSnapsEqual(a, b);
-}
 /** 从当前剪贴板解析为面板用的 text / fileUrl（路径优先） */
 function readClipboardPayload(clipboard) {
     const text = clipboard.readText('clipboard') || '';
@@ -108,19 +104,90 @@ function readClipboardPayload(clipboard) {
         fileUrl,
     };
 }
-async function getSelectedContent(clipboard, simulateCopy) {
-    const before = snapshotClipboard(clipboard);
-    await simulateCopy();
-    return new Promise((resolve) => {
-        setTimeout(() => {
-            const after = snapshotClipboard(clipboard);
-            if (snapUnchanged(before, after)) {
-                resolve({ text: '', fileUrl: '' });
-                return;
+const wait = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
+async function readDirectSelection(readSelectedText, timeoutMs) {
+    if (!readSelectedText)
+        return '';
+    let timer;
+    try {
+        return await Promise.race([
+            readSelectedText().catch(() => ''),
+            new Promise((resolve) => {
+                timer = setTimeout(() => resolve(''), timeoutMs);
+            }),
+        ]);
+    }
+    finally {
+        if (timer)
+            clearTimeout(timer);
+    }
+}
+async function getSelectedContent(clipboard, simulateCopy, options = {}) {
+    var _a, _b, _c, _d;
+    const directText = await readDirectSelection(options.readSelectedText, (_a = options.directReadTimeoutMs) !== null && _a !== void 0 ? _a : 120);
+    if (directText.length > 0) {
+        return {
+            status: 'selected',
+            source: 'accessibility',
+            text: directText,
+            fileUrl: '',
+        };
+    }
+    if (options.readSelectedFilePaths) {
+        try {
+            const selectedPaths = await options.readSelectedFilePaths();
+            const firstPath = selectedPaths.find(Boolean);
+            if (firstPath) {
+                return {
+                    status: 'selected',
+                    source: 'shell',
+                    text: '',
+                    fileUrl: firstPath,
+                };
             }
-            resolve(readClipboardPayload(clipboard));
-        }, 50);
-    });
+        }
+        catch {
+            /* Shell selection is optional; fall through to a single copy. */
+        }
+    }
+    const getChangeToken = options.getClipboardChangeToken;
+    const beforeToken = (_b = getChangeToken === null || getChangeToken === void 0 ? void 0 : getChangeToken()) !== null && _b !== void 0 ? _b : null;
+    const beforeSnap = beforeToken === null ? snapshotClipboard(clipboard) : null;
+    try {
+        await simulateCopy();
+    }
+    catch {
+        return { status: 'none', text: '', fileUrl: '' };
+    }
+    const timeoutMs = (_c = options.copyTimeoutMs) !== null && _c !== void 0 ? _c : 250;
+    const pollIntervalMs = Math.max(4, (_d = options.pollIntervalMs) !== null && _d !== void 0 ? _d : 10);
+    const deadline = Date.now() + timeoutMs;
+    while (Date.now() <= deadline) {
+        let changed = false;
+        if (beforeToken !== null && getChangeToken) {
+            const currentToken = getChangeToken();
+            changed = currentToken !== null && currentToken !== beforeToken;
+        }
+        else if (beforeSnap) {
+            changed = !clipboardSnapsEqual(beforeSnap, snapshotClipboard(clipboard));
+        }
+        if (changed) {
+            const payload = readClipboardPayload(clipboard);
+            // Some applications empty the clipboard and publish the new formats in
+            // separate steps. Do not treat the intermediate empty state as a copy.
+            if (!payload.text && !payload.fileUrl) {
+                await wait(pollIntervalMs);
+                continue;
+            }
+            return {
+                status: 'selected',
+                source: 'clipboard-copy',
+                ...payload,
+            };
+        }
+        await wait(pollIntervalMs);
+    }
+    return { status: 'timeout', text: '', fileUrl: '' };
 }
 /**
  * Electron `screen.getCursorScreenPoint()` 返回的已是 DIP，与 `BrowserWindow.setPosition` / `getBounds`

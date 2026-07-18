@@ -29,7 +29,7 @@
             @click="currentSelect = [plugin.name]"
             v-for="(plugin, index) in localPlugins"
           >
-            <img :src="plugin.logo" />
+            <img :src="plugin.logoUrl" />
             <div class="info">
               <div class="title">
                 {{ plugin.pluginName }}
@@ -136,6 +136,7 @@ import { message } from 'ant-design-vue';
 import { useI18n } from 'vue-i18n';
 
 import { buildPluginLaunchPayload } from '@/utils/pluginLaunchPayload';
+import { toMarketPayload } from '@/utils/marketPayload';
 
 const { t } = useI18n();
 
@@ -312,7 +313,7 @@ const deletePlugin = async (plugin) => {
     message.error('卸载超时，请重试！');
   }, 60000);
   try {
-    await window.market.deletePlugin(plugin);
+    await window.market.deletePlugin(toMarketPayload(plugin));
     removePluginToSuperPanel({ name: plugin.name });
     await updateLocalPlugin();
   } catch (e) {

@@ -1,12 +1,4 @@
-import {
-  computed,
-  nextTick,
-  onMounted,
-  onUnmounted,
-  reactive,
-  ref,
-  watch,
-} from 'vue';
+import { computed, nextTick, onMounted, onUnmounted, reactive, ref } from 'vue';
 import { flickDb } from './db';
 import { openPlugin } from './open-plugin';
 import { parseCmdRegex } from './cmd-regex';
@@ -24,28 +16,12 @@ import {
   type SuperPanelTranslatePrefs,
 } from './translate-config';
 
-const EXPLORER_LIKE = [
-  'explorer.exe',
-  'SearchApp.exe',
-  'SearchHost.exe',
-  'FESearchHost.exe',
-  'Finder.app',
-];
 const SUPER_PANEL_PREF_DB_ID = 'flick-system-super-panel-preferences';
 const panel = window.superPanel;
-
-function getDesktopPath(): string {
-  return panel.getDesktopPath();
-}
 
 function basenameWinOrMac(p: string): string {
   const seg = p.split(/[/\\]/);
   return seg[seg.length - 1] || '';
-}
-
-function isExplorerLikeWindow(fileUrl: string): boolean {
-  const name = basenameWinOrMac(fileUrl);
-  return EXPLORER_LIKE.includes(name);
 }
 
 function normalizeFsPath(p: string): string {
@@ -68,16 +44,13 @@ function extensionName(p: string): string {
   return dot > 0 ? name.slice(dot) : '';
 }
 
-function normalizeLogo(raw: string): string {
-  const value = String(raw || '');
-  if (value.startsWith('file://')) {
-    return `image://${value.slice('file://'.length)}`;
-  }
-  return value;
-}
-
 export function useSuperPanel() {
   const pinned = ref(false);
+  let activeRequestId = 0;
+  let layoutObserver: ResizeObserver | undefined;
+  let layoutFrame = 0;
+  let lastReportedRequestId = 0;
+  let lastReportedHeight = 0;
 
   /** 翻译请求代数：面板关闭或新一轮 trigger 时递增，防止旧请求完成后写回 state */
   let translateSeq = 0;
@@ -88,6 +61,7 @@ export function useSuperPanel() {
     fileUrl: '',
     selectedText: '',
     selectedFileUrl: '',
+    selectedFileIsDirectory: false,
     autoTranslate: false,
     /** 选中文本超过该长度则不发起翻译（与偏好 `translateMaxChars` 一致，默认 2000） */
     translateMaxChars: 2000,
@@ -101,6 +75,7 @@ export function useSuperPanel() {
       type: 'default',
       name: '终端打开',
       logo: '',
+      icon: 'terminal',
       click: () => {
         void panel.openTerminal(normalizeFsPath(state.fileUrl));
       },
@@ -109,6 +84,7 @@ export function useSuperPanel() {
       type: 'default',
       name: '新建文件',
       logo: '',
+      icon: 'create-file',
       click: () => {
         void panel.createFile(normalizeFsPath(state.fileUrl));
       },
@@ -117,6 +93,7 @@ export function useSuperPanel() {
       type: 'default',
       name: '复制路径',
       logo: '',
+      icon: 'copy',
       click: () => {
         panel.copyText(normalizeFsPath(state.fileUrl));
       },
@@ -126,8 +103,9 @@ export function useSuperPanel() {
   const selectedPlugins: MatchPluginItem[] = [
     {
       type: 'default',
-      name: '复制当前路径',
+      name: '复制路径',
       logo: '',
+      icon: 'copy',
       click: () => {
         panel.copyText(normalizeFsPath(state.fileUrl));
       },
@@ -199,7 +177,7 @@ export function useSuperPanel() {
             state.matchPlugins.push({
               type: 'ext',
               name: cmd.label || feature.code,
-              logo: normalizeLogo(plugin.logo),
+              logo: plugin.logoUrl || plugin.logo,
               click: () =>
                 openPlugin({
                   plugin: plugin as unknown as Record<string, unknown>,
@@ -213,7 +191,7 @@ export function useSuperPanel() {
             state.matchPlugins.push({
               type: 'ext',
               name: cmd.label || feature.code,
-              logo: normalizeLogo(plugin.logo),
+              logo: plugin.logoUrl || plugin.logo,
               click: () =>
                 openPlugin({
                   plugin: plugin as unknown as Record<string, unknown>,
@@ -242,7 +220,7 @@ export function useSuperPanel() {
             state.matchPlugins.unshift({
               type: 'ext',
               name: cmd.label || feature.code,
-              logo: normalizeLogo(plugin.logo),
+              logo: plugin.logoUrl || plugin.logo,
               click: () => {
                 openPlugin({
                   plugin: plugin as unknown as Record<string, unknown>,
@@ -261,7 +239,7 @@ export function useSuperPanel() {
             state.matchPlugins.unshift({
               type: 'ext',
               name: cmd.label || feature.code,
-              logo: normalizeLogo(plugin.logo),
+              logo: plugin.logoUrl || plugin.logo,
               click: () =>
                 openPlugin({
                   plugin: plugin as unknown as Record<string, unknown>,
@@ -281,7 +259,16 @@ export function useSuperPanel() {
     }
   }
 
-  function refreshUserPlugins() {
+  let currentPluginLogos = new Map<string, string>();
+
+  function refreshUserPlugins(optionPlugins?: OptionPlugin[]) {
+    if (optionPlugins) {
+      currentPluginLogos = new Map(
+        optionPlugins
+          .filter((plugin) => plugin.name && (plugin.logoUrl || plugin.logo))
+          .map((plugin) => [plugin.name, plugin.logoUrl || plugin.logo])
+      );
+    }
     const doc = flickDb.get('super-panel-user-plugins') as {
       data?: UserPluginItem[];
     } | null;
@@ -291,7 +278,7 @@ export function useSuperPanel() {
     }
     state.userPlugins = doc.data.map((row) => ({
       ...row,
-      logo: normalizeLogo(row.logo),
+      logo: (row.name && currentPluginLogos.get(row.name)) || row.logo,
       click: () =>
         openPlugin({
           plugin: row as unknown as Record<string, unknown>,
@@ -325,23 +312,16 @@ export function useSuperPanel() {
     }
   }
 
-  function resolveCurrentFolder(cb: (folder: string) => void) {
-    if (panel.platform === 'darwin' || panel.platform === 'win32') {
-      panel.getCurrentFolder().then((data) => {
-        const folder = String(data?.stdout ?? '').trim();
-        if (folder) cb(folder);
-      });
-    }
-  }
-
   function onTrigger(_e: unknown, payload: TriggerSuperPanelPayload) {
     try {
+      activeRequestId = payload.requestId;
+      lastReportedRequestId = 0;
+      lastReportedHeight = 0;
       translateSeq += 1;
       state.matchPlugins = [];
       state.translate = null;
       state.loading = false;
       refreshPreferences();
-
       const {
         text,
         fileUrl,
@@ -349,16 +329,12 @@ export function useSuperPanel() {
         selectedFileIsDirectory = false,
         selectedFileDataUrl = '',
       } = payload;
+      refreshUserPlugins(optionPlugin);
       state.selectedText = String(text ?? '');
       state.selectedFileUrl = fileUrl == null ? '' : String(fileUrl);
+      state.selectedFileIsDirectory = selectedFileIsDirectory === true;
       const ext = extensionName(fileUrl || '');
       state.fileUrl = (fileUrl ?? '') as string;
-
-      if (fileUrl === null) {
-        state.matchPlugins = [...commonPlugins];
-        state.fileUrl = getDesktopPath();
-        return;
-      }
 
       if (!fileUrl && text) {
         collectTextPlugins(text, optionPlugin);
@@ -366,16 +342,9 @@ export function useSuperPanel() {
         return;
       }
 
-      if (fileUrl && isExplorerLikeWindow(String(fileUrl))) {
-        state.matchPlugins = [...commonPlugins];
-        const desktopPath = getDesktopPath();
-        state.fileUrl = desktopPath;
-        state.selectedFileUrl = desktopPath;
-        resolveCurrentFolder((folder) => {
-          state.fileUrl = folder;
-          state.selectedFileUrl = folder;
-          nextTick(() => reportHeight());
-        });
+      if (!fileUrl && !text) {
+        state.fileUrl = '';
+        state.selectedFileUrl = '';
         return;
       }
 
@@ -396,12 +365,11 @@ export function useSuperPanel() {
         optionPlugin
       );
     } finally {
-      // 等 Vue 把本次 payload 刷进 DOM 并上报高度后再让主进程 show，避免先闪旧内容、再与 setSize 同步抖动
+      const requestId = payload.requestId;
       nextTick(() => {
-        reportHeight();
-        setTimeout(() => {
-          panel.contentApplied();
-        }, 48);
+        if (requestId !== activeRequestId) return;
+        reportLayout();
+        panel.contentApplied(requestId);
       });
     }
   }
@@ -444,13 +412,33 @@ export function useSuperPanel() {
   const loading = computed(() => state.loading);
   const selectedText = computed(() => state.selectedText);
   const selectedFileUrl = computed(() => state.selectedFileUrl);
+  const selectedFileIsDirectory = computed(() => state.selectedFileIsDirectory);
   const matchPlugins = computed(() => state.matchPlugins);
   const userPlugins = computed(() => state.userPlugins);
 
-  function reportHeight() {
-    const el = document.getElementById('app');
-    if (!el) return;
-    panel.setHeight(parseInt(getComputedStyle(el).height, 10));
+  function reportLayout() {
+    const el = document.querySelector<HTMLElement>('.main');
+    if (!el || activeRequestId < 1) return;
+    const height = Math.max(50, Math.ceil(el.scrollHeight));
+    if (
+      lastReportedRequestId === activeRequestId &&
+      lastReportedHeight === height
+    )
+      return;
+    lastReportedRequestId = activeRequestId;
+    lastReportedHeight = height;
+    panel.reportLayout({
+      requestId: activeRequestId,
+      height,
+    });
+  }
+
+  function scheduleLayoutReport() {
+    if (layoutFrame) cancelAnimationFrame(layoutFrame);
+    layoutFrame = requestAnimationFrame(() => {
+      layoutFrame = 0;
+      reportLayout();
+    });
   }
 
   let offTrigger: (() => void) | undefined;
@@ -467,6 +455,11 @@ export function useSuperPanel() {
       pinned.value = pin;
     });
     offPanelDismissed = panel.onDismissed(cancelTranslateBecausePanelGone);
+    const app = document.querySelector<HTMLElement>('.main');
+    if (app) {
+      layoutObserver = new ResizeObserver(scheduleLayoutReport);
+      layoutObserver.observe(app);
+    }
     panel
       .getPinState()
       .then((pin: unknown) => {
@@ -481,16 +474,9 @@ export function useSuperPanel() {
     offTrigger?.();
     offPinState?.();
     offPanelDismissed?.();
+    layoutObserver?.disconnect();
+    if (layoutFrame) cancelAnimationFrame(layoutFrame);
   });
-
-  watch(
-    [matchPlugins, translate],
-    () => {
-      refreshUserPlugins();
-      setTimeout(reportHeight, 50);
-    },
-    { deep: true }
-  );
 
   return {
     state,
@@ -499,12 +485,13 @@ export function useSuperPanel() {
     loading,
     selectedText,
     selectedFileUrl,
+    selectedFileIsDirectory,
     matchPlugins,
     userPlugins,
     togglePin,
     showMainWindow,
     openInstalled,
     runPluginClick,
-    reportHeight,
+    reportLayout,
   };
 }

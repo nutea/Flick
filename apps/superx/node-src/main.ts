@@ -2,19 +2,15 @@ import * as os from 'os';
 import * as fs from 'fs';
 import * as path from 'path';
 import createPanelWindow from './panel-window';
-import type { ClipboardSnap } from './clipboard-helpers';
 import {
-  getActiveWindowInfo,
+  getActiveWindowFallbackPath,
+  getClipboardChangeToken,
+  getSelectedFilePaths,
+  getSelectedText,
   onNativeInputEvent,
   simulateCopyShortcut,
 } from './native';
-import {
-  getPos,
-  getSelectedContent,
-  snapshotClipboard,
-  clipboardSnapsEqual,
-  readClipboardPayload,
-} from './clipboard-helpers';
+import { getPos, getSelectedContent } from './clipboard-helpers';
 
 /** macOS：为可执行文件加执行位；优先仓库根 node_modules（与主应用共用依赖）。 */
 const isMacOS = os.type() === 'Darwin';
@@ -45,9 +41,6 @@ const LONG_PRESS_MS = 450;
 /** 首次注册延迟，避免与 Flick 其它 globalShortcut 抢注册冲突；热更新时为 0 */
 const INITIAL_KEYBOARD_REGISTER_MS = 1000;
 
-/** 窗口顶边略低于光标，避免无边框窗顶缘与指针重合触发系统调整大小 */
-const SUPER_PANEL_TOP_CURSOR_GAP_PX = 12;
-
 type TriggerButton = (typeof BTN)[keyof typeof BTN];
 
 function isMouseTrigger(s: string): boolean {
@@ -59,9 +52,6 @@ function isMouseTrigger(s: string): boolean {
 type FlickCtx = any;
 
 function createPlugin() {
-  /** 上次呼出面板时记录的剪贴板快照；与当前不一致且无选区复制时，仍用当前剪贴板处理一次 */
-  let lastPanelClipboardSnap: ClipboardSnap | null = null;
-
   let lastRegisteredKey: string | null = null;
   let removeInputSubscription: (() => void) | null = null;
   let longPressTimer: ReturnType<typeof setTimeout> | null = null;
@@ -87,40 +77,37 @@ function createPlugin() {
 
       const panelInstance = createPanelWindow(ctx);
       panelInstance.init();
+      let requestSequence = 0;
 
       const showSuperPanel = async (trigger: 'keyboard' | 'mouse') => {
+        const requestId = ++requestSequence;
         const { x, y } = screen.getCursorScreenPoint();
         if (trigger === 'keyboard') {
           await new Promise((resolve) => setTimeout(resolve, 40));
         }
-        let copyResult = await getSelectedContent(clipboard, simulateCopy);
-        const snapNow = snapshotClipboard(clipboard);
+        const copyResult = await getSelectedContent(clipboard, simulateCopy, {
+          readSelectedText: getSelectedText,
+          readSelectedFilePaths: getSelectedFilePaths,
+          getClipboardChangeToken,
+        });
+        if (requestId !== requestSequence) return;
 
         if (!copyResult.text && !copyResult.fileUrl) {
-          if (
-            lastPanelClipboardSnap === null ||
-            !clipboardSnapsEqual(snapNow, lastPanelClipboardSnap)
-          ) {
-            copyResult = readClipboardPayload(clipboard);
-          }
+          copyResult.fileUrl = await getActiveWindowFallbackPath();
         }
-
-        if (!copyResult.text && !copyResult.fileUrl) {
-          const nativeWinInfo = await getActiveWindowInfo();
-          copyResult.fileUrl = nativeWinInfo?.path || copyResult.fileUrl;
-        }
-
-        lastPanelClipboardSnap = snapshotClipboard(clipboard);
+        if (requestId !== requestSequence) return;
 
         const win = panelInstance.getWindow();
         if (!win) return;
+        await panelInstance.whenReady();
+        if (requestId !== requestSequence || win.isDestroyed()) return;
 
         if (panelInstance.isPinned() && win.isVisible()) {
           panelInstance.resetPin();
           win.hide();
         }
 
-        const localPlugins = (global as any).LOCAL_PLUGINS.getLocalPlugins();
+        const localPlugins = API.getLocalPlugins();
 
         let selectedFileIsDirectory = false;
         let selectedFileDataUrl = '';
@@ -144,36 +131,7 @@ function createPlugin() {
         }
 
         const cursor = getPos(screen, { x, y }, isMacOS);
-
-        const placePanelAtCursor = () => {
-          if (
-            !win ||
-            (typeof win.isDestroyed === 'function' && win.isDestroyed())
-          )
-            return;
-          const bounds = win.getBounds();
-          let left = Math.round(cursor.x - bounds.width / 2);
-          let top = Math.round(cursor.y + SUPER_PANEL_TOP_CURSOR_GAP_PX);
-          try {
-            const disp = screen.getDisplayNearestPoint({
-              x: cursor.x,
-              y: cursor.y,
-            });
-            const wa = disp.workArea;
-            left = Math.max(
-              wa.x,
-              Math.min(left, wa.x + wa.width - bounds.width)
-            );
-            top = Math.max(
-              wa.y,
-              Math.min(top, wa.y + wa.height - bounds.height)
-            );
-          } catch {
-            /* ignore clamp if display API fails */
-          }
-          win.setPosition(left, top);
-          panelInstance.setPanelPositionAnchor(left, top);
-        };
+        panelInstance.beginPlacement(requestId, cursor);
 
         await new Promise<void>((resolve) => {
           const ms = 800;
@@ -181,33 +139,35 @@ function createPlugin() {
             ipcMain.removeListener('superPanel-content-applied', onApplied);
             resolve();
           }, ms);
-          const onApplied = (event: { sender: { id: number } }) => {
+          const onApplied = (
+            event: { sender: { id: number } },
+            appliedRequestId: unknown
+          ) => {
             if (
               !win ||
               (typeof win.isDestroyed === 'function' && win.isDestroyed())
             )
               return;
             if (event.sender.id !== win.webContents.id) return;
+            if (appliedRequestId !== requestId) return;
             clearTimeout(timer);
             ipcMain.removeListener('superPanel-content-applied', onApplied);
             resolve();
           };
           ipcMain.on('superPanel-content-applied', onApplied);
           win.webContents.send('trigger-super-panel', {
+            requestId,
             ...copyResult,
             optionPlugin: localPlugins,
             selectedFileIsDirectory,
             selectedFileDataUrl,
           });
         });
-
-        placePanelAtCursor();
+        if (requestId !== requestSequence) return;
 
         win.setAlwaysOnTop(true);
-        win.setVisibleOnAllWorkspaces(true, { visibleOnFullScreen: true });
-        win.focus();
-        win.setVisibleOnAllWorkspaces(false, { visibleOnFullScreen: true });
         win.show();
+        win.focus();
 
         if (process.env.FLICK_SUPER_PANEL_SMOKE === '1') {
           const result = await win.webContents.executeJavaScript(`({

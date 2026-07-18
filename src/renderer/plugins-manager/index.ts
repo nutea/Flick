@@ -1,13 +1,14 @@
 import { reactive, toRefs, ref } from 'vue';
-import appSearch from '@/core/app-search';
 import searchManager from './search';
 import optionsManager from './options';
 import { PLUGIN_HISTORY } from '@/common/constans/renderer';
 import { message } from 'ant-design-vue';
-
-const { ipcRenderer } = window.require('electron');
-const { getGlobal } = window.require('@electron/remote');
-const path = window.require('path');
+import {
+  rehydrateRecentPlugin,
+  recentPluginTaskKey,
+  sanitizeRecentPlugin,
+  sanitizeRecentPluginHistory,
+} from './pluginHistory';
 
 const createPluginManager = (): any => {
   const state: any = reactive({
@@ -23,22 +24,29 @@ const createPluginManager = (): any => {
 
   const initPlugins = async () => {
     initPluginHistory();
-    appList.value = await appSearch();
+    appList.value = await window.flick.getInstalledApps();
     initLocalStartPlugin();
   };
 
   const initPluginHistory = () => {
     const result = window.flick.db.get(PLUGIN_HISTORY) || {};
     if (result && result.data) {
-      state.pluginHistory = result.data;
+      const installedPlugins: any[] = window.flick.getLocalPlugins();
+      const installedByName = new Map<string, any>(
+        installedPlugins.map((plugin) => [plugin.name, plugin])
+      );
+      state.pluginHistory = sanitizeRecentPluginHistory(
+        result.data.map((item) => {
+          const originName = item.originName || item.name;
+          const installed = installedByName.get(originName);
+          return rehydrateRecentPlugin(item, installed);
+        })
+      );
     }
   };
 
   const initLocalStartPlugin = () => {
-    const result = ipcRenderer.sendSync('msg-trigger', {
-      type: 'dbGet',
-      data: { id: 'flick-local-start-app' },
-    });
+    const result = window.flick.db.get('flick-local-start-app');
     if (result && result.value) {
       appList.value.push(...result.value);
     }
@@ -55,6 +63,9 @@ const createPluginManager = (): any => {
 
   const loadPlugin = async (plugin) => {
     setSearchValue('');
+    // 插件输入框声明属于插件实例；切换时不能继承上一个插件的
+    // placeholder / requested / focus / role。
+    window.removeSubInput();
     // 缩窗由主进程 openPlugin 内 resizeLauncherContent 统一处理；此处再发 setExpendHeight 会与主进程次序交叉，高 DPI 下二次改尺寸导致跳动
     state.pluginLoading = true;
     state.currentPlugin = plugin;
@@ -93,29 +104,26 @@ const createPluginManager = (): any => {
         })
       );
       /** invoke：sendSync + async msg-trigger 会在 await 微任务之后才设 returnValue，重定向恒为假 */
-      const redirected = await ipcRenderer.invoke(
-        'flick:try-redirect-singleton-detach',
-        pluginPayload
-      );
+      const redirected =
+        await window.flick.tryRedirectSingletonDetach(pluginPayload);
       if (redirected) {
         changePluginHistory({
           ...plugin,
           ...option,
+          name: plugin.name,
           originName: plugin.originName || plugin.name,
         });
         return;
       }
     }
 
-    ipcRenderer.send('msg-trigger', {
-      type: 'removePlugin',
-    });
+    await window.flick.removePlugin();
     window.captureSearchSnapshotForNextDetach?.();
     window.initFlick();
 
     if (plugin.pluginType === 'ui' || plugin.pluginType === 'system') {
       await loadPlugin(plugin);
-      window.flick.openPlugin(
+      await window.flick.openPlugin(
         JSON.parse(
           JSON.stringify({
             ...plugin,
@@ -138,33 +146,39 @@ const createPluginManager = (): any => {
     changePluginHistory({
       ...plugin,
       ...option,
+      name: plugin.name,
       originName: plugin.originName || plugin.name,
     });
   };
 
   const changePluginHistory = (plugin) => {
+    plugin = sanitizeRecentPlugin(plugin);
     const unpin = state.pluginHistory.filter((plugin) => !plugin.pin);
     const pin = state.pluginHistory.filter((plugin) => plugin.pin);
-    const isPin = state.pluginHistory.find((p) => p.name === plugin.name)?.pin;
+    const taskKey = recentPluginTaskKey(plugin);
+    const isSameTask = (candidate) =>
+      recentPluginTaskKey(candidate) === taskKey;
+    const isPin = state.pluginHistory.find(isSameTask)?.pin;
     if (isPin) {
       pin.forEach((p, index) => {
-        if (p.name === plugin.name) {
-          plugin = pin.splice(index, 1)[0];
+        if (isSameTask(p)) {
+          pin.splice(index, 1);
         }
       });
+      plugin.pin = true;
       pin.unshift(plugin);
     } else {
       unpin.forEach((p, index) => {
-        if (p.name === plugin.name) {
+        if (isSameTask(p)) {
           unpin.splice(index, 1);
         }
       });
       unpin.unshift(plugin);
     }
-    if (state.pluginHistory.length > 8) {
+    while (pin.length + unpin.length > 8 && unpin.length) {
       unpin.pop();
     }
-    state.pluginHistory = [...pin, ...unpin];
+    state.pluginHistory = sanitizeRecentPluginHistory([...pin, ...unpin]);
     const result = window.flick.db.get(PLUGIN_HISTORY) || {};
     window.flick.db.put({
       _id: PLUGIN_HISTORY,
@@ -174,7 +188,7 @@ const createPluginManager = (): any => {
   };
 
   const setPluginHistory = (plugins) => {
-    state.pluginHistory = plugins;
+    state.pluginHistory = sanitizeRecentPluginHistory(plugins);
     const unpin = state.pluginHistory.filter((plugin) => !plugin.pin);
     const pin = state.pluginHistory.filter((plugin) => plugin.pin);
     state.pluginHistory = [...pin, ...unpin];
@@ -202,12 +216,13 @@ const createPluginManager = (): any => {
     currentPlugin: toRefs(state).currentPlugin,
   });
   // plugin operation
-  const getPluginInfo = async ({ pluginName, pluginPath }) => {
-    const pluginInfo = await window.flick.getPluginInfo(pluginName, pluginPath);
+  const getBuiltinPlugin = async (name: string) => {
+    const pluginInfo = await window.flick.getBuiltinPlugin(name);
     return {
       ...pluginInfo,
-      icon: pluginInfo.logo,
-      indexPath: `file://${path.join(pluginPath, '../', pluginInfo.main)}`,
+      logo: pluginInfo.logoUrl,
+      icon: pluginInfo.logoUrl,
+      indexPath: pluginInfo.indexUrl,
     };
   };
 
@@ -227,29 +242,28 @@ const createPluginManager = (): any => {
 
   window.updatePlugin = ({ currentPlugin }: any) => {
     state.currentPlugin = currentPlugin;
-    getGlobal('LOCAL_PLUGINS').updatePlugin(currentPlugin);
+    window.flick.updateLocalPlugin(currentPlugin);
   };
 
   window.setCurrentPlugin = ({ currentPlugin }) => {
     state.currentPlugin = currentPlugin;
     setSearchValue('');
+    window.removeSubInput();
   };
 
   window.initFlick = () => {
     state.currentPlugin = {};
     setSearchValue('');
     setOptionsRef([]);
-    window.setSubInput({ placeholder: '' });
+    window.removeSubInput();
   };
 
   window.pluginLoaded = () => {
     state.pluginLoading = false;
   };
 
-  window.searchFocus = (args, strict) => {
-    ipcRenderer.send('msg-trigger', {
-      type: 'removePlugin',
-    });
+  window.searchFocus = async (args, strict) => {
+    await window.flick.removePlugin();
     window.initFlick();
     searchFocus(args, strict);
   };
@@ -260,7 +274,7 @@ const createPluginManager = (): any => {
     addPlugin,
     removePlugin,
     onSearch,
-    getPluginInfo,
+    getBuiltinPlugin,
     openPlugin,
     changeSelect,
     options,

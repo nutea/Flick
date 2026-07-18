@@ -30,7 +30,51 @@ const readFolderPathAsync = async (): Promise<string> => {
   }
 };
 
+const readForegroundFolderPath = async (): Promise<string> => {
+  const addon = tryLoadAddon();
+  if (!addon?.getForegroundFolderPath) return '';
+  try {
+    return String((await addon.getForegroundFolderPath()) ?? '');
+  } catch {
+    return '';
+  }
+};
+
+const readSelectedText = async (): Promise<string> => {
+  const addon = tryLoadAddon();
+  if (!addon?.getSelectedText) return '';
+  try {
+    return String((await addon.getSelectedText()) ?? '');
+  } catch {
+    return '';
+  }
+};
+
+const readSelectedFilePaths = async (): Promise<string[]> => {
+  const addon = tryLoadAddon();
+  if (!addon?.getSelectedFilePaths) return [];
+  try {
+    const paths = await addon.getSelectedFilePaths();
+    return Array.isArray(paths)
+      ? paths.filter((value: unknown): value is string =>
+          Boolean(value && typeof value === 'string')
+        )
+      : [];
+  } catch {
+    return [];
+  }
+};
+
 export const system: NativeSystemApi = {
+  async getForegroundFolderPath(): Promise<string> {
+    return readForegroundFolderPath();
+  },
+  async getSelectedFilePaths(): Promise<string[]> {
+    return readSelectedFilePaths();
+  },
+  async getSelectedText(): Promise<string> {
+    return readSelectedText();
+  },
   async getFolderOpenPath(): Promise<string> {
     return readFolderPathAsync();
   },
