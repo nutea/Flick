@@ -15,6 +15,18 @@ mod selection_win;
 #[cfg(windows)]
 mod input_hook_win;
 
+#[cfg(not(windows))]
+mod input_hook_unix;
+
+#[cfg(target_os = "macos")]
+mod input_hook_macos;
+
+#[cfg(not(windows))]
+mod keyboard_unix;
+
+#[cfg(not(windows))]
+mod platform_unix;
+
 use napi::bindgen_prelude::{AsyncTask, Env, JsFunction, Result, Task};
 use napi_derive::napi;
 
@@ -175,7 +187,7 @@ mod windows_impl {
   use super::ActiveWindowInfo;
 
   pub fn get_active_window() -> Option<ActiveWindowInfo> {
-    None
+    crate::platform_unix::get_active_window()
   }
 }
 
@@ -216,7 +228,7 @@ impl Task for GetFolderOpenPathTask {
     }
     #[cfg(not(windows))]
     {
-      Ok(String::new())
+      Ok(platform_unix::get_folder_open_path(false))
     }
   }
 
@@ -243,7 +255,7 @@ impl Task for GetForegroundFolderPathTask {
     }
     #[cfg(not(windows))]
     {
-      Ok(String::new())
+      Ok(platform_unix::get_folder_open_path(true))
     }
   }
 
@@ -270,7 +282,7 @@ impl Task for GetSelectedTextTask {
     }
     #[cfg(not(windows))]
     {
-      Ok(String::new())
+      Ok(platform_unix::get_selected_text())
     }
   }
 
@@ -297,7 +309,7 @@ impl Task for GetSelectedFilePathsTask {
     }
     #[cfg(not(windows))]
     {
-      Ok(Vec::new())
+      Ok(platform_unix::get_selected_file_paths())
     }
   }
 
@@ -321,7 +333,7 @@ pub fn get_folder_open_path_sync_napi() -> Result<String> {
   }
   #[cfg(not(windows))]
   {
-    Ok(String::new())
+    Ok(platform_unix::get_folder_open_path(false))
   }
 }
 
@@ -334,8 +346,7 @@ pub fn send_keyboard_chord_napi(modifiers: Vec<String>, key: String) -> Result<(
   }
   #[cfg(not(windows))]
   {
-    let _ = (modifiers, key);
-    Ok(())
+    keyboard_unix::send_chord(&modifiers, &key).map_err(napi::Error::from_reason)
   }
 }
 
@@ -347,14 +358,12 @@ pub fn start_input_hook_napi(env: Env, callback: JsFunction) -> Result<JsFunctio
   }
   #[cfg(not(windows))]
   {
-    let _ = callback;
-    env.create_function_from_closure("stopInputHook", |_| Ok(()))
+    input_hook_unix::start(&env, callback)
   }
 }
 
-/// Reads the file paths currently on the OS clipboard (Windows `CF_HDROP`).
-/// Returns an empty array when no file list is present, or on non-Windows
-/// platforms.
+/// Reads file paths from the platform clipboard (`CF_HDROP`, Finder URLs, or
+/// `text/uri-list`). Returns an empty array when no file list is present.
 #[napi(js_name = "readClipboardFilePaths")]
 pub fn read_clipboard_file_paths_napi() -> Result<Vec<String>> {
   #[cfg(windows)]
@@ -363,12 +372,11 @@ pub fn read_clipboard_file_paths_napi() -> Result<Vec<String>> {
   }
   #[cfg(not(windows))]
   {
-    Ok(Vec::new())
+    platform_unix::read_clipboard_file_paths().map_err(napi::Error::from_reason)
   }
 }
 
-/// Writes the given file paths to the OS clipboard as a `CF_HDROP` payload
-/// (and `Preferred DropEffect = COPY`). No-op on non-Windows platforms.
+/// Writes file paths using the platform-native file-list clipboard format.
 #[napi(js_name = "writeClipboardFilePaths")]
 pub fn write_clipboard_file_paths_napi(files: Vec<String>) -> Result<()> {
   #[cfg(windows)]
@@ -377,14 +385,11 @@ pub fn write_clipboard_file_paths_napi(files: Vec<String>) -> Result<()> {
   }
   #[cfg(not(windows))]
   {
-    let _ = files;
-    Ok(())
+    platform_unix::write_clipboard_file_paths(&files).map_err(napi::Error::from_reason)
   }
 }
 
-/// Returns the Windows clipboard sequence number without opening, reading, or
-/// writing the clipboard. A copy of identical bytes still produces a new
-/// sequence when the source republishes the clipboard contents.
+/// Returns a clipboard generation counter when the platform exposes one.
 #[napi(js_name = "getClipboardChangeToken")]
 pub fn get_clipboard_change_token_napi() -> u32 {
   #[cfg(windows)]
@@ -393,6 +398,6 @@ pub fn get_clipboard_change_token_napi() -> u32 {
   }
   #[cfg(not(windows))]
   {
-    0
+    platform_unix::get_clipboard_change_token()
   }
 }

@@ -9,6 +9,7 @@ const tryLoadAddon = () => {
         return null;
     }
 };
+/** Maps the platform-neutral N-API shape to Flick's stable window type. */
 const getWindowsActiveWindow = async () => {
     const addon = tryLoadAddon();
     if (!(addon === null || addon === void 0 ? void 0 : addon.getActiveWindow))

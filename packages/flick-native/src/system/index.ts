@@ -2,7 +2,6 @@ import type { NativeSystemApi, NativeWindowInfo } from '../types';
 import { getWindowsActiveWindow } from './windows';
 
 const tryLoadAddon = () => {
-  if (process.platform !== 'win32') return null;
   try {
     return require('../../native');
   } catch {
@@ -82,10 +81,6 @@ export const system: NativeSystemApi = {
     return readFolderPathSync();
   },
   async getActiveWindow(): Promise<NativeWindowInfo | null> {
-    if (process.platform === 'win32') {
-      return getWindowsActiveWindow();
-    }
-
-    return null;
+    return getWindowsActiveWindow();
   },
 };

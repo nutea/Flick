@@ -4,13 +4,22 @@ import * as path from 'path';
 import createPanelWindow from './panel-window';
 import {
   getActiveWindowFallbackPath,
+  getActiveWindowSnapshot,
   getClipboardChangeToken,
   getSelectedFilePaths,
   getSelectedText,
   onNativeInputEvent,
   simulateCopyShortcut,
 } from './native';
-import { getPos, getSelectedContent } from './clipboard-helpers';
+import {
+  getPos,
+  getSelectedContent,
+  isDirectorySelection,
+} from './clipboard-helpers';
+import {
+  DEFAULT_KEYBOARD_SHORTCUT,
+  normalizeKeyboardShortcut,
+} from './shortcut';
 
 /** macOS：为可执行文件加执行位；优先仓库根 node_modules（与主应用共用依赖）。 */
 const isMacOS = os.type() === 'Darwin';
@@ -80,7 +89,13 @@ function createPlugin() {
       let requestSequence = 0;
 
       const showSuperPanel = async (trigger: 'keyboard' | 'mouse') => {
+        if (process.env.FLICK_NATIVE_DEBUG) {
+          console.info(`[flick-system-super-panel] triggered: ${trigger}`);
+        }
         const requestId = ++requestSequence;
+        // Capture the source application immediately. Clipboard simulation and
+        // Finder automation must not change which window supplies the fallback.
+        const activeWindowPromise = getActiveWindowSnapshot();
         const { x, y } = screen.getCursorScreenPoint();
         if (trigger === 'keyboard') {
           await new Promise((resolve) => setTimeout(resolve, 40));
@@ -90,10 +105,24 @@ function createPlugin() {
           readSelectedFilePaths: getSelectedFilePaths,
           getClipboardChangeToken,
         });
+        if (process.env.FLICK_NATIVE_DEBUG) {
+          console.info(
+            '[flick-system-super-panel] selection:',
+            JSON.stringify({
+              status: copyResult.status,
+              source: 'source' in copyResult ? copyResult.source : null,
+              hasText: copyResult.text.length > 0,
+              fileUrl: copyResult.fileUrl,
+            })
+          );
+        }
         if (requestId !== requestSequence) return;
 
         if (!copyResult.text && !copyResult.fileUrl) {
-          copyResult.fileUrl = await getActiveWindowFallbackPath();
+          copyResult.fileUrl = await getActiveWindowFallbackPath(
+            undefined,
+            await activeWindowPromise
+          );
         }
         if (requestId !== requestSequence) return;
 
@@ -115,7 +144,10 @@ function createPlugin() {
           const selectedPath = copyResult.fileUrl.replace(/^file:\/\//, '');
           try {
             const stat = fs.statSync(selectedPath);
-            selectedFileIsDirectory = stat.isDirectory();
+            selectedFileIsDirectory = isDirectorySelection(
+              selectedPath,
+              stat.isDirectory()
+            );
             if (
               stat.isFile() &&
               stat.size <= 20 * 1024 * 1024 &&
@@ -207,7 +239,15 @@ function createPlugin() {
         }
 
         const dbStore = (await API.dbGet({ data: { id: STORE_ID } })) || {};
-        const superPanelHotKey: string = dbStore.value || 'Ctrl+W';
+        const storedHotKey: string = dbStore.value || DEFAULT_KEYBOARD_SHORTCUT;
+        const superPanelHotKey = isMouseTrigger(storedHotKey)
+          ? storedHotKey
+          : normalizeKeyboardShortcut(storedHotKey);
+        if (storedHotKey !== superPanelHotKey) {
+          console.warn(
+            `[flick-system-super-panel] invalid shortcut ${JSON.stringify(storedHotKey)}; using ${superPanelHotKey}`
+          );
+        }
 
         if (lastRegisteredKey && !isMouseTrigger(lastRegisteredKey)) {
           try {
@@ -281,6 +321,10 @@ function createPlugin() {
             if (!registered) {
               console.warn(
                 `[flick-system-super-panel] shortcut is unavailable: ${superPanelHotKey}`
+              );
+            } else if (process.env.FLICK_NATIVE_DEBUG) {
+              console.info(
+                `[flick-system-super-panel] shortcut registered: ${superPanelHotKey}`
               );
             }
           } catch (err) {

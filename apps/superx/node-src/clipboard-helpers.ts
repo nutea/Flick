@@ -1,4 +1,5 @@
 import { randomUUID } from 'crypto';
+import { fileURLToPath } from 'node:url';
 
 /** Electron Clipboard 子集，避免依赖 electron 类型包 */
 
@@ -12,6 +13,39 @@ type FileEntry =
       originalname: string;
     };
 
+function decodeXmlText(value: string): string {
+  return value
+    .replace(/&lt;/g, '<')
+    .replace(/&gt;/g, '>')
+    .replace(/&quot;/g, '"')
+    .replace(/&apos;/g, "'")
+    .replace(/&amp;/g, '&');
+}
+
+function decodeMacFilePath(value: string): string {
+  const decodedXml = decodeXmlText(value.trim());
+  if (!decodedXml) return '';
+  if (decodedXml.startsWith('file://')) {
+    try {
+      return fileURLToPath(decodedXml);
+    } catch {
+      /* Fall through for malformed legacy clipboard URLs. */
+    }
+  }
+  try {
+    return decodeURIComponent(decodedXml.replace(/^file:\/\//, ''));
+  } catch {
+    return decodedXml.replace(/^file:\/\//, '');
+  }
+}
+
+export function parseMacClipboardFilePaths(raw: string): string[] {
+  return (raw.match(/<string>[\s\S]*?<\/string>/g) || [])
+    .map((item) => item.replace(/^<string>|<\/string>$/g, ''))
+    .map(decodeMacFilePath)
+    .filter(Boolean);
+}
+
 /**
  * 从系统剪贴板解析文件路径 / 图片（与原版 main.js 行为一致）
  */
@@ -20,12 +54,9 @@ export function getFilePathFromClipboard(clipboard: ClipboardApi): FileEntry[] {
 
   if (process.platform === 'darwin') {
     if (clipboard.has('NSFilenamesPboardType')) {
-      filePath =
-        clipboard
-          .read('NSFilenamesPboardType')
-          .match(/<string>.*<\/string>/g)
-          ?.map((item: string) => item.replace(/<string>|<\/string>/g, '')) ||
-        [];
+      filePath = parseMacClipboardFilePaths(
+        clipboard.read('NSFilenamesPboardType')
+      );
     } else {
       const clipboardImage = clipboard.readImage('clipboard');
       if (!clipboardImage.isEmpty()) {
@@ -39,7 +70,7 @@ export function getFilePathFromClipboard(clipboard: ClipboardApi): FileEntry[] {
         ];
       } else {
         filePath = [
-          clipboard.read('public.file-url').replace('file://', ''),
+          decodeMacFilePath(clipboard.read('public.file-url')),
         ].filter(Boolean);
       }
     }
@@ -92,6 +123,16 @@ export interface ClipboardSnap {
   hasImage: boolean;
 }
 
+/** macOS application bundles are directories on disk, but UI treats them as apps/files. */
+export function isDirectorySelection(
+  selectedPath: string,
+  statIsDirectory: boolean,
+  platform: NodeJS.Platform = process.platform
+): boolean {
+  if (!statIsDirectory) return false;
+  return platform !== 'darwin' || !/\.app\/?$/i.test(selectedPath);
+}
+
 export function snapshotClipboard(clipboard: ClipboardApi): ClipboardSnap {
   const text = clipboard.readText('clipboard') || '';
   const raw = getFilePathFromClipboard(clipboard)[0];
@@ -142,6 +183,7 @@ export interface SelectedContentOptions {
   readSelectedFilePaths?: () => Promise<string[]>;
   getClipboardChangeToken?: () => number | null;
   directReadTimeoutMs?: number;
+  directFileReadTimeoutMs?: number;
   copyTimeoutMs?: number;
   pollIntervalMs?: number;
 }
@@ -149,17 +191,18 @@ export interface SelectedContentOptions {
 const wait = (ms: number) =>
   new Promise<void>((resolve) => setTimeout(resolve, ms));
 
-async function readDirectSelection(
-  readSelectedText: (() => Promise<string>) | undefined,
-  timeoutMs: number
-): Promise<string> {
-  if (!readSelectedText) return '';
+async function readDirectValue<T>(
+  reader: (() => Promise<T>) | undefined,
+  timeoutMs: number,
+  fallback: T
+): Promise<T> {
+  if (!reader) return fallback;
   let timer: ReturnType<typeof setTimeout> | undefined;
   try {
     return await Promise.race([
-      readSelectedText().catch(() => ''),
-      new Promise<string>((resolve) => {
-        timer = setTimeout(() => resolve(''), timeoutMs);
+      reader().catch(() => fallback),
+      new Promise<T>((resolve) => {
+        timer = setTimeout(() => resolve(fallback), timeoutMs);
       }),
     ]);
   } finally {
@@ -172,10 +215,22 @@ export async function getSelectedContent(
   simulateCopy: () => Promise<void>,
   options: SelectedContentOptions = {}
 ): Promise<SelectedContentResult> {
-  const directText = await readDirectSelection(
-    options.readSelectedText,
-    options.directReadTimeoutMs ?? 120
-  );
+  // The two platform reads are independent. Running them together keeps the
+  // Finder/Explorer path capability without adding its process/COM latency to
+  // every text selection. Both are bounded because automation providers can
+  // stall behind a permission prompt or an unresponsive file manager.
+  const [directText, selectedPaths] = await Promise.all([
+    readDirectValue(
+      options.readSelectedText,
+      options.directReadTimeoutMs ?? 120,
+      ''
+    ),
+    readDirectValue(
+      options.readSelectedFilePaths,
+      options.directFileReadTimeoutMs ?? 400,
+      [] as string[]
+    ),
+  ]);
   if (directText.length > 0) {
     return {
       status: 'selected',
@@ -185,21 +240,14 @@ export async function getSelectedContent(
     };
   }
 
-  if (options.readSelectedFilePaths) {
-    try {
-      const selectedPaths = await options.readSelectedFilePaths();
-      const firstPath = selectedPaths.find(Boolean);
-      if (firstPath) {
-        return {
-          status: 'selected',
-          source: 'shell',
-          text: '',
-          fileUrl: firstPath,
-        };
-      }
-    } catch {
-      /* Shell selection is optional; fall through to a single copy. */
-    }
+  const firstPath = selectedPaths.find(Boolean);
+  if (firstPath) {
+    return {
+      status: 'selected',
+      source: 'shell',
+      text: '',
+      fileUrl: firstPath,
+    };
   }
 
   const getChangeToken = options.getClipboardChangeToken;

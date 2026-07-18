@@ -11,6 +11,54 @@ on:
   workflow_dispatch:
 
 jobs:
+  verify-linux:
+    name: Verify Linux x64 Native Runtime
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: read
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v7
+
+      - name: Install Linux native build dependencies
+        run: sudo apt-get update && sudo apt-get install -y libx11-dev libxtst-dev libxcb1-dev libxcb-randr0-dev libxkbcommon-dev
+
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v6
+        with:
+          version: 11.9.0
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v7
+        with:
+          node-version: 22.15.0
+          cache: pnpm
+
+      - name: Setup Rust stable
+        run: |
+          rustup toolchain install stable --profile minimal
+          rustup default stable
+          cargo --version
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Run quality checks
+        run: pnpm check
+
+      - name: Build and verify Linux AppImage
+        run: pnpm electron:build:linux && pnpm native:smoke
+
+      - name: Upload Linux installer artifact
+        uses: actions/upload-artifact@v7
+        with:
+          name: flick-linux-x64-installer
+          path: |
+            build/*.AppImage
+            build/*.AppImage.blockmap
+          if-no-files-found: error
+
   verify-macos:
     name: Verify macOS
     runs-on: macos-14
@@ -40,6 +88,9 @@ jobs:
 
       - name: Build macOS application assets
         run: pnpm apps:build && pnpm exec electron-vite build
+
+      - name: Verify macOS native runtime
+        run: pnpm --filter flick-native run native:test && pnpm native:verify:mac && pnpm native:smoke
 
   build-win-x64:
     name: Build Windows x64 Installer
@@ -126,7 +177,7 @@ jobs:
           $env:FLICK_STARTUP_DIAGNOSTICS = '1'
           $startupLog = Join-Path $env:APPDATA 'flick\startup.log'
           $process = Start-Process `
-            -FilePath 'build\win-unpacked\flick.exe' `
+            -FilePath 'build\win-unpacked\Flick.exe' `
             -PassThru
           $deadline = (Get-Date).AddSeconds(45)
           while ((Get-Date) -lt $deadline -and -not (Test-Path $reportPath)) {

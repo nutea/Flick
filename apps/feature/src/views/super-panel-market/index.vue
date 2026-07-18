@@ -352,6 +352,10 @@ import {
 } from '@/utils/superPanelTranslatePrefs';
 import { DEFAULT_TRANSLATE_SYSTEM_PROMPT } from '@/utils/superPanelTranslateBuiltinPrompt';
 import { testTranslateConnection } from '@/utils/translateConnectionTest';
+import {
+  acceleratorKeyFromEvent,
+  isKeyboardAccelerator,
+} from '@/utils/keyboardAccelerator';
 
 const { t } = useI18n();
 
@@ -379,8 +383,12 @@ function getFlick() {
   ).flick;
 }
 
-const initialRaw =
+const storedRaw =
   getFlick()?.dbStorage.getItem(SUPER_PANEL_HOTKEY_DB_ID) || 'Ctrl+W';
+const initialRaw =
+  storedRaw.startsWith('flick:sp:') || isKeyboardAccelerator(storedRaw)
+    ? storedRaw
+    : 'Ctrl+W';
 const initialPref = (
   window as unknown as {
     flick?: {
@@ -622,34 +630,6 @@ function onShortcutInputBlock(e: KeyboardEvent) {
   e.stopPropagation();
 }
 
-function keyFromEvent(e: KeyboardEvent): string | null {
-  if (['Control', 'Shift', 'Alt', 'Meta'].includes(e.key)) return null;
-  if (e.key === ' ') return 'Space';
-  if (e.key.length === 1) return e.key.toUpperCase();
-  const map: Record<string, string> = {
-    ArrowUp: 'Up',
-    ArrowDown: 'Down',
-    ArrowLeft: 'Left',
-    ArrowRight: 'Right',
-    Escape: 'Esc',
-    Backspace: 'Backspace',
-    Tab: 'Tab',
-    Enter: 'Enter',
-    Delete: 'Delete',
-    Insert: 'Insert',
-    Home: 'Home',
-    End: 'End',
-    PageUp: 'PageUp',
-    PageDown: 'PageDown',
-  };
-  if (map[e.key]) return map[e.key];
-  if (/^F\d{1,2}$/.test(e.key)) return e.key;
-  if (e.code.startsWith('Key')) return e.code.slice(3);
-  if (e.code.startsWith('Digit')) return e.code.slice(5);
-  if (e.code.startsWith('Numpad')) return e.code;
-  return e.key.length ? e.key : null;
-}
-
 function onKeyDownCapture(e: KeyboardEvent) {
   if (triggerSelect.value !== 'keyboard' || !capturing.value) return;
 
@@ -673,7 +653,7 @@ function onKeyDownCapture(e: KeyboardEvent) {
   if (e.altKey) mods.push('Alt');
   if (e.metaKey) mods.push('Command');
 
-  const k = keyFromEvent(e);
+  const k = acceleratorKeyFromEvent(e);
   if (!k) return;
 
   const combo = [...mods, k].join('+');

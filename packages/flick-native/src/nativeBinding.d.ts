@@ -57,19 +57,17 @@ declare module '../../native' {
     startInputHook?: (callback: (...args: unknown[]) => void) => () => void;
 
     /**
-     * Reads file paths currently on the OS clipboard (Windows `CF_HDROP`).
-     * Returns an empty array when no file list is present, or on non-Windows
-     * platforms. Synchronous; a single call is in the sub-millisecond range.
+     * Reads file paths currently on the OS clipboard (`CF_HDROP`, Finder URLs,
+     * or `text/uri-list`). Returns an empty array when no file list is present.
      */
     readClipboardFilePaths?: () => string[];
 
-    /** Windows clipboard sequence number; changes on a new copy operation. */
+    /** Clipboard generation counter where the platform exposes one. */
     getClipboardChangeToken?: () => number;
 
     /**
-     * Publishes file paths to the OS clipboard as a `CF_HDROP` payload (and
-     * `Preferred DropEffect = COPY`) so Explorer treats the data as a copy
-     * operation. No-op on non-Windows platforms. Throws on Win32 failure.
+     * Publishes file paths using the platform file-list clipboard format.
+     * Throws when the native backend or required desktop helper is unavailable.
      */
     writeClipboardFilePaths?: (files: string[]) => void;
   }

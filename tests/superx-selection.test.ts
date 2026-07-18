@@ -1,7 +1,16 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import { getSelectedContent } from '../apps/superx/node-src/clipboard-helpers';
-import { getActiveWindowFallbackPath } from '../apps/superx/node-src/native';
+import {
+  getSelectedContent,
+  isDirectorySelection,
+  parseMacClipboardFilePaths,
+} from '../apps/superx/node-src/clipboard-helpers';
+import {
+  getActiveWindowFallbackPath,
+  getActiveWindowSnapshot,
+} from '../apps/superx/node-src/native';
+import { normalizeKeyboardShortcut } from '../apps/superx/node-src/shortcut';
+import { acceleratorKeyFromEvent } from '../apps/feature/src/utils/keyboardAccelerator';
 
 const emptyImage = {
   isEmpty: () => true,
@@ -161,6 +170,28 @@ test('SuperX reports a timeout when no selection is copied', async () => {
   assert.deepEqual(result, { status: 'timeout', text: '', fileUrl: '' });
 });
 
+test('SuperX bounds a stalled platform file-selection provider', async () => {
+  const clipboard = createClipboard('old');
+  let token = 1;
+  const result = await getSelectedContent(
+    clipboard.api,
+    async () => {
+      clipboard.setText('copied after file lookup timeout');
+      token += 1;
+    },
+    {
+      readSelectedText: async () => '',
+      readSelectedFilePaths: () => new Promise<string[]>(() => {}),
+      directFileReadTimeoutMs: 8,
+      getClipboardChangeToken: () => token,
+      copyTimeoutMs: 30,
+      pollIntervalMs: 4,
+    }
+  );
+  assert.equal(result.status, 'selected');
+  assert.equal(result.text, 'copied after file lookup timeout');
+});
+
 test('SuperX keeps an active application as the no-selection fallback', async () => {
   assert.equal(
     await getActiveWindowFallbackPath({
@@ -198,4 +229,150 @@ test('SuperX keeps the foreground Explorer folder as the window fallback', async
     }),
     'C:\\Users\\NUT\\Downloads'
   );
+});
+
+test('SuperX keeps the foreground Finder folder instead of Finder.app', async () => {
+  assert.equal(
+    await getActiveWindowFallbackPath({
+      getActiveWindow: async () => ({
+        title: 'Desktop',
+        path: '/System/Library/CoreServices/Finder.app',
+        appName: 'Finder',
+      }),
+      getForegroundFolderPath: async () => '/Users/NUT/Desktop/',
+    }),
+    '/Users/NUT/Desktop/'
+  );
+});
+
+test('SuperX uses the trigger-time window snapshot for Finder fallback', async () => {
+  let activeReads = 0;
+  const runtime = {
+    getActiveWindow: async () => {
+      activeReads += 1;
+      return {
+        title: 'Wrong later window',
+        path: '/Applications/Other.app',
+      };
+    },
+    getForegroundFolderPath: async () => '/Users/NUT/Project/',
+  };
+  const result = await getActiveWindowFallbackPath(runtime, {
+    title: 'Project',
+    path: '/System/Library/CoreServices/Finder.app',
+    appName: 'Finder',
+  });
+  assert.equal(result, '/Users/NUT/Project/');
+  assert.equal(activeReads, 0);
+});
+
+test('SuperX bounds a stalled Finder folder lookup', async () => {
+  const result = await getActiveWindowFallbackPath(
+    {
+      getActiveWindow: async () => null,
+      getForegroundFolderPath: () => new Promise<string>(() => {}),
+    },
+    {
+      title: 'Finder',
+      path: '/System/Library/CoreServices/Finder.app',
+    },
+    8
+  );
+  assert.equal(result, '');
+});
+
+test('SuperX bounds a stalled active-window snapshot', async () => {
+  const result = await getActiveWindowSnapshot(
+    { getActiveWindow: () => new Promise<null>(() => {}) },
+    8
+  );
+  assert.equal(result, null);
+});
+
+test('SuperX never uses Finder.app when Finder folder lookup fails', async () => {
+  assert.equal(
+    await getActiveWindowFallbackPath({
+      getActiveWindow: async () => ({
+        title: 'Finder',
+        path: '/System/Library/CoreServices/Finder.app/Contents/MacOS/Finder',
+      }),
+      getForegroundFolderPath: async () => '',
+    }),
+    ''
+  );
+});
+
+test('SuperX keeps the foreground Linux file-manager folder', async () => {
+  assert.equal(
+    await getActiveWindowFallbackPath(
+      {
+        getActiveWindow: async () => ({
+          title: 'Downloads',
+          path: '/usr/bin/nautilus',
+          appName: 'org.gnome.Nautilus.desktop',
+        }),
+        getForegroundFolderPath: async () => '/home/flick/Downloads',
+      },
+      undefined,
+      500,
+      'linux'
+    ),
+    '/home/flick/Downloads'
+  );
+});
+
+test('SuperX never exposes a Linux file-manager executable as a selection', async () => {
+  assert.equal(
+    await getActiveWindowFallbackPath(
+      {
+        getActiveWindow: async () => ({
+          title: 'Home',
+          path: '/usr/bin/dolphin',
+          appName: 'dolphin',
+        }),
+        getForegroundFolderPath: async () => '',
+      },
+      undefined,
+      500,
+      'linux'
+    ),
+    ''
+  );
+});
+
+test('SuperX does not classify macOS application bundles as folders', () => {
+  assert.equal(
+    isDirectorySelection('/Applications/Notes.app', true, 'darwin'),
+    false
+  );
+  assert.equal(
+    isDirectorySelection('/Users/NUT/Desktop', true, 'darwin'),
+    true
+  );
+});
+
+test('SuperX decodes multiple macOS clipboard file paths', () => {
+  assert.deepEqual(
+    parseMacClipboardFilePaths(
+      '<array><string>file:///Users/NUT/My%20File.txt</string><string>/Users/NUT/A&amp;B.md</string></array>'
+    ),
+    ['/Users/NUT/My File.txt', '/Users/NUT/A&B.md']
+  );
+  assert.deepEqual(
+    parseMacClipboardFilePaths(
+      '<array><string>/Users/NUT/Literal&amp;lt;name</string></array>'
+    ),
+    ['/Users/NUT/Literal&lt;name']
+  );
+});
+
+test('SuperX captures the physical key for macOS Option combinations', () => {
+  assert.equal(acceleratorKeyFromEvent({ key: '∑', code: 'KeyW' }), 'W');
+  assert.equal(acceleratorKeyFromEvent({ key: 'Œ', code: 'KeyQ' }), 'Q');
+  assert.equal(acceleratorKeyFromEvent({ key: '3', code: 'Digit3' }), '3');
+});
+
+test('SuperX rejects non-ASCII persisted Electron accelerators', () => {
+  assert.equal(normalizeKeyboardShortcut('Alt+∑'), 'Ctrl+W');
+  assert.equal(normalizeKeyboardShortcut(' Alt+W '), 'Alt+W');
 });

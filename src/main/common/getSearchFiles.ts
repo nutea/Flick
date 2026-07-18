@@ -3,7 +3,7 @@ import fs from 'fs-extra';
 import os from 'os';
 
 const getSearchFiles = (argv = process.argv, cwd = process.cwd()) => {
-  const files = argv.slice(2); // 过滤['flick.exe', 'search']这两个参数，直接获取需要上传的图片路径
+  const files = argv.slice(2); // 过滤['Flick.exe', 'search']这两个参数，直接获取需要上传的图片路径
   let result: any = [];
   if (files.length > 0) {
     // 如果图片列表不为空

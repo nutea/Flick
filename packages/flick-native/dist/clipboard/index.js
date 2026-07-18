@@ -11,12 +11,10 @@ const tryLoadElectron = () => {
 };
 /**
  * Loads the in-repo N-API addon. The addon is the single source of truth for
- * Windows file-path clipboard reads (replaces `electron-clipboard-ex`); on
- * non-Windows platforms it is intentionally absent and we return null.
+ * file-path clipboard reads and writes. The binding is optional in development,
+ * so every caller retains an Electron fallback.
  */
 const tryLoadNativeAddon = () => {
-    if (process.platform !== 'win32')
-        return null;
     try {
         return require('../../native');
     }
@@ -24,7 +22,7 @@ const tryLoadNativeAddon = () => {
         return null;
     }
 };
-const readWindowsFilePaths = () => {
+const readNativeFilePaths = () => {
     const addon = tryLoadNativeAddon();
     if (!(addon === null || addon === void 0 ? void 0 : addon.readClipboardFilePaths))
         return [];
@@ -38,9 +36,24 @@ const readWindowsFilePaths = () => {
         return [];
     }
 };
-const parseMacFileUrls = (raw) => (raw.match(/<string>.*?<\/string>/g) || [])
-    .map((item) => item.replace(/<string>|<\/string>/g, '').trim())
+const decodeXmlText = (value) => value
+    .replace(/&lt;/g, '<')
+    .replace(/&gt;/g, '>')
+    .replace(/&quot;/g, '"')
+    .replace(/&apos;/g, "'")
+    .replace(/&amp;/g, '&');
+const parseMacFileUrls = (raw) => (raw.match(/<string>[\s\S]*?<\/string>/g) || [])
+    .map((item) => decodeXmlText(item.replace(/^<string>|<\/string>$/g, '').trim()))
+    .map(decodeFileUrl)
     .filter(Boolean);
+const decodeFileUrl = (value) => {
+    try {
+        return decodeURIComponent(value.replace(/^file:\/\//, ''));
+    }
+    catch {
+        return value.replace(/^file:\/\//, '');
+    }
+};
 const readMacFilePaths = (clipboard) => {
     if (clipboard.has('NSFilenamesPboardType')) {
         return parseMacFileUrls(clipboard.read('NSFilenamesPboardType'));
@@ -49,18 +62,31 @@ const readMacFilePaths = (clipboard) => {
         .read('public.file-url')
         .replace('file://', '')
         .trim();
-    return fileUrl ? [fileUrl] : [];
+    return fileUrl ? [decodeFileUrl(fileUrl)] : [];
+};
+const readLinuxFilePaths = (clipboard) => {
+    if (!clipboard.has('text/uri-list'))
+        return [];
+    return clipboard
+        .read('text/uri-list')
+        .split(/\r?\n/)
+        .map((value) => value.trim())
+        .filter((value) => value.startsWith('file://'))
+        .map(decodeFileUrl);
 };
 const readFilePaths = (clipboard) => {
     if (process.platform === 'win32') {
-        return readWindowsFilePaths();
+        return readNativeFilePaths();
     }
     if (process.platform === 'darwin') {
         return readMacFilePaths(clipboard);
     }
+    if (process.platform === 'linux') {
+        return readLinuxFilePaths(clipboard);
+    }
     return [];
 };
-const writeWindowsFilePaths = (files) => {
+const writeNativeFilePaths = (files) => {
     const addon = tryLoadNativeAddon();
     if (!(addon === null || addon === void 0 ? void 0 : addon.writeClipboardFilePaths))
         return false;
@@ -106,23 +132,26 @@ exports.clipboard = {
     },
     readFilePaths() {
         if (process.platform === 'win32') {
-            return readWindowsFilePaths();
+            return readNativeFilePaths();
         }
+        const nativePaths = readNativeFilePaths();
+        if (nativePaths.length > 0)
+            return nativePaths;
         const electron = tryLoadElectron();
         if (!electron)
             return [];
         if (process.platform === 'darwin') {
             return readMacFilePaths(electron.clipboard);
         }
+        if (process.platform === 'linux') {
+            return readLinuxFilePaths(electron.clipboard);
+        }
         return [];
     },
     writeFilePaths(files) {
         if (!Array.isArray(files) || files.length === 0)
             return false;
-        if (process.platform === 'win32') {
-            return writeWindowsFilePaths(files);
-        }
-        return false;
+        return writeNativeFilePaths(files);
     },
 };
 //# sourceMappingURL=index.js.map

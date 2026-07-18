@@ -1,4 +1,4 @@
-productName: flick
+productName: Flick
 appId: com.muwoo.flick
 compression: maximum
 directories:
@@ -64,8 +64,16 @@ mac:
     - target: dmg
       arch:
         - arm64
+linux:
+  icon: public/icons/256x256.png
+  artifactName: flick-${version}-${arch}.${ext}
+  category: Utility
+  target:
+    - target: AppImage
+      arch:
+        - x64
 nsis:
-  shortcutName: flick
+  shortcutName: Flick
   oneClick: false
   allowToChangeInstallationDirectory: true
   include: public/installer.nsh

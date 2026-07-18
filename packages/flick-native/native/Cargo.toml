@@ -4,6 +4,11 @@ version = "1.0.0"
 edition = "2021"
 publish = false
 
+[features]
+# objc 0.2 checks this legacy feature inside its macros. Declaring it keeps
+# modern rustc check-cfg validation quiet without enabling different behavior.
+cargo-clippy = []
+
 [lib]
 crate-type = ["cdylib"]
 
@@ -11,6 +16,8 @@ crate-type = ["cdylib"]
 # napi6 enables the threadsafe-function & async-task ABI we rely on.
 napi = { version = "2", default-features = false, features = ["napi6"] }
 napi-derive = "2"
+
+[target.'cfg(windows)'.dependencies]
 windows = { version = "0.59", features = [
   "Win32_Foundation",
   "Win32_System_Com",
@@ -25,6 +32,17 @@ windows = { version = "0.59", features = [
   "Win32_UI_WindowsAndMessaging",
   "Win32_UI_Shell",
 ] }
+
+[target.'cfg(not(windows))'.dependencies]
+active-win-pos-rs = "0.11"
+rdev = "0.5"
+
+[target.'cfg(target_os = "macos")'.dependencies]
+accessibility-ng = "0.1.6"
+accessibility-sys-ng = "0.1.3"
+core-foundation = "0.9"
+core-graphics = "0.23"
+objc = "0.2"
 
 [build-dependencies]
 napi-build = "2"

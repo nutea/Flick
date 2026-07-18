@@ -114,31 +114,31 @@ const tryLoadNativeAddon = () => {
     try {
         return require('../../native');
     }
-    catch {
+    catch (error) {
+        // eslint-disable-next-line no-console
+        console.warn('[flick-native] failed to start global input hook', error);
         return null;
     }
 };
 const tryLoadNativeChord = () => {
-    if (process.platform !== 'win32')
-        return null;
     return tryLoadNativeAddon();
 };
 const dispatchChord = async (rawKeys) => {
-    var _a, _b;
     const tokens = rawKeys
         .map(toCanonicalToken)
         .filter((t) => Boolean(t));
     const parsed = parseChordTokens(tokens);
     if (!parsed)
         return;
-    if (process.platform === 'win32') {
+    const native = tryLoadNativeChord();
+    if (typeof (native === null || native === void 0 ? void 0 : native.sendKeyboardChord) === 'function') {
         try {
-            (_b = (_a = tryLoadNativeChord()) === null || _a === void 0 ? void 0 : _a.sendKeyboardChord) === null || _b === void 0 ? void 0 : _b.call(_a, parsed.modifiers, parsed.key);
+            native.sendKeyboardChord(parsed.modifiers, parsed.key);
+            return;
         }
         catch {
-            // N-API failure: ignore to match prior fire-and-forget behaviour.
+            // Permission or backend failure: use the command fallback below.
         }
-        return;
     }
     await (0, platform_chord_1.sendKeyboardChordDarwinLinux)(process.platform, parsed.modifiers, parsed.key);
 };

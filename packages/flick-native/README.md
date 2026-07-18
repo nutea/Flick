@@ -10,7 +10,7 @@ capabilities Flick actually needs, without depending on the upstream
 
 1. Own the API boundary used by this repository.
 2. Implement only the native capabilities that Flick needs.
-3. Prefer Windows-first delivery, then expand to macOS and Linux.
+3. Keep Windows, macOS, and Linux behind the same behavior-oriented API.
 4. Avoid coupling app code to third-party native package APIs.
 
 ## Planned Capability Areas
@@ -39,8 +39,9 @@ capabilities Flick actually needs, without depending on the upstream
 
 ## Initial Migration Targets
 
-1. `@nut-tree/nut-js` removed: Windows `SendInput` via N-API; macOS `osascript`; Linux `xdotool` when available
-2. ~~Evaluate replacing `uiohook-napi`~~ (done on Windows: `WH_KEYBOARD_LL` / `WH_MOUSE_LL` in `native/`; non-Windows `startInputHook` is a no-op until a platform hook is added)
+1. `@nut-tree/nut-js` removed: Windows uses `SendInput`; macOS/Linux use the
+   native event backend, with `osascript`/`xdotool` retained as build-free fallbacks
+2. ~~Evaluate replacing `uiohook-napi`~~ (done: Windows uses `WH_KEYBOARD_LL` / `WH_MOUSE_LL`; macOS uses a CoreGraphics event tap; Linux uses an X11 global listener)
 3. Windows Explorer folder path now uses the in-repo N-API (`ShellWindows` / `IWebBrowser2`) instead of `cdwhere.exe`
 
 ## Design Rules
@@ -75,36 +76,58 @@ Implemented first:
 
 - `input.sendCopyShortcut`
   Sends `Command + C` on macOS and `Control + C` elsewhere without `@nut-tree/nut-js`:
-  Windows uses the N-API `sendKeyboardChord` (`SendInput`); macOS uses `osascript`
-  + System Events; Linux uses `xdotool` when installed and an X session is present.
+  Windows uses `SendInput`; macOS/Linux use the native event backend, with
+  `osascript`/`xdotool` retained as command fallbacks.
 - `input.sendKeyboardTap`
   Same stack as `sendCopyShortcut`, with a small canonical key/modifier map for
-  IPC callers (letters, digits, `F1`–`F24`, arrows, Enter, Tab, Space, etc.).
+  IPC callers (letters, digits, `F1`–`F12`, arrows, Enter, Tab, Space, etc.).
 - `input.onInputEvent`
-  On **Windows**, global keyboard/mouse/wheel events come from low-level hooks in
-  the N-API addon (`startInputHook` → JSON payloads → `NativeInputEvent`). On
-  other platforms the exported `startInputHook` currently installs no native
-  listener (no events) until a macOS/Linux implementation lands.
+  Global keyboard/mouse/wheel events come from the N-API addon
+  (`startInputHook` → JSON payloads → `NativeInputEvent`). Windows uses low-level
+  Win32 hooks, macOS uses a project-owned CoreGraphics event tap for keyboard,
+  wheel, and all mouse buttons, and Linux uses X11. The macOS listener avoids
+  background-thread keyboard-layout translation, which is unsafe on current
+  macOS releases. macOS
+  requires Accessibility permission; Wayland compositors may intentionally
+  deny global input observation.
 - `system.getActiveWindow`
-  The current implementation now uses the package-owned Windows native binding
-  directly and returns `null` on non-Windows platforms for now.
+  Returns the foreground window title, owning application/process, path, PID,
+  and geometry on Windows, macOS, and Linux (X11, KDE, and supported Hyprland
+  sessions).
 - `system.getFolderOpenPath`
   Windows resolves the foreground Explorer folder (or last `file:` folder among
   open shell windows) via COM in `native/`, exposed as `getFolderOpenPath` on the
-  N-API addon. Requires a successful native build; otherwise returns an empty
-  string.
+  N-API addon. macOS resolves Finder through automation; Linux uses the selected
+  URI or an absolute file-manager window title when the desktop exposes one.
+  Missing or unreliable desktop metadata returns an empty string.
 - `clipboard.getClipboardContent`
   Reads from Electron's clipboard and returns:
   - `file` when file paths are present
   - `text` when plain text is present
   - `null` otherwise
-  Windows file-path reads now go through the in-repo N-API
-  (`readClipboardFilePaths` → `CF_HDROP` + `DragQueryFileW`); macOS still uses
-  Electron's pasteboard formats.
+  Windows file-path reads go through the in-repo N-API
+  (`readClipboardFilePaths` → `CF_HDROP` + `DragQueryFileW`); macOS and Linux
+  accept both native file-list results and Electron pasteboard formats.
 - `clipboard.readFilePaths` / `clipboard.writeFilePaths`
-  Synchronous Windows file-clipboard helpers backed by `CF_HDROP` (with
-  `Preferred DropEffect = COPY`) in the native addon. These replace the legacy
-  `electron-clipboard-ex` dependency.
+  Windows uses `CF_HDROP` (with `Preferred DropEffect = COPY`), macOS uses Finder
+  pasteboard file URLs, and Linux uses `text/uri-list` through the active X11 or
+  Wayland clipboard helper. Electron-format reads remain as a build-free fallback.
+
+## Platform parity
+
+| Capability | Windows | macOS | Linux |
+| --- | --- | --- | --- |
+| Active window metadata | Win32 | AppKit/CoreGraphics | X11/KDE/Hyprland |
+| Global key/mouse/wheel events | low-level hooks | event tap | X11 listener |
+| Synthetic keyboard chords | `SendInput` | CoreGraphics | X11 |
+| Selected text | UI Automation | Accessibility API | primary selection |
+| File-manager folder/selection | Explorer COM | Finder automation | desktop-dependent fallback |
+| File clipboard | `CF_HDROP` | Finder URLs | `text/uri-list` |
+
+Linux desktop environments deliberately differ here. Under Wayland, global
+input capture is compositor-controlled; clipboard operations prefer
+`wl-clipboard` and fall back to X11 helpers in mixed XWayland sessions. Under
+X11, install `xclip` (or `xsel` for selected text).
 
 First implementation targets:
 
@@ -127,9 +150,8 @@ This compiles the Rust crate and copies the resulting addon to:
 
 At runtime, the TypeScript layer will:
 
-1. use the native addon on Windows by default
-2. return `null` when the addon is unavailable or when running on a platform
-   that does not yet have an in-repo implementation
+1. use the native addon on every supported platform by default
+2. use Electron or platform-command fallbacks when the addon is unavailable
 
 When the target `.node` file is locked by a running process, the build script
 now keeps the existing addon file instead of failing the whole package build.

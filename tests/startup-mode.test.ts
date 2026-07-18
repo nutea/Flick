@@ -10,7 +10,7 @@ test('macOS login launch is silent but a manual launch is not', () => {
   assert.equal(
     isSilentLoginStartup({
       platform: 'darwin',
-      argv: ['/Applications/flick.app/Contents/MacOS/flick'],
+      argv: ['/Applications/Flick.app/Contents/MacOS/Flick'],
       wasOpenedAtLogin: true,
     }),
     true
@@ -18,7 +18,7 @@ test('macOS login launch is silent but a manual launch is not', () => {
   assert.equal(
     isSilentLoginStartup({
       platform: 'darwin',
-      argv: ['/Applications/flick.app/Contents/MacOS/flick'],
+      argv: ['/Applications/Flick.app/Contents/MacOS/Flick'],
       wasOpenedAtLogin: false,
     }),
     false
@@ -30,14 +30,14 @@ test('Windows login item uses an explicit silent-start marker', () => {
   assert.equal(
     isSilentLoginStartup({
       platform: 'win32',
-      argv: ['C:\\Program Files\\Flick\\flick.exe', LOGIN_STARTUP_ARG],
+      argv: ['C:\\Program Files\\Flick\\Flick.exe', LOGIN_STARTUP_ARG],
     }),
     true
   );
   assert.equal(
     isSilentLoginStartup({
       platform: 'win32',
-      argv: ['C:\\Program Files\\Flick\\flick.exe'],
+      argv: ['C:\\Program Files\\Flick\\Flick.exe'],
     }),
     false
   );

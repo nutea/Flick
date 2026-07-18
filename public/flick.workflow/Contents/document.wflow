@@ -59,7 +59,7 @@
 				<key>ActionParameters</key>
 				<dict>
 					<key>COMMAND_STRING</key>
-					<string>/Applications/flick.app/Contents/MacOS/flick search "$@" &gt; /dev/null 2&gt;&amp;1 &amp;</string>
+					<string>/Applications/Flick.app/Contents/MacOS/Flick search "$@" &gt; /dev/null 2&gt;&amp;1 &amp;</string>
 					<key>CheckedForUserDefaultShell</key>
 					<true/>
 					<key>inputMethod</key>

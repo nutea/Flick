@@ -1,24 +1,55 @@
 "use strict";
 Object.defineProperty(exports, "__esModule", { value: true });
+exports.parseMacClipboardFilePaths = parseMacClipboardFilePaths;
 exports.getFilePathFromClipboard = getFilePathFromClipboard;
+exports.isDirectorySelection = isDirectorySelection;
 exports.snapshotClipboard = snapshotClipboard;
 exports.readClipboardPayload = readClipboardPayload;
 exports.getSelectedContent = getSelectedContent;
 exports.getPos = getPos;
 const crypto_1 = require("crypto");
+const node_url_1 = require("node:url");
+function decodeXmlText(value) {
+    return value
+        .replace(/&lt;/g, '<')
+        .replace(/&gt;/g, '>')
+        .replace(/&quot;/g, '"')
+        .replace(/&apos;/g, "'")
+        .replace(/&amp;/g, '&');
+}
+function decodeMacFilePath(value) {
+    const decodedXml = decodeXmlText(value.trim());
+    if (!decodedXml)
+        return '';
+    if (decodedXml.startsWith('file://')) {
+        try {
+            return (0, node_url_1.fileURLToPath)(decodedXml);
+        }
+        catch {
+            /* Fall through for malformed legacy clipboard URLs. */
+        }
+    }
+    try {
+        return decodeURIComponent(decodedXml.replace(/^file:\/\//, ''));
+    }
+    catch {
+        return decodedXml.replace(/^file:\/\//, '');
+    }
+}
+function parseMacClipboardFilePaths(raw) {
+    return (raw.match(/<string>[\s\S]*?<\/string>/g) || [])
+        .map((item) => item.replace(/^<string>|<\/string>$/g, ''))
+        .map(decodeMacFilePath)
+        .filter(Boolean);
+}
 /**
  * 从系统剪贴板解析文件路径 / 图片（与原版 main.js 行为一致）
  */
 function getFilePathFromClipboard(clipboard) {
-    var _a;
     let filePath = [];
     if (process.platform === 'darwin') {
         if (clipboard.has('NSFilenamesPboardType')) {
-            filePath =
-                ((_a = clipboard
-                    .read('NSFilenamesPboardType')
-                    .match(/<string>.*<\/string>/g)) === null || _a === void 0 ? void 0 : _a.map((item) => item.replace(/<string>|<\/string>/g, ''))) ||
-                    [];
+            filePath = parseMacClipboardFilePaths(clipboard.read('NSFilenamesPboardType'));
         }
         else {
             const clipboardImage = clipboard.readImage('clipboard');
@@ -34,7 +65,7 @@ function getFilePathFromClipboard(clipboard) {
             }
             else {
                 filePath = [
-                    clipboard.read('public.file-url').replace('file://', ''),
+                    decodeMacFilePath(clipboard.read('public.file-url')),
                 ].filter(Boolean);
             }
         }
@@ -80,6 +111,12 @@ function getFilePathFromClipboard(clipboard) {
     }
     return filePath;
 }
+/** macOS application bundles are directories on disk, but UI treats them as apps/files. */
+function isDirectorySelection(selectedPath, statIsDirectory, platform = process.platform) {
+    if (!statIsDirectory)
+        return false;
+    return platform !== 'darwin' || !/\.app\/?$/i.test(selectedPath);
+}
 function snapshotClipboard(clipboard) {
     const text = clipboard.readText('clipboard') || '';
     const raw = getFilePathFromClipboard(clipboard)[0];
@@ -105,15 +142,15 @@ function readClipboardPayload(clipboard) {
     };
 }
 const wait = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
-async function readDirectSelection(readSelectedText, timeoutMs) {
-    if (!readSelectedText)
-        return '';
+async function readDirectValue(reader, timeoutMs, fallback) {
+    if (!reader)
+        return fallback;
     let timer;
     try {
         return await Promise.race([
-            readSelectedText().catch(() => ''),
+            reader().catch(() => fallback),
             new Promise((resolve) => {
-                timer = setTimeout(() => resolve(''), timeoutMs);
+                timer = setTimeout(() => resolve(fallback), timeoutMs);
             }),
         ]);
     }
@@ -123,8 +160,15 @@ async function readDirectSelection(readSelectedText, timeoutMs) {
     }
 }
 async function getSelectedContent(clipboard, simulateCopy, options = {}) {
-    var _a, _b, _c, _d;
-    const directText = await readDirectSelection(options.readSelectedText, (_a = options.directReadTimeoutMs) !== null && _a !== void 0 ? _a : 120);
+    var _a, _b, _c, _d, _e;
+    // The two platform reads are independent. Running them together keeps the
+    // Finder/Explorer path capability without adding its process/COM latency to
+    // every text selection. Both are bounded because automation providers can
+    // stall behind a permission prompt or an unresponsive file manager.
+    const [directText, selectedPaths] = await Promise.all([
+        readDirectValue(options.readSelectedText, (_a = options.directReadTimeoutMs) !== null && _a !== void 0 ? _a : 120, ''),
+        readDirectValue(options.readSelectedFilePaths, (_b = options.directFileReadTimeoutMs) !== null && _b !== void 0 ? _b : 400, []),
+    ]);
     if (directText.length > 0) {
         return {
             status: 'selected',
@@ -133,25 +177,17 @@ async function getSelectedContent(clipboard, simulateCopy, options = {}) {
             fileUrl: '',
         };
     }
-    if (options.readSelectedFilePaths) {
-        try {
-            const selectedPaths = await options.readSelectedFilePaths();
-            const firstPath = selectedPaths.find(Boolean);
-            if (firstPath) {
-                return {
-                    status: 'selected',
-                    source: 'shell',
-                    text: '',
-                    fileUrl: firstPath,
-                };
-            }
-        }
-        catch {
-            /* Shell selection is optional; fall through to a single copy. */
-        }
+    const firstPath = selectedPaths.find(Boolean);
+    if (firstPath) {
+        return {
+            status: 'selected',
+            source: 'shell',
+            text: '',
+            fileUrl: firstPath,
+        };
     }
     const getChangeToken = options.getClipboardChangeToken;
-    const beforeToken = (_b = getChangeToken === null || getChangeToken === void 0 ? void 0 : getChangeToken()) !== null && _b !== void 0 ? _b : null;
+    const beforeToken = (_c = getChangeToken === null || getChangeToken === void 0 ? void 0 : getChangeToken()) !== null && _c !== void 0 ? _c : null;
     const beforeSnap = beforeToken === null ? snapshotClipboard(clipboard) : null;
     try {
         await simulateCopy();
@@ -159,8 +195,8 @@ async function getSelectedContent(clipboard, simulateCopy, options = {}) {
     catch {
         return { status: 'none', text: '', fileUrl: '' };
     }
-    const timeoutMs = (_c = options.copyTimeoutMs) !== null && _c !== void 0 ? _c : 250;
-    const pollIntervalMs = Math.max(4, (_d = options.pollIntervalMs) !== null && _d !== void 0 ? _d : 10);
+    const timeoutMs = (_d = options.copyTimeoutMs) !== null && _d !== void 0 ? _d : 250;
+    const pollIntervalMs = Math.max(4, (_e = options.pollIntervalMs) !== null && _e !== void 0 ? _e : 10);
     const deadline = Date.now() + timeoutMs;
     while (Date.now() <= deadline) {
         let changed = false;

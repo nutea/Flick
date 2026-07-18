@@ -4,6 +4,7 @@ interface ElectronClipboardLike {
   has(format: string): boolean;
   read(format: string): string;
   readText(format?: string): string;
+  writeBuffer?(format: string, buffer: Buffer): void;
 }
 
 interface ElectronLike {
@@ -20,11 +21,10 @@ const tryLoadElectron = (): ElectronLike | null => {
 
 /**
  * Loads the in-repo N-API addon. The addon is the single source of truth for
- * Windows file-path clipboard reads (replaces `electron-clipboard-ex`); on
- * non-Windows platforms it is intentionally absent and we return null.
+ * file-path clipboard reads and writes. The binding is optional in development,
+ * so every caller retains an Electron fallback.
  */
 const tryLoadNativeAddon = () => {
-  if (process.platform !== 'win32') return null;
   try {
     return require('../../native');
   } catch {
@@ -32,7 +32,7 @@ const tryLoadNativeAddon = () => {
   }
 };
 
-const readWindowsFilePaths = (): string[] => {
+const readNativeFilePaths = (): string[] => {
   const addon = tryLoadNativeAddon();
   if (!addon?.readClipboardFilePaths) return [];
   try {
@@ -44,10 +44,29 @@ const readWindowsFilePaths = (): string[] => {
   }
 };
 
+const decodeXmlText = (value: string): string =>
+  value
+    .replace(/&lt;/g, '<')
+    .replace(/&gt;/g, '>')
+    .replace(/&quot;/g, '"')
+    .replace(/&apos;/g, "'")
+    .replace(/&amp;/g, '&');
+
 const parseMacFileUrls = (raw: string): string[] =>
-  (raw.match(/<string>.*?<\/string>/g) || [])
-    .map((item) => item.replace(/<string>|<\/string>/g, '').trim())
+  (raw.match(/<string>[\s\S]*?<\/string>/g) || [])
+    .map((item) =>
+      decodeXmlText(item.replace(/^<string>|<\/string>$/g, '').trim())
+    )
+    .map(decodeFileUrl)
     .filter(Boolean);
+
+const decodeFileUrl = (value: string): string => {
+  try {
+    return decodeURIComponent(value.replace(/^file:\/\//, ''));
+  } catch {
+    return value.replace(/^file:\/\//, '');
+  }
+};
 
 const readMacFilePaths = (clipboard: ElectronClipboardLike): string[] => {
   if (clipboard.has('NSFilenamesPboardType')) {
@@ -58,22 +77,36 @@ const readMacFilePaths = (clipboard: ElectronClipboardLike): string[] => {
     .read('public.file-url')
     .replace('file://', '')
     .trim();
-  return fileUrl ? [fileUrl] : [];
+  return fileUrl ? [decodeFileUrl(fileUrl)] : [];
+};
+
+const readLinuxFilePaths = (clipboard: ElectronClipboardLike): string[] => {
+  if (!clipboard.has('text/uri-list')) return [];
+  return clipboard
+    .read('text/uri-list')
+    .split(/\r?\n/)
+    .map((value) => value.trim())
+    .filter((value) => value.startsWith('file://'))
+    .map(decodeFileUrl);
 };
 
 const readFilePaths = (clipboard: ElectronClipboardLike): string[] => {
   if (process.platform === 'win32') {
-    return readWindowsFilePaths();
+    return readNativeFilePaths();
   }
 
   if (process.platform === 'darwin') {
     return readMacFilePaths(clipboard);
   }
 
+  if (process.platform === 'linux') {
+    return readLinuxFilePaths(clipboard);
+  }
+
   return [];
 };
 
-const writeWindowsFilePaths = (files: string[]): boolean => {
+const writeNativeFilePaths = (files: string[]): boolean => {
   const addon = tryLoadNativeAddon();
   if (!addon?.writeClipboardFilePaths) return false;
   try {
@@ -121,21 +154,23 @@ export const clipboard: NativeClipboardApi = {
 
   readFilePaths(): string[] {
     if (process.platform === 'win32') {
-      return readWindowsFilePaths();
+      return readNativeFilePaths();
     }
+    const nativePaths = readNativeFilePaths();
+    if (nativePaths.length > 0) return nativePaths;
     const electron = tryLoadElectron();
     if (!electron) return [];
     if (process.platform === 'darwin') {
       return readMacFilePaths(electron.clipboard);
+    }
+    if (process.platform === 'linux') {
+      return readLinuxFilePaths(electron.clipboard);
     }
     return [];
   },
 
   writeFilePaths(files: string[]): boolean {
     if (!Array.isArray(files) || files.length === 0) return false;
-    if (process.platform === 'win32') {
-      return writeWindowsFilePaths(files);
-    }
-    return false;
+    return writeNativeFilePaths(files);
   },
 };

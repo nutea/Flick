@@ -3,8 +3,6 @@ Object.defineProperty(exports, "__esModule", { value: true });
 exports.system = void 0;
 const windows_1 = require("./windows");
 const tryLoadAddon = () => {
-    if (process.platform !== 'win32')
-        return null;
     try {
         return require('../../native');
     }
@@ -91,10 +89,7 @@ exports.system = {
         return readFolderPathSync();
     },
     async getActiveWindow() {
-        if (process.platform === 'win32') {
-            return (0, windows_1.getWindowsActiveWindow)();
-        }
-        return null;
+        return (0, windows_1.getWindowsActiveWindow)();
     },
 };
 //# sourceMappingURL=index.js.map
