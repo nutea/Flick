@@ -69,7 +69,7 @@ jobs:
           if-no-files-found: error
 
   verify-macos:
-    name: Verify macOS
+    name: Build macOS arm64 Installer
     runs-on: macos-14
     permissions:
       contents: read
@@ -95,17 +95,27 @@ jobs:
       - name: Run quality checks
         run: pnpm check
 
-      - name: Build macOS application assets
-        run: pnpm apps:build && pnpm exec electron-vite build
+      - name: Run macOS native tests
+        run: pnpm --filter flick-native run native:test
 
-      - name: Verify macOS native runtime
-        run: pnpm --filter flick-native run native:test && pnpm native:verify:mac && pnpm native:smoke
+      - name: Build and verify macOS DMG
+        run: pnpm electron:build:mac && pnpm native:smoke
+
+      - name: Upload macOS installer artifact
+        uses: actions/upload-artifact@v7
+        with:
+          name: flick-macos-arm64-installer
+          path: |
+            build/*.dmg
+            build/*.dmg.blockmap
+            build/latest-mac.yml
+          if-no-files-found: error
 
   build-win-x64:
     name: Build Windows x64 Installer
     runs-on: windows-2022
     permissions:
-      contents: write
+      contents: read
 
     steps:
       - name: Check out repository
@@ -240,19 +250,6 @@ jobs:
             Write-Warning "Packaged Flick startup passed; the smoke process exited with $($process.ExitCode) during test teardown"
           }
 
-      - name: Publish GitHub Release
-        if: ${{ startsWith(github.ref, 'refs/tags/') }}
-        uses: softprops/action-gh-release@v2
-        with:
-          name: Release ${{ github.ref_name }}
-          tag_name: ${{ github.ref_name }}
-          files: |
-            build/*.exe
-            build/*.exe.blockmap
-            build/latest.yml
-          generate_release_notes: true
-          prerelease: ${{ contains(github.ref_name, '-') }}
-
       - name: Upload installer artifact
         uses: actions/upload-artifact@v7
         with:
@@ -262,3 +259,60 @@ jobs:
             build/*.exe.blockmap
             build/latest.yml
           if-no-files-found: error
+
+  publish-release:
+    name: Publish cross-platform Release
+    if: ${{ startsWith(github.ref, 'refs/tags/') }}
+    needs:
+      - verify-linux
+      - verify-macos
+      - build-win-x64
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: write
+
+    steps:
+      - name: Download installer artifacts
+        uses: actions/download-artifact@v8
+        with:
+          pattern: flick-*-installer
+          path: release-assets
+          merge-multiple: true
+
+      - name: Verify cross-platform installer set
+        shell: bash
+        run: |
+          shopt -s nullglob
+          windows=(release-assets/*.exe)
+          macos=(release-assets/*.dmg)
+          linux=(release-assets/*.AppImage)
+          if (( ${#windows[@]} != 1 || ${#macos[@]} != 1 || ${#linux[@]} != 1 )); then
+            echo "Expected exactly one Windows EXE, macOS DMG, and Linux AppImage."
+            find release-assets -maxdepth 1 -type f -print
+            exit 1
+          fi
+          printf 'Windows: %s\nmacOS: %s\nLinux: %s\n' \
+            "${windows[0]}" "${macos[0]}" "${linux[0]}"
+
+      - name: Publish GitHub Release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        shell: bash
+        run: |
+          tag="${GITHUB_REF_NAME}"
+          if gh release view "$tag" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
+            gh release edit "$tag" \
+              --repo "$GITHUB_REPOSITORY" \
+              --title "Release $tag" \
+              --latest
+          else
+            gh release create "$tag" \
+              --repo "$GITHUB_REPOSITORY" \
+              --title "Release $tag" \
+              --generate-notes \
+              --verify-tag \
+              --latest
+          fi
+          gh release upload "$tag" release-assets/* \
+            --repo "$GITHUB_REPOSITORY" \
+            --clobber
