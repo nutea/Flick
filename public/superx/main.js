@@ -76,8 +76,25 @@ function createPlugin() {
     }
     return {
         async onReady(ctx) {
-            var _a;
+            var _a, _b;
             const { clipboard, screen, globalShortcut, API, ipcMain, nativeImage } = ctx;
+            (_a = ctx.app) === null || _a === void 0 ? void 0 : _a.once('before-quit', () => {
+                requestSequence += 1;
+                if (keyboardRegisterTimer) {
+                    clearTimeout(keyboardRegisterTimer);
+                    keyboardRegisterTimer = null;
+                }
+                if (lastRegisteredKey && !isMouseTrigger(lastRegisteredKey)) {
+                    try {
+                        globalShortcut.unregister(lastRegisteredKey);
+                    }
+                    catch {
+                        /* Electron may already be tearing down global shortcuts. */
+                    }
+                }
+                lastRegisteredKey = null;
+                clearMouseRegistration();
+            });
             const panelInstance = (0, panel_window_1.default)(ctx);
             panelInstance.init();
             let requestSequence = 0;
@@ -298,7 +315,7 @@ function createPlugin() {
             };
             globalThis.__superPanelReregister = scheduleRegister;
             await register();
-            if (!((_a = ctx.app) === null || _a === void 0 ? void 0 : _a.isPackaged) && process.env.FLICK_SUPER_PANEL_SMOKE === '1') {
+            if (!((_b = ctx.app) === null || _b === void 0 ? void 0 : _b.isPackaged) && process.env.FLICK_SUPER_PANEL_SMOKE === '1') {
                 setTimeout(() => void showSuperPanel('keyboard'), 1400);
             }
         },
