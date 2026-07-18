@@ -20,6 +20,17 @@ import { windowGeometryController } from '@/main/common/windowGeometryController
 
 require('@electron/remote/main').initialize();
 
+const finishAutomatedSmoke = (exitCode: number) => {
+  // Let the did-finish-load promise chain unwind before Electron starts
+  // tearing down its renderer and native resources. Exiting synchronously from
+  // that callback can intermittently crash Windows with 0xc0000005 even after
+  // a valid smoke report has been written.
+  setTimeout(() => {
+    process.exitCode = exitCode;
+    app.quit();
+  }, 100);
+};
+
 export default () => {
   let win: any;
   const canUseWindow = () =>
@@ -157,7 +168,7 @@ export default () => {
                 JSON.stringify(report, null, 2),
                 'utf8'
               );
-              app.exit(secure ? 0 : 1);
+              finishAutomatedSmoke(secure ? 0 : 1);
             }
           })
           .catch((error) => {
@@ -182,7 +193,7 @@ export default () => {
                 ),
                 'utf8'
               );
-              app.exit(1);
+              finishAutomatedSmoke(1);
             }
           });
       }
