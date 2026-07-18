@@ -39,7 +39,15 @@ const DOUBLE_PRESS_KEY_MAP: Record<string, string[]> = {
  */
 let doublePressExpectedKeys: string[] = [];
 
+const disposeNativeInputSubscription = () => {
+  doublePressExpectedKeys = [];
+  removeInputSubscription?.();
+  removeInputSubscription = null;
+};
+
 const registerHotKey = (mainWindow: BrowserWindow): void => {
+  app.once('before-quit', disposeNativeInputSubscription);
+
   const setAutoLogin = async () => {
     const config = await localConfig.getConfig();
     const enabled = config.perf.common.start === true;
@@ -127,9 +135,7 @@ const registerHotKey = (mainWindow: BrowserWindow): void => {
     } else {
       // Drop the native hook subscription so the OS hook can be torn down when
       // no other consumer (e.g. super-panel mouse trigger) needs it.
-      doublePressExpectedKeys = [];
-      removeInputSubscription?.();
-      removeInputSubscription = null;
+      disposeNativeInputSubscription();
 
       const candidates = [config.perf.shortCut.showAndHidden];
       if (commonConst.windows()) {

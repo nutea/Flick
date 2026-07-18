@@ -84,6 +84,23 @@ function createPlugin() {
       const { clipboard, screen, globalShortcut, API, ipcMain, nativeImage } =
         ctx;
 
+      ctx.app?.once('before-quit', () => {
+        requestSequence += 1;
+        if (keyboardRegisterTimer) {
+          clearTimeout(keyboardRegisterTimer);
+          keyboardRegisterTimer = null;
+        }
+        if (lastRegisteredKey && !isMouseTrigger(lastRegisteredKey)) {
+          try {
+            globalShortcut.unregister(lastRegisteredKey);
+          } catch {
+            /* Electron may already be tearing down global shortcuts. */
+          }
+        }
+        lastRegisteredKey = null;
+        clearMouseRegistration();
+      });
+
       const panelInstance = createPanelWindow(ctx);
       panelInstance.init();
       let requestSequence = 0;
