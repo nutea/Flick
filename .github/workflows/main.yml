@@ -22,7 +22,16 @@ jobs:
         uses: actions/checkout@v7
 
       - name: Install Linux native build dependencies
-        run: sudo apt-get update && sudo apt-get install -y libx11-dev libxtst-dev libxcb1-dev libxcb-randr0-dev libxkbcommon-dev
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y \
+            libdbus-1-dev \
+            libx11-dev \
+            libxtst-dev \
+            libxcb1-dev \
+            libxcb-randr0-dev \
+            libxkbcommon-dev \
+            pkg-config
 
       - name: Setup pnpm
         uses: pnpm/action-setup@v6
@@ -164,7 +173,20 @@ jobs:
           fi
 
       - name: Build Windows x64 installer
-        run: pnpm electron:build:local
+        shell: pwsh
+        run: |
+          $maxAttempts = 3
+          for ($attempt = 1; $attempt -le $maxAttempts; $attempt++) {
+            pnpm electron:build:local
+            if ($LASTEXITCODE -eq 0) {
+              exit 0
+            }
+            if ($attempt -eq $maxAttempts) {
+              throw "Windows installer build failed after $maxAttempts attempts"
+            }
+            Write-Warning "Windows installer build attempt $attempt failed; retrying in 10 seconds"
+            Start-Sleep -Seconds 10
+          }
 
       - name: Smoke test Windows packaged application
         shell: pwsh
@@ -233,7 +255,6 @@ jobs:
           prerelease: ${{ contains(github.ref_name, '-') }}
 
       - name: Upload installer artifact
-        if: ${{ always() }}
         uses: actions/upload-artifact@v7
         with:
           name: flick-win-x64-installer
