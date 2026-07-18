@@ -4,11 +4,7 @@ import { fileURLToPath } from 'url';
 import commonConst from '../../common/utils/commonConst';
 import { PLUGIN_INSTALL_DIR as baseDir } from '@/common/constans/main';
 import localConfig from '@/main/common/initLocalConfig';
-import {
-  WINDOW_HEIGHT,
-  WINDOW_PLUGIN_HEIGHT,
-  WINDOW_WIDTH,
-} from '@/common/constans/common';
+import { WINDOW_HEIGHT, WINDOW_PLUGIN_HEIGHT } from '@/common/constans/common';
 import { applyMainWindowContentHeight } from '@/main/common/mainWindowContentResize';
 import {
   DEV_APP_PORTS,
@@ -17,6 +13,7 @@ import {
 import { secureWebContentsNavigation } from '@/main/common/navigationSecurity';
 import { registerFeatureBridgeIpc } from '@/main/common/featureBridgeIpc';
 import { installImageProtocol } from '@/main/common/imageProtocolService';
+import { windowGeometryController } from '@/main/common/windowGeometryController';
 
 /** 通用插件 API 的编译后 preload；脚本自身会跳过 DevTools 与子 frame。 */
 function flickSessionPreloadPath(): string {
@@ -127,10 +124,11 @@ export default () => {
   ) => {
     const height = pluginSetting?.height || WINDOW_PLUGIN_HEIGHT;
     applyMainWindowContentHeight(window, height);
+    const { width } = window.getContentBounds();
     targetView.setBounds({
       x: 0,
       y: WINDOW_HEIGHT,
-      width: WINDOW_WIDTH,
+      width,
       height: height - WINDOW_HEIGHT,
     });
     targetView.setAutoResize({ width: true, height: true });
@@ -256,6 +254,7 @@ export default () => {
       );
     });
     window.setBrowserView(view);
+    windowGeometryController.setPluginViewActive(window, true);
     layoutView(window, view, plugin.pluginSetting);
     secureWebContentsNavigation(view.webContents, pluginIndexPath);
     view.webContents.loadURL(pluginIndexPath);
@@ -319,9 +318,17 @@ export default () => {
   };
 
   const removeView = (window: BrowserWindow, resetRenderer = true) => {
-    if (!view) return;
+    if (!view) {
+      if (resetRenderer) {
+        windowGeometryController.setPluginViewActive(window, false);
+      }
+      return;
+    }
     if (view.inDetach) {
       view = undefined;
+      if (resetRenderer) {
+        windowGeometryController.setPluginViewActive(window, false);
+      }
       return;
     }
     executeHooks('PluginOut', null);
@@ -338,6 +345,7 @@ export default () => {
     if (view === snapshotView) {
       view = undefined;
       if (resetRenderer) {
+        windowGeometryController.setPluginViewActive(window, false);
         void window.webContents?.executeJavaScript(`window.initFlick()`);
       }
     }

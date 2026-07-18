@@ -734,6 +734,7 @@ void window.loadPlugin(${JSON.stringify(plugin)});`
       runnerInstance.init(plugin, window);
     } catch (error) {
       this.currentPlugin = null;
+      windowGeometryController.setPluginViewActive(window, false);
       await window.webContents.executeJavaScript(
         `window.initFlick(); window.refreshLauncherHeight && window.refreshLauncherHeight();`
       );
@@ -1133,6 +1134,7 @@ void window.loadPlugin(${JSON.stringify(plugin)});`
     }
     const view = window.getBrowserView();
     window.setBrowserView(null);
+    windowGeometryController.setPluginViewActive(window, false);
     window.webContents
       .executeJavaScript(`window.getMainInputInfo()`)
       .then((res) => {

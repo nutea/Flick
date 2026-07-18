@@ -109,6 +109,9 @@ function createPanelWindow(ctx) {
             height: 50,
             show: false,
             alwaysOnTop: true,
+            resizable: false,
+            maximizable: false,
+            fullscreenable: false,
             webPreferences: {
                 contextIsolation: true,
                 sandbox: true,

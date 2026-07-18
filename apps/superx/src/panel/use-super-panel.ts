@@ -419,7 +419,7 @@ export function useSuperPanel() {
   function reportLayout() {
     const el = document.querySelector<HTMLElement>('.main');
     if (!el || activeRequestId < 1) return;
-    const height = Math.max(50, Math.ceil(el.scrollHeight));
+    const height = Math.max(50, Math.ceil(el.getBoundingClientRect().height));
     if (
       lastReportedRequestId === activeRequestId &&
       lastReportedHeight === height

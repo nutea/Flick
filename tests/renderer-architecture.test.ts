@@ -74,7 +74,7 @@ test('plugin views establish layout before loading and secure feature skips lega
   );
   assert.match(
     runner,
-    /window\.setBrowserView\(view\);\s*layoutView\(window, view, plugin\.pluginSetting\);\s*secureWebContentsNavigation/
+    /window\.setBrowserView\(view\);\s*windowGeometryController\.setPluginViewActive\(window, true\);\s*layoutView\(window, view, plugin\.pluginSetting\);\s*secureWebContentsNavigation/
   );
   assert.match(
     runner,

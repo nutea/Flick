@@ -42,9 +42,9 @@
           class="full-translation-btn selected-type"
           type="link"
           size="small"
-          @click="fullTranslationVisible = true"
+          @click="fullTranslationVisible = !fullTranslationVisible"
         >
-          查看全文
+          {{ fullTranslationVisible ? '收起' : '查看全文' }}
         </a-button>
       </div>
       <div v-if="loading" class="spinner">
@@ -54,30 +54,21 @@
       </div>
       <template v-else-if="translate">
         <div class="translate-target">
-          <div class="ellpise">{{ translationPreviewText }}</div>
+          <div v-if="!fullTranslationVisible" class="ellpise">
+            {{ translationPreviewText }}
+          </div>
+          <div v-else class="full-translation-body">
+            <div
+              v-for="(line, idx) in fullTranslationLines"
+              :key="idx"
+              class="full-translation-line"
+            >
+              {{ line }}
+            </div>
+          </div>
         </div>
       </template>
     </div>
-
-    <a-modal
-      v-model:visible="fullTranslationVisible"
-      title="翻译全文"
-      :footer="null"
-      width="500px"
-      wrap-class-name="translation-modal"
-      :body-style="{ padding: '8px 10px 6px' }"
-      centered
-    >
-      <div class="full-translation-body">
-        <div
-          v-for="(line, idx) in fullTranslationLines"
-          :key="idx"
-          class="full-translation-line"
-        >
-          {{ line }}
-        </div>
-      </div>
-    </a-modal>
 
     <div v-if="matchPlugins.length" class="plugins-content">
       <div class="plugin-title">匹配插件</div>
@@ -112,7 +103,7 @@
 </template>
 
 <script setup lang="ts">
-import { computed, onMounted, onUnmounted, ref } from 'vue';
+import { computed, onMounted, onUnmounted, ref, watch } from 'vue';
 import { PushpinOutlined } from '@ant-design/icons-vue';
 import PluginIcon from './PluginIcon.vue';
 import { useSuperPanel } from './use-super-panel';
@@ -269,26 +260,41 @@ const showFullTranslationEntry = computed(
     translationFullText.value.length > 56
 );
 
-function closeTranslationModal() {
+function collapseFullTranslation() {
   fullTranslationVisible.value = false;
 }
 
+watch(loading, (isLoading) => {
+  if (isLoading) collapseFullTranslation();
+});
+
+watch([selectedText, selectedFileUrl], collapseFullTranslation);
+
 onMounted(() => {
-  window.addEventListener('blur', closeTranslationModal);
+  window.addEventListener('blur', collapseFullTranslation);
 });
 
 onUnmounted(() => {
-  window.removeEventListener('blur', closeTranslationModal);
+  window.removeEventListener('blur', collapseFullTranslation);
 });
 </script>
 
 <style>
 html,
-body {
+body,
+#app {
   width: 100%;
   height: 100%;
+  min-width: 0;
   margin: 0;
   padding: 0;
+  overflow: hidden;
+  overscroll-behavior: none;
+}
+*,
+*::before,
+*::after {
+  box-sizing: border-box;
 }
 ::-webkit-scrollbar {
   display: none;
@@ -297,16 +303,23 @@ body {
 
 <style scoped>
 .main {
+  width: 100%;
+  max-width: 100%;
+  min-width: 0;
   min-height: 50px;
-  box-sizing: border-box;
-  padding: 8px 0 10px;
+  padding: 8px 0 12px;
+  overflow: hidden;
+  color: #1f2937;
+  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
 }
 .main.pinned .selected-content,
 .main.pinned .translate-content {
   box-shadow: 0 10px 28px rgba(37, 99, 235, 0.12);
 }
 .panel-caption {
-  padding: 0 10px 8px;
+  min-width: 0;
+  min-height: 26px;
+  padding: 0 10px 6px 12px;
   font-size: 12px;
   color: #8b93a1;
   letter-spacing: 0.3px;
@@ -322,6 +335,9 @@ body {
 }
 .panel-caption-text {
   min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 .pin-btn {
   -webkit-app-region: no-drag;
@@ -330,6 +346,8 @@ body {
   justify-content: center;
   width: 24px;
   height: 24px;
+  min-width: 24px;
+  flex: 0 0 24px;
   border: 0;
   border-radius: 999px;
   background: transparent;
@@ -352,30 +370,49 @@ body {
 .translate-content {
   margin: 0 10px 10px;
   padding: 8px 10px;
+  min-width: 0;
+  max-width: calc(100% - 20px);
+  overflow: hidden;
   font-size: 12px;
   color: #ff4ea4;
   box-sizing: border-box;
   background: #f5f7fb;
+  border: 1px solid #edf1f7;
   border-radius: 8px;
 }
 .selected-content {
   margin: 0 10px 10px;
   padding: 8px 10px;
+  min-width: 0;
+  max-width: calc(100% - 20px);
+  overflow: hidden;
   border-radius: 8px;
   background: #f8fafc;
+  border: 1px solid #eef2f7;
 }
 .selected-header {
   display: flex;
+  min-width: 0;
+  gap: 8px;
   justify-content: space-between;
   align-items: center;
   margin-bottom: 4px;
 }
 .selected-title {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
   color: #4b5563;
   font-size: 12px;
   font-weight: 500;
 }
 .selected-type {
+  flex: 0 0 auto;
+  max-width: 50%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
   font-size: 11px;
   line-height: 18px;
   border-radius: 10px;
@@ -384,11 +421,13 @@ body {
   color: #2563eb;
 }
 .selected-main {
+  min-width: 0;
   font-size: 13px;
   color: #1f2937;
   font-weight: 500;
 }
 .selected-sub {
+  min-width: 0;
   margin-top: 2px;
   font-size: 11px;
   color: #6b7280;
@@ -400,6 +439,8 @@ body {
 }
 .translate-header {
   display: flex;
+  min-width: 0;
+  gap: 8px;
   justify-content: space-between;
   align-items: flex-start;
 }
@@ -435,6 +476,8 @@ body {
   color: #64748b;
 }
 .translate-target {
+  min-width: 0;
+  overflow: hidden;
   color: #334155;
   font-size: 13px;
   font-weight: 500;
@@ -450,31 +493,34 @@ body {
   color: #334155;
 }
 .full-translation-body {
-  max-height: 300px;
-  overflow: auto;
-  padding-right: 2px;
+  min-width: 0;
+  overflow: hidden;
 }
 .full-translation-line {
+  min-width: 0;
+  overflow-wrap: anywhere;
+  word-break: break-word;
   color: #334155;
   font-size: 12px;
   line-height: 1.6;
   margin-bottom: 5px;
 }
 .ellpise {
+  min-width: 0;
   overflow: hidden;
   text-overflow: ellipsis;
+  overflow-wrap: anywhere;
+  word-break: break-word;
   display: -webkit-box;
   line-clamp: 2;
   -webkit-line-clamp: 2;
   -webkit-box-orient: vertical;
 }
 .plugin-item {
-  height: 74px;
-  margin: 4px 0;
-  width: 72px;
+  height: 72px;
+  min-width: 0;
+  width: 100%;
   max-width: 72px;
-  min-width: 72px;
-  box-sizing: border-box;
   display: flex;
   align-items: center;
   justify-content: center;
@@ -512,7 +558,7 @@ body {
 .plugin-title {
   font-size: 11px;
   width: 100%;
-  padding: 6px 10px;
+  padding: 6px 12px;
   background-color: transparent;
   color: #8b93a1;
   letter-spacing: 0.3px;
@@ -520,10 +566,21 @@ body {
 }
 .plugin-grid {
   display: grid;
-  grid-template-columns: repeat(auto-fill, 72px);
+  width: 100%;
+  min-width: 0;
+  max-width: 100%;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
   justify-content: center;
-  gap: 8px;
-  padding: 0 4px;
+  justify-items: center;
+  gap: 6px;
+  padding: 0 10px;
+  overflow: hidden;
+}
+.plugins-content {
+  width: 100%;
+  min-width: 0;
+  max-width: 100%;
+  overflow: hidden;
 }
 .spinner > div {
   width: 10px;
@@ -549,26 +606,5 @@ body {
   40% {
     transform: scale(1);
   }
-}
-</style>
-
-<style>
-.translation-modal .ant-modal-header {
-  min-height: 36px !important;
-  padding: 8px !important;
-}
-.translation-modal .ant-modal-title {
-  font-size: 12px !important;
-  font-weight: 500 !important;
-  line-height: 20px !important;
-}
-.translation-modal .ant-modal-close {
-  width: 36px !important;
-  height: 36px !important;
-  display: flex !important;
-  align-items: center !important;
-  justify-content: center !important;
-  top: 0 !important;
-  right: 0 !important;
 }
 </style>

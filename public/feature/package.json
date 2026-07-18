@@ -10,7 +10,7 @@
   "description": "系统菜单",
   "main": "index.html",
   "logo": "./plugin-logo.png",
-  "version": "1.0.0",
+  "version": "0.0.1",
   "preload": "preload.js",
   "pluginType": "ui",
   "features": [

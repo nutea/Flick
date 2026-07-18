@@ -7,6 +7,7 @@ import localConfig from '@/main/common/initLocalConfig';
 import {
   WINDOW_HEIGHT,
   WINDOW_MIN_HEIGHT,
+  WINDOW_MIN_WIDTH,
   WINDOW_WIDTH,
 } from '@/common/constans/common';
 import commonConst from '@/common/utils/commonConst';
@@ -35,6 +36,7 @@ export default () => {
     win = new BrowserWindow({
       height: WINDOW_HEIGHT,
       minHeight: WINDOW_MIN_HEIGHT,
+      minWidth: WINDOW_MIN_WIDTH,
       useContentSize: true,
       resizable: true,
       width: WINDOW_WIDTH,

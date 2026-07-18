@@ -1,7 +1,7 @@
 {
   "name": "flick-system-super-panel",
   "pluginName": "超级面板",
-  "version": "1.0.0",
+  "version": "0.0.1",
   "description": "Ctrl + W 唤起超级面板（快捷键请在插件市场「超级面板」中设置）",
   "pluginSetting": {
     "single": true,

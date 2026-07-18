@@ -2,6 +2,7 @@ import { BrowserWindow, screen, type Display } from 'electron';
 import {
   WINDOW_HEIGHT,
   WINDOW_MIN_HEIGHT,
+  WINDOW_MIN_WIDTH,
   WINDOW_WIDTH,
 } from '@/common/constans/common';
 import {
@@ -13,8 +14,10 @@ import {
   type RelativeWindowAnchor,
   type WindowRect,
 } from '@/common/utils/windowGeometry';
+import { boundsWithLockedHeight } from '@/common/utils/windowResize';
 
 const WINDOW_MARGIN = 8;
+const UNBOUNDED_WINDOW_SIZE = 100_000;
 const LINUX_PROGRAMMATIC_MOVE_GUARD_MS = 150;
 const POSITION_ROUNDING_TOLERANCE_DIP = 1;
 
@@ -28,7 +31,9 @@ class WindowGeometryController {
   private readonly launcherAnchors = new Map<string, RelativeWindowAnchor>();
   private manualMoveInProgress = false;
   private suppressLinuxMoveUntil = 0;
+  private desiredMainContentWidth = WINDOW_WIDTH;
   private desiredMainContentHeight = WINDOW_HEIGHT;
+  private pluginViewActive = false;
   private screenListenersAttached = false;
 
   attachMainWindow(win: BrowserWindow): void {
@@ -37,6 +42,34 @@ class WindowGeometryController {
     this.attachScreenListeners();
     win.on('will-move', () => {
       this.manualMoveInProgress = true;
+    });
+    win.on('will-resize', (event, proposedBounds) => {
+      this.desiredMainContentWidth = proposedBounds.width;
+      if (this.pluginViewActive) {
+        this.desiredMainContentHeight = proposedBounds.height;
+        return;
+      }
+      const current = win.getBounds();
+      const constrained = boundsWithLockedHeight(current, proposedBounds);
+      if (!constrained) return;
+
+      event.preventDefault();
+      if (
+        constrained.x === current.x &&
+        constrained.y === current.y &&
+        constrained.width === current.width &&
+        constrained.height === current.height
+      ) {
+        return;
+      }
+      this.markProgrammaticMutation();
+      win.setBounds(constrained, false);
+    });
+    win.on('resize', () => {
+      if (win.isDestroyed()) return;
+      const { width, height } = win.getContentBounds();
+      this.desiredMainContentWidth = width;
+      if (this.pluginViewActive) this.desiredMainContentHeight = height;
     });
     win.on('move', () => this.handleMainWindowMove());
     win.on('moved', () => {
@@ -48,8 +81,24 @@ class WindowGeometryController {
       }
     });
     win.on('closed', () => {
-      if (this.mainWindow === win) this.mainWindow = undefined;
+      if (this.mainWindow === win) {
+        this.mainWindow = undefined;
+        this.pluginViewActive = false;
+      }
     });
+    this.lockMainWindowHeight(win, win.getBounds().height);
+  }
+
+  setPluginViewActive(win: BrowserWindow, active: boolean): void {
+    if (win.isDestroyed()) return;
+    this.attachMainWindow(win);
+    this.pluginViewActive = active;
+    if (active) {
+      win.setMinimumSize(WINDOW_MIN_WIDTH, WINDOW_MIN_HEIGHT);
+      win.setMaximumSize(UNBOUNDED_WINDOW_SIZE, UNBOUNDED_WINDOW_SIZE);
+    } else {
+      this.lockMainWindowHeight(win, win.getBounds().height);
+    }
   }
 
   showMainWindow(win = this.mainWindow): void {
@@ -59,7 +108,7 @@ class WindowGeometryController {
       screen.getCursorScreenPoint()
     );
     const size = {
-      width: WINDOW_WIDTH,
+      width: this.desiredMainContentWidth,
       height: this.desiredMainContentHeight,
     };
     const displayKey = String(display.id);
@@ -106,7 +155,7 @@ class WindowGeometryController {
     // ever been placed. Size it without treating the OS default position as a
     // user preference; showMainWindow will establish the default anchor later.
     if (!win.isVisible() && !remembered) {
-      this.setMainContentSize(win, WINDOW_WIDTH, height);
+      this.setMainContentSize(win, this.desiredMainContentWidth, height);
       return;
     }
 
@@ -122,7 +171,7 @@ class WindowGeometryController {
         pointFromRelativeAnchor(anchor, display.workArea, {
           margin: WINDOW_MARGIN,
         }),
-        { width: WINDOW_WIDTH, height },
+        { width: this.desiredMainContentWidth, height },
         display.workArea,
         { margin: WINDOW_MARGIN, minHeight: WINDOW_MIN_HEIGHT }
       )
@@ -171,6 +220,7 @@ class WindowGeometryController {
     // transaction. setContentSize followed by setPosition exposes an
     // intermediate frame and visibly jumps whenever the result count changes.
     this.markProgrammaticMutation();
+    if (!this.pluginViewActive) this.lockMainWindowHeight(win, next.height);
     win.setContentBounds(next, false);
   }
 
@@ -184,7 +234,18 @@ class WindowGeometryController {
     const nextHeight = Math.round(height);
     if (currentWidth === nextWidth && currentHeight === nextHeight) return;
     this.markProgrammaticMutation();
+    if (!this.pluginViewActive) this.lockMainWindowHeight(win, nextHeight);
     win.setContentSize(nextWidth, nextHeight, false);
+  }
+
+  private lockMainWindowHeight(win: BrowserWindow, height: number): void {
+    const safeHeight = Math.max(WINDOW_MIN_HEIGHT, Math.round(height));
+    // Temporarily relax both bounds so moving from a larger locked height to a
+    // smaller one (or vice versa) is valid on every native window manager.
+    win.setMinimumSize(WINDOW_MIN_WIDTH, 0);
+    win.setMaximumSize(UNBOUNDED_WINDOW_SIZE, UNBOUNDED_WINDOW_SIZE);
+    win.setMinimumSize(WINDOW_MIN_WIDTH, safeHeight);
+    win.setMaximumSize(UNBOUNDED_WINDOW_SIZE, safeHeight);
   }
 
   private markProgrammaticMutation(): void {

@@ -17,6 +17,7 @@ test('plugin view slot is released before deferred webContents destruction', () 
   assert.ok(deferredDestroy > 0);
   assert.ok(block.indexOf('window.setBrowserView(null)') < deferredDestroy);
   assert.ok(block.indexOf('view = undefined') < deferredDestroy);
+  assert.match(block, /setPluginViewActive\(window, false\)/);
   assert.ok(
     block.indexOf('snapshotView.webContents.destroy()') > deferredDestroy
   );
@@ -33,6 +34,7 @@ test('direct plugin switching suppresses the old view homepage reset', () => {
   );
 
   assert.match(block, /runnerInstance\.removeView\(window, false\)/);
+  assert.match(block, /runnerInstance\.init\(plugin, window\)/);
   assert.ok(
     block.indexOf('runnerInstance.removeView(window, false)') <
       block.indexOf('runnerInstance.init(plugin, window)')
