@@ -109,4 +109,28 @@ try {
   throw error;
 }
 
+if (process.platform === 'darwin') {
+  // Replacing an already-loaded .node file can retain Finder's provenance
+  // xattr. macOS may then terminate Node/Electron while loading the updated
+  // binary even though Cargo's dylib signature is valid. Clear that local
+  // development metadata and refresh the ad-hoc signature; electron-builder
+  // applies the final application signature during packaging.
+  spawnSync('xattr', ['-d', 'com.apple.provenance', targetNode], {
+    stdio: 'ignore',
+    shell: false,
+  });
+  const signResult = spawnSync(
+    'codesign',
+    ['--force', '--sign', '-', targetNode],
+    {
+      stdio: 'inherit',
+      shell: false,
+    }
+  );
+  if (signResult.status !== 0) {
+    console.error(`[flick-native] failed to ad-hoc sign ${targetNode}`);
+    process.exit(signResult.status ?? 1);
+  }
+}
+
 console.log(`[flick-native] native addon copied to ${targetNode}`);

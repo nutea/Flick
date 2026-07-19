@@ -206,6 +206,15 @@ export default () => {
       }
     });
 
+    const sendDevToolsState = (opened: boolean) => {
+      if (createWin.isDestroyed() || createWin.webContents.isDestroyed()) {
+        return;
+      }
+      createWin.webContents.send('detach:devtools-state', opened);
+    };
+    view.webContents.on('devtools-opened', () => sendDevToolsState(true));
+    view.webContents.on('devtools-closed', () => sendDevToolsState(false));
+
     const executeHooks = (hook: string, data: unknown) => {
       if (!view) return;
       const evalJs = `console.log(window.flick);if(window.flick && window.flick.hooks && typeof window.flick.hooks.on${hook} === 'function' ) {
@@ -284,11 +293,11 @@ export default () => {
     const w = windowFromSender(event.sender);
     const contents = w && pluginContents(w);
     if (!contents) return false;
-    if (contents.isDevToolsOpened()) contents.closeDevTools();
-    else contents.openDevTools({ mode: 'detach' });
-    const opened = contents.isDevToolsOpened();
-    event.sender.send('detach:devtools-state', opened);
-    return opened;
+    const shouldOpen = !contents.isDevToolsOpened();
+    if (shouldOpen) contents.openDevTools({ mode: 'detach' });
+    else contents.closeDevTools();
+    event.sender.send('detach:devtools-state', shouldOpen);
+    return shouldOpen;
   });
 
   ipcMain.handle('detach:focus-plugin', (event) => {

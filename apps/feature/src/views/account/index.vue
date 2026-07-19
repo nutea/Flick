@@ -73,7 +73,7 @@ watch([visible], () => {
   box-sizing: border-box;
   width: 100%;
   overflow-x: hidden;
-  background: var(--color-body-bg);
+  background: var(--color-surface-base);
   height: calc(~'100vh - 46px');
   :deep(.ant-result-title) {
     color: var(--color-text-primary);

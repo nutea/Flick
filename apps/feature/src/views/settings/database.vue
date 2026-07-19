@@ -19,7 +19,7 @@
       :disabled="Boolean(syncing && syncing !== 'restore')"
       danger
       size="small"
-      style="margin-right: 10px; background-color: var(--color-input-hover)"
+      style="margin-right: 10px; background-color: var(--color-control-bg)"
     >
       从 WebDAV 恢复
       <template #icon>
@@ -107,7 +107,7 @@
     :bodyStyle="{
       maxHeight: '500px',
       overflow: 'auto',
-      backgroundColor: 'var(--color-body-bg)',
+      backgroundColor: 'var(--color-surface-base)',
       color: 'var(--color-text-primary)',
     }"
     :footer="null"
@@ -406,14 +406,14 @@ const downloadPlugin = async (plugin) => {
 }
 .exportDrawer {
   .ant-drawer-header {
-    background-color: var(--color-body-bg);
+    background-color: var(--color-surface-base);
     border-bottom: 1px solid var(--color-border-light);
     .ant-drawer-title {
       color: var(--color-text-primary);
     }
   }
   .ant-drawer-body {
-    background-color: var(--color-body-bg);
+    background-color: var(--color-surface-base);
     color: var(--color-text-content);
   }
 }
@@ -422,7 +422,7 @@ const downloadPlugin = async (plugin) => {
     color: var(--color-text-content);
   }
   .ant-modal-header {
-    background-color: var(--color-body-bg);
+    background-color: var(--color-surface-base);
     border-bottom: 1px solid var(--color-border-light);
     .ant-modal-title {
       color: var(--color-text-primary);
@@ -432,11 +432,11 @@ const downloadPlugin = async (plugin) => {
     color: var(--color-text-content);
   }
   .ant-modal-body {
-    background-color: var(--color-body-bg);
+    background-color: var(--color-surface-base);
     .ant-input,
     .ant-input-password,
     .ant-select-selector {
-      background: var(--color-input-hover) !important;
+      background: var(--color-control-bg) !important;
       color: var(--color-text-content);
     }
     .ant-input-password-icon,

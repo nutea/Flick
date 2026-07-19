@@ -67,20 +67,17 @@ import localConfig from './confOp';
 
 const config: any = localConfig.getConfig();
 
-// 暗夜模式
-if (config.perf.common.darkMode) {
-  document.body.classList.add('dark');
-}
+const applyTheme = (next: any) => {
+  document.body.classList.toggle('dark', Boolean(next?.perf?.common?.darkMode));
+  ConfigProvider.config({
+    theme: next?.perf?.custom || {},
+  });
+};
 
-ConfigProvider.config({
-  theme: config.perf.custom || {},
-});
+applyTheme(config);
 
 window.flick.onThemeChange(() => {
-  const next: any = localConfig.getConfig();
-  ConfigProvider.config({
-    theme: next.perf.custom || {},
-  });
+  applyTheme(localConfig.getConfig());
 });
 
 createApp(App)

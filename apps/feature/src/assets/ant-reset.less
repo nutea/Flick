@@ -1,18 +1,27 @@
 :root {
   --color-text-primary: rgba(0, 0, 0, 0.85);
-  --color-text-content: #141414;
-  --color-text-desc: rgba(0, 0, 0, 0.45);
-  // 背景色
-  --color-body-bg2: #eee;
-  --color-body-bg: #fff;
-  --color-menu-bg: rgba(248, 248, 248, 1);
-  --color-list-hover: rgba(233, 233, 233, 1);
-  --color-input-hover: #fff;
-  // 边框
-  --color-border-light: #f0f0f0;
-  --color-border-strong: #d9d9d9;
-  --color-surface-subtle: #f7f8fa;
-  --color-surface-elevated: #fff;
+  --color-text-content: #24262b;
+  --color-text-desc: #7a7f89;
+
+  // Surface hierarchy: canvas < sidebar < base/raised < subtle controls.
+  // State colors (hover/selected) must not be used as page backgrounds.
+  --color-canvas-bg: #f3f4f6;
+  --color-sidebar-bg: #f8f9fb;
+  --color-surface-base: #ffffff;
+  --color-surface-raised: #fff;
+  --color-surface-subtle: #f6f7f9;
+  --color-surface-hover: #f1f3f6;
+  --color-surface-selected: color-mix(
+    in srgb,
+    var(--ant-primary-color) 10%,
+    #f2f4f8
+  );
+  --color-control-bg: #fbfcfd;
+
+  --color-border-light: #e5e7eb;
+  --color-border-strong: #cfd3da;
+  --shadow-surface: 0 1px 2px rgba(15, 23, 42, 0.04);
+  --shadow-interactive: 0 6px 18px rgba(15, 23, 42, 0.08);
   --color-focus-ring: color-mix(
     in srgb,
     var(--ant-primary-color) 38%,
@@ -24,23 +33,40 @@
 }
 
 .dark {
-  --color-text-primary: #e8e8f0;
-  --color-text-content: #ccccd8;
-  --color-text-desc: #8f8fa6;
-  // 背景色
-  --color-body-bg: #1c1c28;
-  --color-body-bg2: #2c2f3b;
-  --color-menu-bg: #1c1c28;
-  --color-list-hover: #2c2f3b;
-  --color-input-hover: #444d;
-  // 边框
-  --color-border-light: #444d;
-  --color-border-strong: #5b6070;
-  --color-surface-subtle: #252633;
-  --color-surface-elevated: #252633;
+  --color-text-primary: #f0f1f6;
+  --color-text-content: #d3d5df;
+  --color-text-desc: #9297a6;
+
+  --color-canvas-bg: #15161d;
+  --color-sidebar-bg: #1b1c24;
+  --color-surface-base: #20212b;
+  --color-surface-raised: #252733;
+  --color-surface-subtle: #292b36;
+  --color-surface-hover: #30323e;
+  --color-surface-selected: color-mix(
+    in srgb,
+    var(--ant-primary-color) 20%,
+    #272a36
+  );
+  --color-control-bg: #272934;
+
+  --color-border-light: #343743;
+  --color-border-strong: #4b4f5f;
+  --shadow-surface: 0 1px 2px rgba(0, 0, 0, 0.22);
+  --shadow-interactive: 0 8px 22px rgba(0, 0, 0, 0.28);
   // 输入框附带icon
   --color-action-color: #ffffff4d;
   --color-accent-text: color-mix(in srgb, var(--ant-primary-color) 78%, #fff);
+}
+
+html,
+body,
+#app {
+  width: 100%;
+  height: 100%;
+  margin: 0;
+  overflow: hidden;
+  background: var(--color-canvas-bg);
 }
 
 *:focus-visible {
@@ -62,8 +88,8 @@
   overflow: hidden;
   border: 1px solid var(--color-border-light);
   border-radius: 12px;
-  background: var(--color-body-bg);
-  box-shadow: 0 8px 24px rgba(15, 23, 42, 0.04);
+  background: var(--color-surface-base);
+  box-shadow: var(--shadow-surface);
 }
 
 .settings-page > .settings-card {

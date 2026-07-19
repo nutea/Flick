@@ -27,7 +27,9 @@ mod keyboard_unix;
 #[cfg(not(windows))]
 mod platform_unix;
 
-use napi::bindgen_prelude::{AsyncTask, Env, JsFunction, Result, Task};
+mod screen_capture;
+
+use napi::bindgen_prelude::{AsyncTask, Buffer, Env, JsFunction, Result, Task};
 use napi_derive::napi;
 
 #[napi(object)]
@@ -400,4 +402,42 @@ pub fn get_clipboard_change_token_napi() -> u32 {
   {
     platform_unix::get_clipboard_change_token()
   }
+}
+
+pub struct CaptureScreenRegionTask {
+  x: i32,
+  y: i32,
+  width: u32,
+  height: u32,
+}
+
+impl Task for CaptureScreenRegionTask {
+  type Output = Buffer;
+  type JsValue = Buffer;
+
+  fn compute(&mut self) -> Result<Self::Output> {
+    screen_capture::capture_region(self.x, self.y, self.width, self.height)
+  }
+
+  fn resolve(&mut self, _env: Env, output: Self::Output) -> Result<Self::JsValue> {
+    Ok(output)
+  }
+}
+
+/// Captures a region expressed in Electron's global display coordinates and
+/// returns a PNG buffer. The work runs on libuv's worker pool so display APIs
+/// and PNG encoding never block Electron's main thread.
+#[napi(js_name = "captureScreenRegion")]
+pub fn capture_screen_region_napi(
+  x: i32,
+  y: i32,
+  width: u32,
+  height: u32,
+) -> AsyncTask<CaptureScreenRegionTask> {
+  AsyncTask::new(CaptureScreenRegionTask {
+    x,
+    y,
+    width,
+    height,
+  })
 }

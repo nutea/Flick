@@ -152,7 +152,7 @@ const changeTheme = () => {
 
 <style lang="less">
 .ant-radio-button-wrapper {
-  background: var(--color-body-bg);
+  background: var(--color-surface-base);
   color: var(--color-text-content);
 }
 .theme-selector {

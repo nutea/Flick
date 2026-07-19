@@ -186,7 +186,7 @@ init();
 <style lang="less">
 .ant-menu-submenu-popup {
   .ant-menu {
-    background: var(--color-body-bg2) !important;
+    background: var(--color-surface-raised) !important;
     height: 100%;
     border-right: none;
     .ant-menu-item,
@@ -199,7 +199,7 @@ init();
     }
     .ant-menu-item-selected,
     .ant-menu-submenu-selected {
-      background-color: var(--color-list-hover);
+      background-color: var(--color-surface-selected);
       color: var(--color-accent-text);
       .ant-menu-submenu-arrow {
         color: var(--color-accent-text);
@@ -215,35 +215,31 @@ init();
 .main-container {
   -webkit-app-region: no-drag;
   display: flex;
-  background: var(--color-body-bg);
   border-top: 1px solid var(--color-border-light);
   height: 100vh;
   box-sizing: border-box;
   align-items: flex-start;
   width: 100%;
   overflow: hidden;
-  background: var(--color-menu-bg);
+  background: var(--color-sidebar-bg);
   .search {
     :deep(.ant-btn),
     :deep(.ant-input),
     :deep(.ant-input-group-addon) {
       color: var(--ant-primary-color) !important;
-      background: var(--color-input-hover);
+      background: var(--color-control-bg);
       border-color: var(--color-border-light);
     }
   }
   .container,
   .more {
-    background: var(--color-body-bg);
+    background: var(--color-canvas-bg);
     width: calc(~'100% - 208px');
     height: 100%;
     box-sizing: border-box;
     padding: 16px;
     position: relative;
     overflow: auto;
-  }
-  .more {
-    background: var(--color-body-bg2);
   }
   .left-menu {
     width: 208px;
@@ -255,6 +251,8 @@ init();
     display: flex;
     flex-direction: column;
     gap: 10px;
+    border-right: 1px solid var(--color-border-light);
+    background: var(--color-sidebar-bg);
     .menu-scroll {
       flex: 1;
       min-height: 0;
@@ -275,6 +273,9 @@ init();
     :deep(.ant-menu) {
       width: 100%;
       height: auto;
+      border-right: 0;
+      color: var(--color-text-content);
+      background: transparent;
     }
     :deep(.ant-menu-item) {
       height: 38px;
@@ -285,6 +286,7 @@ init();
       align-items: center;
       border-radius: 8px;
       font-size: 14px;
+      color: var(--color-text-content);
       .anticon {
         font-size: 16px;
       }
@@ -298,9 +300,12 @@ init();
     }
     :deep(.ant-menu-item-selected),
     :deep(.ant-menu-submenu-selected) {
-      background-color: var(--color-list-hover);
+      background-color: var(--color-surface-selected);
       border-radius: 6px;
       color: var(--color-accent-text);
+    }
+    :deep(.ant-menu-item:not(.ant-menu-item-selected):hover) {
+      background: var(--color-surface-hover);
     }
     :deep(.ant-avatar) {
       background: transparent;
@@ -321,11 +326,11 @@ init();
       transition:
         background-color 0.16s ease,
         border-color 0.16s ease;
-      &:hover,
-      &.active {
-        background: var(--color-list-hover);
+      &:hover {
+        background: var(--color-surface-hover);
       }
       &.active {
+        background: var(--color-surface-selected);
         border-color: var(--color-border-light);
         color: var(--color-accent-text);
       }

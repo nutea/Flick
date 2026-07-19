@@ -646,7 +646,7 @@ const gotoFinder = () => {
     border-bottom: 1px solid var(--color-border-light);
   }
   .view-container {
-    background: var(--color-body-bg);
+    background: var(--color-surface-base);
     overflow: hidden;
     min-height: 440px;
   }
@@ -660,7 +660,7 @@ const gotoFinder = () => {
     width: 100%;
     min-height: calc(100vh - 89px);
     padding: 18px;
-    background: var(--color-body-bg);
+    background: var(--color-surface-base);
   }
   .installed-toolbar {
     margin-bottom: 14px;
@@ -682,7 +682,7 @@ const gotoFinder = () => {
     min-width: 22px;
     padding: 1px 6px;
     border-radius: 999px;
-    background: var(--color-body-bg);
+    background: var(--color-surface-base);
     color: var(--color-text-desc);
     font-size: 12px;
     text-align: center;
@@ -704,7 +704,7 @@ const gotoFinder = () => {
     overflow: hidden;
     border: 1px solid var(--color-border-light);
     border-radius: 11px;
-    background: var(--color-surface-elevated);
+    background: var(--color-surface-raised);
     transition:
       border-color 0.16s ease,
       box-shadow 0.16s ease;
@@ -714,7 +714,7 @@ const gotoFinder = () => {
         var(--ant-primary-color) 28%,
         var(--color-border-light)
       );
-      box-shadow: 0 6px 18px rgba(15, 23, 42, 0.06);
+      box-shadow: var(--shadow-interactive);
       .expand-icon {
         color: var(--color-accent-text);
         transform: rotate(90deg);
@@ -733,7 +733,7 @@ const gotoFinder = () => {
     gap: 12px;
     cursor: pointer;
     border: 0;
-    background: var(--color-surface-elevated);
+    background: var(--color-surface-raised);
     color: var(--color-text-content);
     font: inherit;
     text-align: left;
@@ -792,7 +792,7 @@ const gotoFinder = () => {
     min-width: 0;
     padding: 0 16px;
     border-top: 1px solid var(--color-border-light);
-    background: var(--color-body-bg);
+    background: var(--color-surface-base);
   }
   .plugin-overview,
   .feature-container,

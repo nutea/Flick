@@ -113,6 +113,21 @@ const registerHotKey = (mainWindow: BrowserWindow): void => {
     windowGeometryController.showMainWindow(mainWindow);
   }
 
+  const onBeforeInputEvent = (
+    event: Electron.Event,
+    inputEvent: Electron.Input
+  ) => {
+    if (
+      inputEvent.key.toLowerCase() === 'w' &&
+      (inputEvent.control || inputEvent.meta) &&
+      !inputEvent.alt &&
+      !inputEvent.shift
+    ) {
+      event.preventDefault();
+      if (!mainWindow.isDestroyed()) mainWindow.hide();
+    }
+  };
+
   const init = async () => {
     await setAutoLogin();
     await setDarkMode();
@@ -184,20 +199,6 @@ const registerHotKey = (mainWindow: BrowserWindow): void => {
       // mainWindow.show();
     });
 
-    mainWindow.webContents.on('before-input-event', (event, inputEvent) => {
-      if (
-        inputEvent.key.toLowerCase() === 'w' &&
-        (inputEvent.control || inputEvent.meta) &&
-        !inputEvent.alt &&
-        !inputEvent.shift
-      ) {
-        event.preventDefault();
-        if (mainWindow && !mainWindow.isDestroyed()) {
-          mainWindow.hide();
-        }
-      }
-    });
-
     config.global.forEach((sc) => {
       if (!sc.key || !sc.value) return;
       globalShortcut.register(sc.key, () => {
@@ -206,6 +207,7 @@ const registerHotKey = (mainWindow: BrowserWindow): void => {
     });
   };
 
+  mainWindow.webContents.on('before-input-event', onBeforeInputEvent);
   init();
   ipcMain.on('re-register', () => {
     init();

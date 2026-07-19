@@ -193,7 +193,7 @@ const handleDeleteClick = async () => {
 .local-plugin {
   &__list {
     min-height: calc(100vh - 32px);
-    background-color: var(--color-body-bg);
+    background-color: var(--color-surface-base);
   }
   &__action {
     min-height: 56px;

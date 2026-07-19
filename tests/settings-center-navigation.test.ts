@@ -117,6 +117,65 @@ test('top-level settings pages fill the content area without page headings', () 
   }
 });
 
+test('settings center uses one semantic surface hierarchy in both themes', () => {
+  const tokens = read('apps/feature/src/assets/ant-reset.less');
+  const app = read('apps/feature/src/App.vue');
+  const featureMain = read('apps/feature/src/main.ts');
+  const launcherMain = read('src/renderer/main.ts');
+  const guidelines = read('docs/settings-surface-guidelines.md');
+  const sourceRoot = path.join(root, 'apps', 'feature', 'src');
+  const styleSources = fs
+    .readdirSync(sourceRoot, { recursive: true })
+    .filter(
+      (file): file is string =>
+        typeof file === 'string' && /\.(?:vue|less)$/.test(file)
+    )
+    .map((file) => fs.readFileSync(path.join(sourceRoot, file), 'utf8'))
+    .join('\n');
+
+  for (const token of [
+    'canvas-bg',
+    'sidebar-bg',
+    'surface-base',
+    'surface-raised',
+    'surface-subtle',
+    'surface-hover',
+    'surface-selected',
+    'control-bg',
+  ]) {
+    assert.match(tokens, new RegExp(`--color-${token}:`));
+    assert.match(guidelines, new RegExp(`--color-${token}`));
+  }
+  assert.match(app, /\.container,[\s\S]*background: var\(--color-canvas-bg\)/);
+  assert.match(app, /\.left-menu[\s\S]*background: var\(--color-sidebar-bg\)/);
+  assert.match(
+    app,
+    /:deep\(\.ant-menu\)[\s\S]*border-right: 0;[\s\S]*background: transparent/
+  );
+  assert.match(tokens, /\.dark[\s\S]*--color-canvas-bg:[\s\S]*--color-surface-base:/);
+  for (const entry of [featureMain, launcherMain]) {
+    assert.match(entry, /classList\.toggle\([\s\S]*'dark'/);
+    assert.match(entry, /onThemeChange\(\(\) => \{[\s\S]*applyTheme/);
+  }
+  assert.doesNotMatch(
+    styleSources,
+    /--color-(?:body-bg2?|menu-bg|list-hover|input-hover|surface-elevated)/
+  );
+  assert.doesNotMatch(styleSources, /box-shadow:\s*0\s+\d+px/);
+});
+
+test('dark mode updates immediately without waiting for debounced settings', () => {
+  const settings = read('apps/feature/src/views/settings/index.vue');
+
+  assert.match(settings, /@change="changeDarkMode"/);
+  assert.match(settings, /const persistConfig = \(\) =>/);
+  assert.match(settings, /const setConfig = debounce\(persistConfig, 500\)/);
+  assert.match(
+    settings,
+    /changeDarkMode[\s\S]*classList\.toggle\('dark',[\s\S]*setConfig\.cancel\(\)[\s\S]*persistConfig\(\)/
+  );
+});
+
 test('settings empty states and market cards keep a stable visual rhythm', () => {
   const shortcuts = read('apps/feature/src/views/settings/index.vue');
   const quickLaunch = read('apps/feature/src/views/settings/local-start.vue');

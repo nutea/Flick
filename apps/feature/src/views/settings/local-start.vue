@@ -149,7 +149,7 @@ const checkDrop = (e) => {
   box-sizing: border-box;
   width: 100%;
   overflow-x: hidden;
-  background: var(--color-body-bg);
+  background: var(--color-surface-base);
   min-height: 320px;
   .quick-launch-dropzone {
     display: flex;

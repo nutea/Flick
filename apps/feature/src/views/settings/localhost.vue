@@ -161,7 +161,7 @@ const submit = async () => {
 }
 :deep(.ant-input),
 :deep(.ant-input-password) {
-  background: var(--color-input-hover);
+  background: var(--color-control-bg);
   color: var(--color-text-content);
 }
 

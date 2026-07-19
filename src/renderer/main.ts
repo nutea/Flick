@@ -25,15 +25,17 @@ import 'ant-design-vue/es/tag/style/css';
 
 const config: any = localConfig.getConfig();
 
-ConfigProvider.config({
-  theme: config.perf.custom || {},
-});
+const applyTheme = (next: any) => {
+  document.body.classList.toggle('dark', Boolean(next?.perf?.common?.darkMode));
+  ConfigProvider.config({
+    theme: next?.perf?.custom || {},
+  });
+};
+
+applyTheme(config);
 
 window.flick.onThemeChange(() => {
-  const config: any = localConfig.getConfig();
-  ConfigProvider.config({
-    theme: config.perf.custom || {},
-  });
+  applyTheme(localConfig.getConfig());
 });
 
 createApp(App)

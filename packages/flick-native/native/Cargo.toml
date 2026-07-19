@@ -1,6 +1,6 @@
 [package]
 name = "flick_native"
-version = "0.0.1"
+version = "0.0.2"
 edition = "2021"
 publish = false
 
@@ -16,6 +16,7 @@ crate-type = ["cdylib"]
 # napi6 enables the threadsafe-function & async-task ABI we rely on.
 napi = { version = "2", default-features = false, features = ["napi6"] }
 napi-derive = "2"
+screenshots = "0.8.10"
 
 [target.'cfg(windows)'.dependencies]
 windows = { version = "0.59", features = [

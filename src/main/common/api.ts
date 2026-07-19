@@ -57,6 +57,8 @@ import {
   normalizeDetachInputRequest,
   resolveDetachInputState,
 } from '@/common/utils/detachInput';
+import { matchesInputAccelerator } from '@/common/utils/inputAccelerator';
+import localConfig from './initLocalConfig';
 
 /**
  *  sanitize input files 剪贴板文件合法性校验
@@ -147,6 +149,9 @@ const ALLOWED_IPC_METHODS = new Set<string>([
 ]);
 
 class API extends DBInstance {
+  private separateShortcut = 'Ctrl+D';
+  private detachInProgress = false;
+
   public getBuiltinPlugin({ data }: { data?: { name?: unknown } }) {
     const name = typeof data?.name === 'string' ? data.name : '';
     const manifest =
@@ -461,7 +466,7 @@ class API extends DBInstance {
     });
     // 按 ESC 退出插件
     mainWindow.webContents.on('before-input-event', (event, input) =>
-      this.__EscapeKeyDown(event, input, mainWindow)
+      this.__PluginInputKeyDown(event, input, mainWindow)
     );
     // 设置主窗口的 show/hide 事件监听
     this.setupMainWindowHooks(mainWindow);
@@ -530,6 +535,23 @@ class API extends DBInstance {
 
       return;
     }
+  };
+
+  public __PluginInputKeyDown = (event, input, window) => {
+    if (input.type !== 'keyDown') return;
+    if (
+      this.currentPlugin &&
+      matchesInputAccelerator(input, this.separateShortcut)
+    ) {
+      event.preventDefault();
+      if (!input.isAutoRepeat) {
+        void this.detachPlugin(null, window).catch((error) => {
+          console.error('[detach] keyboard shortcut failed:', error);
+        });
+      }
+      return;
+    }
+    this.__EscapeKeyDown(event, input, window);
   };
 
   public async loadPlugin(
@@ -760,6 +782,16 @@ void window.loadPlugin(${JSON.stringify(plugin)});`
       throw error;
     }
     this.currentPlugin = plugin;
+    try {
+      const config = await localConfig.getConfig();
+      this.separateShortcut =
+        typeof config?.perf?.shortCut?.separate === 'string' &&
+        config.perf.shortCut.separate.trim()
+          ? config.perf.shortCut.separate.trim()
+          : 'Ctrl+D';
+    } catch {
+      this.separateShortcut = 'Ctrl+D';
+    }
     window.webContents.executeJavaScript(
       `window.setCurrentPlugin(${JSON.stringify({
         currentPlugin: this.currentPlugin,
@@ -769,7 +801,7 @@ void window.loadPlugin(${JSON.stringify(plugin)});`
     const view = runnerInstance.getView();
     if (!view.inited) {
       view.webContents.on('before-input-event', (event, input) =>
-        this.__EscapeKeyDown(event, input, window)
+        this.__PluginInputKeyDown(event, input, window)
       );
     }
     this.scheduleAutoDetachIfEnabled(plugin, window);
@@ -1136,8 +1168,8 @@ void window.loadPlugin(${JSON.stringify(plugin)});`
     }
   }
 
-  public detachPlugin(e, window) {
-    if (!this.currentPlugin) return;
+  public async detachPlugin(e, window) {
+    if (!this.currentPlugin || this.detachInProgress) return;
     const pluginName = this.currentPlugin.name;
     /** pluginSetting.single 默认为 true（单例）；仅当为 false 时可开多个独立窗口 */
     const allowMultipleDetachWindows =
@@ -1152,35 +1184,55 @@ void window.loadPlugin(${JSON.stringify(plugin)});`
       }
     }
     const view = window.getBrowserView();
-    window.setBrowserView(null);
-    windowGeometryController.setPluginViewActive(window, false);
-    window.webContents
-      .executeJavaScript(`window.getMainInputInfo()`)
-      .then((res) => {
-        void window.webContents.executeJavaScript(
-          `window.clearSearchSnapshotAfterDetach && window.clearSearchSnapshotAfterDetach()`
-        );
-        const config = readPluginFlickConfigSync(pluginName);
-        const capability =
-          this.currentPlugin?.pluginSetting?.detach?.input ?? 'optional';
-        const detachInput = resolveDetachInputState({
-          capability,
-          policy: config.detachInputPolicy ?? 'auto',
-          request: normalizeDetachInputRequest(res),
-        });
-        detachInstance.init(
-          {
-            ...this.currentPlugin,
-            detachInput,
-          },
-          window.getBounds(),
-          view,
-          allowMultipleDetachWindows
-        );
-        window.webContents.executeJavaScript(`window.initFlick()`);
-        applyMainWindowContentHeight(window, 60);
-        this.currentPlugin = null;
+    if (!view || view.webContents.isDestroyed()) return;
+    this.detachInProgress = true;
+    let viewRemovedFromMainWindow = false;
+    try {
+      const res = await window.webContents.executeJavaScript(
+        `window.getMainInputInfo()`
+      );
+      if (!this.currentPlugin || window.getBrowserView() !== view) return;
+      const plugin = this.currentPlugin;
+      const config = readPluginFlickConfigSync(pluginName);
+      const capability = plugin.pluginSetting?.detach?.input ?? 'optional';
+      const detachInput = resolveDetachInputState({
+        capability,
+        policy: config.detachInputPolicy ?? 'auto',
+        request: normalizeDetachInputRequest(res),
       });
+
+      window.setBrowserView(null);
+      viewRemovedFromMainWindow = true;
+      windowGeometryController.setPluginViewActive(window, false);
+      await detachInstance.init(
+        {
+          ...plugin,
+          detachInput,
+        },
+        window.getBounds(),
+        view,
+        allowMultipleDetachWindows
+      );
+      void window.webContents.executeJavaScript(
+        `window.clearSearchSnapshotAfterDetach && window.clearSearchSnapshotAfterDetach()`
+      );
+      void window.webContents.executeJavaScript(`window.initFlick()`);
+      applyMainWindowContentHeight(window, 60);
+      this.currentPlugin = null;
+    } catch (error) {
+      if (
+        viewRemovedFromMainWindow &&
+        !window.isDestroyed() &&
+        !view.webContents.isDestroyed() &&
+        !view.inDetach
+      ) {
+        window.setBrowserView(view);
+        windowGeometryController.setPluginViewActive(window, true);
+      }
+      throw error;
+    } finally {
+      this.detachInProgress = false;
+    }
   }
 
   public detachInputChange({ data }) {

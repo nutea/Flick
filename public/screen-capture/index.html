@@ -1,0 +1,22 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="UTF-8" />
+    <meta
+      http-equiv="Content-Security-Policy"
+      content="default-src 'self'; script-src 'self'; style-src 'self'"
+    />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <link rel="stylesheet" href="./overlay.css" />
+    <title>Flick 截图</title>
+  </head>
+  <body>
+    <main id="overlay" aria-label="截图选区">
+      <div id="selection" hidden>
+        <span id="size"></span>
+      </div>
+      <div id="hint">拖动选择截图区域 · Esc 或右键取消</div>
+    </main>
+    <script src="./overlay.js"></script>
+  </body>
+</html>

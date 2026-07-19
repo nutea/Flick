@@ -52,6 +52,10 @@ export default defineConfig({
           guide: path.resolve(__dirname, 'src/preload/guide.ts'),
           detach: path.resolve(__dirname, 'src/preload/detach.ts'),
           feature: path.resolve(__dirname, 'src/preload/feature.ts'),
+          screenCapture: path.resolve(
+            __dirname,
+            'src/preload/screenCapture.ts'
+          ),
         },
       },
     },

@@ -165,7 +165,7 @@ const newList = computed(() => {
 .carousel__prev,
 .carousel__next {
   box-sizing: content-box;
-  border: 5px solid var(--color-body-bg);
+  border: 5px solid var(--color-surface-base);
 }
 
 @media (max-width: 820px) {

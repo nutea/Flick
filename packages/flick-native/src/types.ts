@@ -99,8 +99,24 @@ export interface NativeClipboardApi {
   writeFilePaths(files: string[]): boolean;
 }
 
+export interface NativeScreenRegion {
+  /** Global Electron display coordinate in device-independent pixels. */
+  x: number;
+  /** Global Electron display coordinate in device-independent pixels. */
+  y: number;
+  width: number;
+  height: number;
+}
+
+export interface NativeScreenApi {
+  isAvailable(): boolean;
+  /** Captures the region and resolves with PNG-encoded bytes. */
+  captureRegion(region: NativeScreenRegion): Promise<Buffer>;
+}
+
 export interface NativeRuntimeApi {
   system: NativeSystemApi;
   input: NativeInputApi;
   clipboard: NativeClipboardApi;
+  screen: NativeScreenApi;
 }

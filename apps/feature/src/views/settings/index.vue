@@ -105,6 +105,7 @@
                 v-model:checked="common.darkMode"
                 :checked-children="$t('feature.settings.basic.on')"
                 :un-checked-children="$t('feature.settings.basic.off')"
+                @change="changeDarkMode"
               ></a-switch>
             </div>
           </div>
@@ -277,7 +278,7 @@ state.common = perf.common;
 state.local = perf.local;
 state.global = defaultGlobal;
 
-const setConfig = debounce(() => {
+const persistConfig = () => {
   const { perf } = localConfig.getConfig();
   localConfig.setConfig(
     JSON.parse(
@@ -293,9 +294,17 @@ const setConfig = debounce(() => {
     )
   );
   window.market.reregisterShortcuts();
-}, 500);
+};
+
+const setConfig = debounce(persistConfig, 500);
 
 watch(state, setConfig);
+
+const changeDarkMode = (checked) => {
+  document.body.classList.toggle('dark', Boolean(checked));
+  setConfig.cancel();
+  persistConfig();
+};
 
 const changeShortCut = (e, key) => {
   let compose = '';
@@ -467,25 +476,25 @@ const changeLanguage = (value) => {
 .settings {
   box-sizing: border-box;
   width: 100%;
-  max-width: 1040px;
+  max-width: none;
   min-height: 100%;
   margin: 0 auto;
-  padding: 4px 8px 24px;
+  padding: 0;
   overflow: visible;
   background: transparent;
   .view-container {
     border: 1px solid var(--color-border-light);
     border-radius: 12px;
-    background: var(--color-body-bg);
+    background: var(--color-surface-base);
     overflow: hidden;
-    box-shadow: 0 8px 24px rgba(15, 23, 42, 0.04);
+    box-shadow: var(--shadow-surface);
   }
 
   .settings-detail {
     min-height: 360px;
     padding: 24px 26px;
     box-sizing: border-box;
-    background: var(--color-body-bg);
+    background: var(--color-surface-base);
 
     .setting-item {
       margin-bottom: 22px;
@@ -532,13 +541,13 @@ const changeLanguage = (value) => {
           line-height: 32px;
           border-radius: 8px;
           font-weight: lighter;
-          background: var(--color-input-hover);
+          background: var(--color-control-bg);
           .ant-input {
             text-align: center;
             color: var(--color-accent-text);
             font-size: 14px;
             font-weight: lighter;
-            background: var(--color-input-hover);
+            background: var(--color-control-bg);
           }
         }
 
@@ -554,11 +563,11 @@ const changeLanguage = (value) => {
 
         .ant-switch {
           &:not(.ant-switch-checked) {
-            background: var(--color-list-hover);
+            background: var(--color-surface-selected);
           }
         }
         .ant-select-selector {
-          background: var(--color-input-hover) !important;
+          background: var(--color-control-bg) !important;
           color: var(--color-text-content);
         }
         .ant-input-password-icon,
@@ -596,7 +605,7 @@ const changeLanguage = (value) => {
     }
     .ant-input-affix-wrapper {
       min-height: 36px;
-      background: var(--color-input-hover);
+      background: var(--color-control-bg);
     }
   }
 
@@ -608,7 +617,7 @@ const changeLanguage = (value) => {
     cursor: pointer;
     border: 1px solid var(--color-border-light);
     border-radius: 8px;
-    background: var(--color-input-hover);
+    background: var(--color-control-bg);
     color: var(--color-accent-text);
     font: inherit;
     text-align: center;
@@ -648,9 +657,9 @@ const changeLanguage = (value) => {
   }
 
   .ant-collapse {
-    background: var(--color-input-hover);
+    background: var(--color-control-bg);
     .ant-collapse-content {
-      background: var(--color-input-hover);
+      background: var(--color-control-bg);
       color: var(--color-text-content);
     }
 

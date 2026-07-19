@@ -231,7 +231,7 @@ const openPlugin = (item) => {
     cursor: pointer;
     border: 1px solid var(--color-border-light);
     border-radius: 10px;
-    background: var(--color-body-bg);
+    background: var(--color-surface-base);
     transition:
       border-color 0.16s ease,
       box-shadow 0.16s ease,
@@ -239,7 +239,7 @@ const openPlugin = (item) => {
     &:hover,
     &:focus-visible {
       border-color: var(--color-border-strong);
-      box-shadow: 0 5px 16px rgba(15, 23, 42, 0.07);
+      box-shadow: var(--shadow-interactive);
       transform: translateY(-1px);
     }
   }
@@ -261,10 +261,10 @@ const openPlugin = (item) => {
   .ant-drawer-content-wrapper {
     box-shadow: none !important;
     .ant-drawer-content {
-      background: var(--color-body-bg);
+      background: var(--color-surface-base);
     }
     .ant-drawer-header {
-      background: var(--color-body-bg);
+      background: var(--color-surface-base);
       border-bottom: 1px solid var(--color-border-light);
     }
   }

@@ -70,6 +70,14 @@ declare module '../../native' {
      * Throws when the native backend or required desktop helper is unavailable.
      */
     writeClipboardFilePaths?: (files: string[]) => void;
+
+    /** Captures a global desktop region and returns PNG-encoded bytes. */
+    captureScreenRegion?: (
+      x: number,
+      y: number,
+      width: number,
+      height: number
+    ) => Promise<Buffer>;
   }
 
   // Default export shape of the addon (CommonJS `module.exports`).

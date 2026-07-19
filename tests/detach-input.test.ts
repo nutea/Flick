@@ -55,10 +55,12 @@ test('detach flow does not merge plugin payload into title-bar input state', () 
     path.join(process.cwd(), 'src/main/common/api.ts'),
     'utf8'
   );
+  const detachStart = apiSource.search(/public (?:async )?detachPlugin/);
   const detachBlock = apiSource.slice(
-    apiSource.indexOf('public detachPlugin'),
+    detachStart,
     apiSource.indexOf('public detachInputChange')
   );
+  assert.notEqual(detachStart, -1);
   assert.match(detachBlock, /resolveDetachInputState/);
   assert.doesNotMatch(detachBlock, /ext\.payload|mergeMainInputWithPluginExt/);
   assert.doesNotMatch(detachBlock, /subInput,/);

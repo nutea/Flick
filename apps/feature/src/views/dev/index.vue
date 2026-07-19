@@ -96,7 +96,7 @@ const refresh = () => {
     color: var(--color-text-content);
   }
   :deep(.ant-input) {
-    background: var(--color-input-hover) !important;
+    background: var(--color-control-bg) !important;
     color: var(--color-text-content);
   }
 }
