@@ -7,21 +7,36 @@
         :data-source="list.filter((item) => !!item)"
       >
         <template #renderItem="{ item, index }">
-          <a-list-item v-if="item" @click="showDetail(index)">
+          <a-list-item
+            v-if="item"
+            role="button"
+            tabindex="0"
+            @click="showDetail(index)"
+            @keydown.enter.prevent="showDetail(index)"
+            @keydown.space.prevent="showDetail(index)"
+          >
             <template #actions>
               <a-button
                 class="download-plugin-btn"
                 type="text"
                 :loading="item.isloading"
+                :aria-label="
+                  item.isdownload
+                    ? $t('feature.market.open')
+                    : $t('feature.market.install')
+                "
+                @click.stop="
+                  item.isdownload
+                    ? openPlugin(item)
+                    : downloadPlugin(item, index)
+                "
               >
                 <CloudDownloadOutlined
                   v-if="!item.isloading && !item.isdownload"
-                  @click.stop="downloadPlugin(item, index)"
                   style="font-size: 20px; cursor: pointer"
                 />
                 <SelectOutlined
                   v-if="!item.isloading && item.isdownload"
-                  @click.stop="openPlugin(item)"
                   style="font-size: 18px; cursor: pointer"
                 />
               </a-button>
@@ -34,7 +49,11 @@
                 <span class="ellipse">{{ item.pluginName }}</span>
               </template>
               <template #avatar>
-                <a-avatar :src="item.logoUrl" />
+                <a-avatar
+                  class="plugin-card-avatar"
+                  shape="square"
+                  :src="item.logoUrl"
+                />
               </template>
             </a-list-item-meta>
           </a-list-item>
@@ -42,10 +61,10 @@
       </a-list>
     </div>
     <a-drawer
-      width="77%"
+      width="min(760px, 100%)"
       v-if="visible"
       placement="right"
-      :closable="false"
+      :closable="true"
       :visible="visible"
       class="plugin-info"
       :style="{ position: 'absolute' }"
@@ -179,13 +198,16 @@ const openPlugin = (item) => {
   width: 0;
 }
 .panel-item {
-  margin-bottom: 17px;
+  margin-bottom: 24px;
   .download-plugin-btn {
     color: var(--ant-primary-color);
   }
   .title {
-    margin-bottom: 30px;
+    margin: 0 0 12px;
     color: var(--color-text-primary);
+    font-size: 15px;
+    font-weight: 600;
+    line-height: 1.5;
   }
   .ellipse {
     display: inline-block;
@@ -198,22 +220,39 @@ const openPlugin = (item) => {
       color: var(--color-text-desc);
     }
   }
-  &:after {
-    content: ' ';
-    display: block;
-    width: 100%;
-    height: 1px;
-    border-bottom: 1px solid var(--color-border-light);
-    transform: scaleY(0.5);
+  .plugin-card-avatar {
+    border-radius: 8px;
   }
   .ant-list-item {
     display: flex !important;
-  }
-
-  &:last-child {
-    &:after {
-      border-bottom: none;
+    min-height: 72px;
+    margin-bottom: 12px !important;
+    padding: 12px 14px;
+    cursor: pointer;
+    border: 1px solid var(--color-border-light);
+    border-radius: 10px;
+    background: var(--color-body-bg);
+    transition:
+      border-color 0.16s ease,
+      box-shadow 0.16s ease,
+      transform 0.16s ease;
+    &:hover,
+    &:focus-visible {
+      border-color: var(--color-border-strong);
+      box-shadow: 0 5px 16px rgba(15, 23, 42, 0.07);
+      transform: translateY(-1px);
     }
+  }
+  // Ant Design 的网格列表会用更高优先级的规则移除列表项底边。
+  .ant-list-grid .ant-col > .ant-list-item {
+    border-bottom: 1px solid var(--color-border-light);
+  }
+}
+
+@media (max-width: 820px) {
+  .panel-item .ant-col-12 {
+    flex: 0 0 100%;
+    max-width: 100%;
   }
 }
 .plugin-info {

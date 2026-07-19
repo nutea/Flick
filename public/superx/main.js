@@ -54,6 +54,26 @@ const BTN = {
 const LONG_PRESS_MS = 450;
 /** 首次注册延迟，避免与 Flick 其它 globalShortcut 抢注册冲突；热更新时为 0 */
 const INITIAL_KEYBOARD_REGISTER_MS = 1000;
+function describeSelectedFile(selectedPath) {
+    const cleanPath = selectedPath.replace(/^file:\/\//, '');
+    let isFile = false;
+    let isDirectory = false;
+    try {
+        const stat = fs.statSync(cleanPath);
+        isDirectory = (0, clipboard_helpers_1.isDirectorySelection)(cleanPath, stat.isDirectory());
+        isFile = stat.isFile();
+    }
+    catch {
+        // Active application/window fallbacks are not guaranteed to be files.
+    }
+    return {
+        path: cleanPath,
+        name: path.basename(cleanPath) || cleanPath,
+        extension: path.extname(cleanPath),
+        isFile,
+        isDirectory,
+    };
+}
 function isMouseTrigger(s) {
     return Object.values(SP_MOUSE).includes(s);
 }
@@ -99,6 +119,7 @@ function createPlugin() {
             panelInstance.init();
             let requestSequence = 0;
             const showSuperPanel = async (trigger) => {
+                var _a;
                 if (process.env.FLICK_NATIVE_DEBUG) {
                     console.info(`[flick-system-super-panel] triggered: ${trigger}`);
                 }
@@ -125,8 +146,9 @@ function createPlugin() {
                 }
                 if (requestId !== requestSequence)
                     return;
-                if (!copyResult.text && !copyResult.fileUrl) {
+                if (!copyResult.text && copyResult.fileUrls.length === 0) {
                     copyResult.fileUrl = await (0, native_1.getActiveWindowFallbackPath)(undefined, await activeWindowPromise);
+                    copyResult.fileUrls = copyResult.fileUrl ? [copyResult.fileUrl] : [];
                 }
                 if (requestId !== requestSequence)
                     return;
@@ -141,13 +163,13 @@ function createPlugin() {
                     win.hide();
                 }
                 const localPlugins = API.getLocalPlugins();
-                let selectedFileIsDirectory = false;
+                const selectedFiles = copyResult.fileUrls.map(describeSelectedFile);
+                const selectedFileIsDirectory = ((_a = selectedFiles[0]) === null || _a === void 0 ? void 0 : _a.isDirectory) === true;
                 let selectedFileDataUrl = '';
-                if (typeof copyResult.fileUrl === 'string' && copyResult.fileUrl) {
-                    const selectedPath = copyResult.fileUrl.replace(/^file:\/\//, '');
+                if (selectedFiles.length === 1 && selectedFiles[0].isFile) {
+                    const selectedPath = selectedFiles[0].path;
                     try {
                         const stat = fs.statSync(selectedPath);
-                        selectedFileIsDirectory = (0, clipboard_helpers_1.isDirectorySelection)(selectedPath, stat.isDirectory());
                         if (stat.isFile() &&
                             stat.size <= 20 * 1024 * 1024 &&
                             /\.(png|jpe?g|gif|webp)$/i.test(path.extname(selectedPath))) {
@@ -185,6 +207,7 @@ function createPlugin() {
                         requestId,
                         ...copyResult,
                         optionPlugin: localPlugins,
+                        selectedFiles,
                         selectedFileIsDirectory,
                         selectedFileDataUrl,
                     });

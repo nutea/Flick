@@ -102,7 +102,42 @@ test('SuperX reads an Explorer selection without touching the clipboard', async 
   assert.equal(result.status, 'selected');
   assert.equal(result.source, 'shell');
   assert.equal(result.fileUrl, 'D:\\work\\selected.txt');
+  assert.deepEqual(result.fileUrls, ['D:\\work\\selected.txt']);
   assert.equal(copyCalls, 0);
+});
+
+test('SuperX preserves multiple selected file paths in order', async () => {
+  const clipboard = createClipboard('unchanged');
+  const result = await getSelectedContent(clipboard.api, async () => {}, {
+    readSelectedText: async () => '',
+    readSelectedFilePaths: async () => [
+      '/Users/NUT/Desktop/a.png',
+      '/Users/NUT/Desktop/b.png',
+      '/Users/NUT/Desktop/a.png',
+      '',
+    ],
+    getClipboardChangeToken: () => 12,
+  });
+
+  assert.equal(result.status, 'selected');
+  assert.equal(result.fileUrl, '/Users/NUT/Desktop/a.png');
+  assert.deepEqual(result.fileUrls, [
+    '/Users/NUT/Desktop/a.png',
+    '/Users/NUT/Desktop/b.png',
+  ]);
+});
+
+test('SuperX bounds oversized file selections before IPC', async () => {
+  const clipboard = createClipboard('unchanged');
+  const paths = Array.from({ length: 120 }, (_, index) => `/tmp/${index}.txt`);
+  const result = await getSelectedContent(clipboard.api, async () => {}, {
+    readSelectedText: async () => '',
+    readSelectedFilePaths: async () => paths,
+    getClipboardChangeToken: () => 12,
+  });
+
+  assert.equal(result.fileUrls.length, 100);
+  assert.equal(result.fileUrls[99], '/tmp/99.txt');
 });
 
 test('SuperX waits for an asynchronous copy update', async () => {
@@ -167,7 +202,12 @@ test('SuperX reports a timeout when no selection is copied', async () => {
     pollIntervalMs: 4,
   });
 
-  assert.deepEqual(result, { status: 'timeout', text: '', fileUrl: '' });
+  assert.deepEqual(result, {
+    status: 'timeout',
+    text: '',
+    fileUrl: '',
+    fileUrls: [],
+  });
 });
 
 test('SuperX bounds a stalled platform file-selection provider', async () => {

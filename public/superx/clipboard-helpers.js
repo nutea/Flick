@@ -119,8 +119,9 @@ function isDirectorySelection(selectedPath, statIsDirectory, platform = process.
 }
 function snapshotClipboard(clipboard) {
     const text = clipboard.readText('clipboard') || '';
-    const raw = getFilePathFromClipboard(clipboard)[0];
-    const pathStr = typeof raw === 'string' ? raw : '';
+    const pathStr = getFilePathFromClipboard(clipboard)
+        .filter((entry) => typeof entry === 'string' && !!entry)
+        .join('\0');
     const im = clipboard.readImage('clipboard');
     const hasImage = !!(im && typeof im.isEmpty === 'function' && !im.isEmpty());
     return { text, pathStr, hasImage };
@@ -128,17 +129,22 @@ function snapshotClipboard(clipboard) {
 function clipboardSnapsEqual(a, b) {
     return (a.text === b.text && a.pathStr === b.pathStr && a.hasImage === b.hasImage);
 }
-/** 从当前剪贴板解析为面板用的 text / fileUrl（路径优先） */
+const MAX_SELECTED_FILES = 100;
+function normalizeSelectedPaths(paths) {
+    return Array.from(new Set(paths
+        .filter((value) => typeof value === 'string')
+        .map((value) => value.trim())
+        .filter(Boolean))).slice(0, MAX_SELECTED_FILES);
+}
+/** 从当前剪贴板解析为面板用的 text / 文件路径（路径优先） */
 function readClipboardPayload(clipboard) {
     const text = clipboard.readText('clipboard') || '';
-    const raw = getFilePathFromClipboard(clipboard)[0];
-    let fileUrl = '';
-    if (typeof raw === 'string') {
-        fileUrl = raw;
-    }
+    const fileUrls = normalizeSelectedPaths(getFilePathFromClipboard(clipboard));
+    const fileUrl = fileUrls[0] || '';
     return {
         text: fileUrl ? '' : text,
         fileUrl,
+        fileUrls,
     };
 }
 const wait = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
@@ -175,15 +181,18 @@ async function getSelectedContent(clipboard, simulateCopy, options = {}) {
             source: 'accessibility',
             text: directText,
             fileUrl: '',
+            fileUrls: [],
         };
     }
-    const firstPath = selectedPaths.find(Boolean);
+    const fileUrls = normalizeSelectedPaths(selectedPaths);
+    const firstPath = fileUrls[0];
     if (firstPath) {
         return {
             status: 'selected',
             source: 'shell',
             text: '',
             fileUrl: firstPath,
+            fileUrls,
         };
     }
     const getChangeToken = options.getClipboardChangeToken;
@@ -193,7 +202,7 @@ async function getSelectedContent(clipboard, simulateCopy, options = {}) {
         await simulateCopy();
     }
     catch {
-        return { status: 'none', text: '', fileUrl: '' };
+        return { status: 'none', text: '', fileUrl: '', fileUrls: [] };
     }
     const timeoutMs = (_d = options.copyTimeoutMs) !== null && _d !== void 0 ? _d : 250;
     const pollIntervalMs = Math.max(4, (_e = options.pollIntervalMs) !== null && _e !== void 0 ? _e : 10);
@@ -211,7 +220,7 @@ async function getSelectedContent(clipboard, simulateCopy, options = {}) {
             const payload = readClipboardPayload(clipboard);
             // Some applications empty the clipboard and publish the new formats in
             // separate steps. Do not treat the intermediate empty state as a copy.
-            if (!payload.text && !payload.fileUrl) {
+            if (!payload.text && payload.fileUrls.length === 0) {
                 await wait(pollIntervalMs);
                 continue;
             }
@@ -223,7 +232,7 @@ async function getSelectedContent(clipboard, simulateCopy, options = {}) {
         }
         await wait(pollIntervalMs);
     }
-    return { status: 'timeout', text: '', fileUrl: '' };
+    return { status: 'timeout', text: '', fileUrl: '', fileUrls: [] };
 }
 /**
  * Electron `screen.getCursorScreenPoint()` 返回的已是 DIP，与 `BrowserWindow.setPosition` / `getBounds`

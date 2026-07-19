@@ -1,10 +1,6 @@
 <template>
-  <div class="local-plugin">
-    <div class="local-plugin__header">
-      <h3 class="local-plugin__title">
-        {{ $t('feature.market.localPlugin') }}
-      </h3>
-
+  <div class="local-plugin settings-page">
+    <div class="local-plugin__list settings-card">
       <div class="local-plugin__action">
         <a-button type="primary" @click="visible = true">
           <template #icon><UploadOutlined /></template>
@@ -18,19 +14,19 @@
           :cancel-text="$t('feature.localPlugin.deleteLocalPluginCancelText')"
           @confirm="handleDeleteClick"
         >
-          <a-button type="danger">
+          <a-button danger :disabled="!pluginList.length">
             <template #icon><DeleteOutlined /></template>
             {{ $t('feature.localPlugin.deleteLocalPluginButton') }}
           </a-button>
         </a-popconfirm>
       </div>
-    </div>
-    <div class="local-plugin__list">
-      <PluginList
-        v-if="pluginList && !!pluginList.length"
-        @downloadSuccess="downloadSuccess"
-        :list="pluginList"
-      />
+      <div class="local-plugin__content">
+        <PluginList
+          v-if="pluginList && !!pluginList.length"
+          :list="pluginList"
+        />
+        <a-empty v-else :description="$t('feature.localPlugin.empty')" />
+      </div>
     </div>
     <a-modal
       v-model:visible="visible"
@@ -38,6 +34,7 @@
       :title="$t('feature.localPlugin.title')"
       :ok-text="$t('feature.localPlugin.okText')"
       :cancel-text="$t('feature.localPlugin.cancelText')"
+      :confirm-loading="importing"
       @ok="handleOk"
       @cancel="handleCancel"
     >
@@ -100,6 +97,7 @@ import PluginList from './plugin-list.vue';
 import { useStore } from 'vuex';
 
 const visible = ref(false);
+const importing = ref(false);
 const store = useStore();
 const { proxy } = getCurrentInstance();
 const pluginList = computed(() => {
@@ -125,21 +123,44 @@ const handleOk = () => {
     readPlguinJsonByUrl();
   }
 };
+const normalizeConfig = (json) => {
+  if (!Array.isArray(json)) throw new Error('INVALID_CONFIG');
+  return json;
+};
+
+const showImportError = () =>
+  message.error(proxy.$t('feature.localPlugin.importParseError'));
+
 const readPlguinJsonByFile = () => {
+  importing.value = true;
   const file = formState.importFile[0];
   const reader = new FileReader();
   reader.readAsText(file.originFileObj);
   reader.onload = () => {
-    const json = JSON.parse(reader.result);
-    configFetchSuccess(json);
+    try {
+      configFetchSuccess(normalizeConfig(JSON.parse(reader.result)));
+    } catch {
+      showImportError();
+    } finally {
+      importing.value = false;
+    }
+  };
+  reader.onerror = () => {
+    importing.value = false;
+    showImportError();
   };
 };
-const readPlguinJsonByUrl = () => {
-  fetch(formState.importUrl)
-    .then((response) => response.json())
-    .then((json) => {
-      configFetchSuccess(json);
-    });
+const readPlguinJsonByUrl = async () => {
+  importing.value = true;
+  try {
+    const response = await fetch(formState.importUrl);
+    if (!response.ok) throw new Error('FETCH_FAILED');
+    configFetchSuccess(normalizeConfig(await response.json()));
+  } catch {
+    showImportError();
+  } finally {
+    importing.value = false;
+  }
 };
 
 // onMounted(() => {
@@ -170,27 +191,32 @@ const handleDeleteClick = async () => {
 
 <style lang="less" scoped>
 .local-plugin {
-  &__header {
-    display: flex;
-    flex-direction: row;
-    align-items: center;
-    justify-content: space-between;
-    border-bottom: 1px solid var(--color-border-light);
-    padding-bottom: 16px;
-    margin-bottom: 16px;
-  }
   &__list {
-    background-color: #fff;
-  }
-  &__title {
-    font-weight: 500;
-    color: var(--color-text-primary);
+    min-height: calc(100vh - 32px);
+    background-color: var(--color-body-bg);
   }
   &__action {
+    min-height: 56px;
+    padding: 10px 14px;
+    box-sizing: border-box;
     display: flex;
     flex-direction: row;
     align-items: center;
+    justify-content: flex-end;
     gap: 16px;
+    border-bottom: 1px solid var(--color-border-light);
+  }
+  &__content {
+    padding: 20px;
+  }
+}
+
+@media (max-width: 760px) {
+  .local-plugin__action {
+    flex-wrap: wrap;
+    .ant-btn {
+      flex: 1;
+    }
   }
 }
 </style>

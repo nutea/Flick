@@ -119,10 +119,25 @@ test('image protocol is installed for the default and every plugin session', () 
 
   assert.match(service, /registerSchemesAsPrivileged/);
   assert.match(service, /targetSession\.protocol\.handle/);
+  assert.match(service, /await app\.getFileIcon/);
+  assert.match(service, /icon\.toPNG\(\)/);
   assert.match(service, /WeakSet<Session>/);
   assert.match(entry, /installImageProtocol\(session\.defaultSession\)/);
   assert.match(runner, /installImageProtocol\(ses\)/);
   assert.doesNotMatch(mainBrowser, /interceptFileProtocol/);
+});
+
+test('Rubick compatibility getFileIcon remains synchronous for img src', () => {
+  const preload = fs.readFileSync(
+    path.join(root, 'public', 'preload.js'),
+    'utf8'
+  );
+
+  assert.match(preload, /getFileIcon:\s*\(path\)\s*=>\s*toFileIconUrl\(path\)/);
+  assert.doesNotMatch(
+    preload,
+    /getFileIcon:\s*\(path\)\s*=>\s*ipcInvoke\('getFileIcon'/
+  );
 });
 
 test('feature plugin images consume normalized logoUrl only', () => {

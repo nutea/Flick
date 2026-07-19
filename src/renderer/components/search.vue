@@ -30,7 +30,7 @@
         />
       </button>
       <div class="select-tag" v-show="currentPlugin.cmd">
-        {{ currentPlugin.cmd }}
+        {{ currentPluginDisplayLabel }}
       </div>
       <button
         v-if="currentPlugin.cmd"
@@ -147,6 +147,15 @@ const props = withDefaults(
   }
 );
 
+const currentPluginDisplayLabel = computed(() => {
+  const pluginName =
+    props.currentPlugin.originName || props.currentPlugin.name || '';
+  if (pluginName === 'flick-system-feature') {
+    return text('设置中心', 'Settings');
+  }
+  return props.currentPlugin.cmd;
+});
+
 const logoLoadFailed = ref(false);
 const defaultLogoUrl = config.value.perf.custom.logoUrl;
 const searchLogoUrl = computed(() =>
@@ -195,7 +204,7 @@ const emit = defineEmits([
 ]);
 
 const keydownEvent = (e, key: string) => {
-  key !== 'space' && e.preventDefault();
+  e.preventDefault();
   const { ctrlKey, shiftKey, altKey, metaKey } = e;
   const modifiers: Array<string> = [];
   ctrlKey && modifiers.push('control');
@@ -221,11 +230,6 @@ const keydownEvent = (e, key: string) => {
       break;
     case 'enter':
       if (runPluginDisable) return;
-      emit('choosePlugin');
-      break;
-    case 'space':
-      if (runPluginDisable || !config.value.perf.common.space) return;
-      e.preventDefault();
       emit('choosePlugin');
       break;
     default:
@@ -290,7 +294,6 @@ const handleKeydown = (e) => {
     ArrowDown: 'down',
     ArrowUp: 'up',
     Enter: 'enter',
-    ' ': 'space',
   };
   const key = e.key === 'Tab' ? (e.shiftKey ? 'up' : 'down') : keyMap[e.key];
   if (key) keydownEvent(e, key);

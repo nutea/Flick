@@ -2,6 +2,7 @@ import { createApp } from 'vue';
 import {
   ConfigProvider,
   Button,
+  Checkbox,
   Divider,
   Row,
   Col,
@@ -25,6 +26,9 @@ import {
   Upload,
   Result,
   Spin,
+  Skeleton,
+  Empty,
+  Tag,
 } from 'ant-design-vue';
 import App from './App.vue';
 import router from './router';
@@ -33,6 +37,7 @@ import './assets/ant-reset.less';
 import 'ant-design-vue/es/alert/style/css';
 import 'ant-design-vue/es/avatar/style/css';
 import 'ant-design-vue/es/button/style/css';
+import 'ant-design-vue/es/checkbox/style/css';
 import 'ant-design-vue/es/collapse/style/css';
 import 'ant-design-vue/es/divider/style/css';
 import 'ant-design-vue/es/drawer/style/css';
@@ -50,7 +55,10 @@ import 'ant-design-vue/es/radio/style/css';
 import 'ant-design-vue/es/result/style/css';
 import 'ant-design-vue/es/select/style/css';
 import 'ant-design-vue/es/spin/style/css';
+import 'ant-design-vue/es/skeleton/style/css';
+import 'ant-design-vue/es/empty/style/css';
 import 'ant-design-vue/es/switch/style/css';
+import 'ant-design-vue/es/tag/style/css';
 import 'ant-design-vue/es/tooltip/style/css';
 import 'ant-design-vue/es/typography/style/css';
 import 'ant-design-vue/es/upload/style/css';
@@ -79,6 +87,7 @@ createApp(App)
   .use(registerI18n)
   .use(store)
   .use(Button)
+  .use(Checkbox)
   .use(Divider)
   .use(Row)
   .use(Col)
@@ -99,6 +108,9 @@ createApp(App)
   .use(Modal)
   .use(Result)
   .use(Spin)
+  .component('ASkeleton', Skeleton)
+  .component('AEmpty', Empty)
+  .use(Tag)
   .use(Upload)
   .use(Popconfirm)
   .use(Typography)

@@ -90,3 +90,46 @@ test('main-renderer plugin launches never await JavaScript on their blocked send
     /if \(!openedFromMainRenderer\)\s*\{[\s\S]*?await window\.webContents\.executeJavaScript/
   );
 });
+
+test('homepage space input never triggers the selected result', () => {
+  const searchSource = readFileSync(
+    path.join(process.cwd(), 'src/renderer/components/search.vue'),
+    'utf8'
+  );
+  const settingsSource = readFileSync(
+    path.join(process.cwd(), 'apps/feature/src/views/settings/index.vue'),
+    'utf8'
+  );
+
+  assert.doesNotMatch(searchSource, /['"] ['"]:\s*['"]space['"]/);
+  assert.doesNotMatch(searchSource, /case ['"]space['"]/);
+  assert.doesNotMatch(settingsSource, /common\.space|spaceExec/);
+});
+
+test('empty search results never fall back to a recent plugin on Enter', () => {
+  const appSource = readFileSync(
+    path.join(process.cwd(), 'src/renderer/App.vue'),
+    'utf8'
+  );
+  const choosePluginBlock = appSource.slice(
+    appSource.indexOf('const choosePlugin ='),
+    appSource.indexOf('const clearSearchValue =')
+  );
+
+  assert.match(choosePluginBlock, /recentPluginNavigationEnabled\.value/);
+  assert.doesNotMatch(
+    choosePluginBlock,
+    /plugin \|\| visibleHistory\.value\[currentSelect\.value\]/
+  );
+});
+
+test('keyboard result navigation scrolls the selected item into view', () => {
+  const resultSource = readFileSync(
+    path.join(process.cwd(), 'src/renderer/components/result.vue'),
+    'utf8'
+  );
+
+  assert.match(resultSource, /:data-result-index="index"/);
+  assert.match(resultSource, /props\.keyboardNavigation/);
+  assert.match(resultSource, /container\.scrollTop \+=/);
+});

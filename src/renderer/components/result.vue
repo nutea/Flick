@@ -1,5 +1,6 @@
 <template>
   <div
+    ref="optionsContainer"
     v-show="!currentPlugin.name"
     :class="['options', { 'keyboard-navigation': keyboardNavigation }]"
   >
@@ -61,6 +62,7 @@
     >
       <template #renderItem="{ item, index }">
         <a-list-item
+          :data-result-index="index"
           @click="() => item.click()"
           @mousemove="emit('selectIndex', index)"
           :class="currentSelect === index ? 'active op-item' : 'op-item'"
@@ -94,7 +96,7 @@
 </template>
 
 <script lang="ts" setup>
-import { computed, ref, toRaw } from 'vue';
+import { computed, nextTick, ref, toRaw, watch } from 'vue';
 import { SearchOutlined } from '@ant-design/icons-vue';
 import localConfig from '../confOp';
 import { recentPluginItemKey } from '../utils/recentPluginNavigation';
@@ -176,6 +178,33 @@ const renderDesc = (desc = '') => {
 };
 
 const displayOptions = computed(() => props.options.slice(0, 20));
+const optionsContainer = ref<HTMLElement | null>(null);
+
+watch(
+  () => [
+    props.currentSelect,
+    props.keyboardNavigation,
+    displayOptions.value.length,
+  ],
+  async () => {
+    if (!props.keyboardNavigation || !displayOptions.value.length) return;
+    await nextTick();
+    const container = optionsContainer.value;
+    const item = container?.querySelector<HTMLElement>(
+      `[data-result-index="${props.currentSelect}"]`
+    );
+    if (!container || !item) return;
+
+    const containerRect = container.getBoundingClientRect();
+    const itemRect = item.getBoundingClientRect();
+    if (itemRect.top < containerRect.top) {
+      container.scrollTop += itemRect.top - containerRect.top;
+    } else if (itemRect.bottom > containerRect.bottom) {
+      container.scrollTop += itemRect.bottom - containerRect.bottom;
+    }
+  },
+  { flush: 'post' }
+);
 
 const resultAnnouncement = computed(() => {
   if (!props.searchValue && !props.clipboardFile.length) return '';

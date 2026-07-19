@@ -2,6 +2,7 @@ import assert from 'node:assert/strict';
 import test from 'node:test';
 import {
   imageProtocolSource,
+  toFileIconProtocolUrl,
   toImageProtocolUrl,
 } from '../src/common/utils/imageProtocol';
 
@@ -27,6 +28,13 @@ test('image protocol round-trips Windows paths with spaces and unicode', () => {
     imageProtocolSource('image://D:\\Project\\rubick\\public\\logo.png'),
     'D:\\Project\\rubick\\public\\logo.png'
   );
+});
+
+test('legacy plugins receive a synchronous system-file-icon URL', () => {
+  const source = 'C:\\文档目录\\with space\\README.md';
+  const url = toFileIconProtocolUrl(source);
+  assert.equal(url, `image://file-icon/?src=${encodeURIComponent(source)}`);
+  assert.equal(imageProtocolSource(url), source);
 });
 
 test('SuperX leaves renderer-safe plugin logo sources unchanged', () => {

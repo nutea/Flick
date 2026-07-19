@@ -11,3 +11,17 @@ export function executePluginSubInputChangeHook(
     }`
   );
 }
+
+/** 将新的插件启动参数完整转发给已经存在的单例分离窗口。 */
+export function executePluginEnterHook(
+  wc: Electron.WebContents | undefined | null,
+  ext: unknown
+): void {
+  if (!wc || wc.isDestroyed() || ext == null) return;
+  const payload = JSON.stringify(ext);
+  void wc.executeJavaScript(
+    `if (window.flick && window.flick.hooks && typeof window.flick.hooks.onPluginEnter === 'function') {
+      try { window.flick.hooks.onPluginEnter(${payload}); } catch (e) {}
+    }`
+  );
+}

@@ -3,6 +3,7 @@ import { contextBridge, ipcRenderer } from 'electron';
 const ALLOWED_DOCUMENT_IDS = new Set([
   'super-panel-user-plugins',
   'flick-system-super-panel-preferences',
+  'super-panel-match-rules',
 ]);
 
 function sendSync<T>(type: string, data?: unknown): T {

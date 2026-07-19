@@ -127,6 +127,8 @@ const market = {
     ipcRenderer.invoke('feature:delete-plugin', toIpcPayload(plugin)),
   refreshPlugin: (plugin: unknown) =>
     ipcRenderer.invoke('feature:refresh-plugin', toIpcPayload(plugin)),
+  testSourceConnection: (config: unknown) =>
+    ipcRenderer.invoke('feature:test-source-connection', toIpcPayload(config)),
   addLocalStartPlugin: (plugin: unknown) =>
     ipcRenderer.send('msg-trigger', {
       type: 'addLocalStartPlugin',

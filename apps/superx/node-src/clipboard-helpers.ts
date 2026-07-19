@@ -135,8 +135,9 @@ export function isDirectorySelection(
 
 export function snapshotClipboard(clipboard: ClipboardApi): ClipboardSnap {
   const text = clipboard.readText('clipboard') || '';
-  const raw = getFilePathFromClipboard(clipboard)[0];
-  const pathStr = typeof raw === 'string' ? raw : '';
+  const pathStr = getFilePathFromClipboard(clipboard)
+    .filter((entry): entry is string => typeof entry === 'string' && !!entry)
+    .join('\0');
   const im = clipboard.readImage('clipboard');
   const hasImage = !!(im && typeof im.isEmpty === 'function' && !im.isEmpty());
   return { text, pathStr, hasImage };
@@ -148,20 +149,32 @@ function clipboardSnapsEqual(a: ClipboardSnap, b: ClipboardSnap): boolean {
   );
 }
 
-/** 从当前剪贴板解析为面板用的 text / fileUrl（路径优先） */
+const MAX_SELECTED_FILES = 100;
+
+function normalizeSelectedPaths(paths: unknown[]): string[] {
+  return Array.from(
+    new Set(
+      paths
+        .filter((value): value is string => typeof value === 'string')
+        .map((value) => value.trim())
+        .filter(Boolean)
+    )
+  ).slice(0, MAX_SELECTED_FILES);
+}
+
+/** 从当前剪贴板解析为面板用的 text / 文件路径（路径优先） */
 export function readClipboardPayload(clipboard: ClipboardApi): {
   text: string;
   fileUrl: string;
+  fileUrls: string[];
 } {
   const text = clipboard.readText('clipboard') || '';
-  const raw = getFilePathFromClipboard(clipboard)[0];
-  let fileUrl = '';
-  if (typeof raw === 'string') {
-    fileUrl = raw;
-  }
+  const fileUrls = normalizeSelectedPaths(getFilePathFromClipboard(clipboard));
+  const fileUrl = fileUrls[0] || '';
   return {
     text: fileUrl ? '' : text,
     fileUrl,
+    fileUrls,
   };
 }
 
@@ -171,11 +184,13 @@ export type SelectedContentResult =
       source: 'accessibility' | 'shell' | 'clipboard-copy';
       text: string;
       fileUrl: string;
+      fileUrls: string[];
     }
   | {
       status: 'none' | 'timeout';
       text: '';
       fileUrl: '';
+      fileUrls: [];
     };
 
 export interface SelectedContentOptions {
@@ -237,16 +252,19 @@ export async function getSelectedContent(
       source: 'accessibility',
       text: directText,
       fileUrl: '',
+      fileUrls: [],
     };
   }
 
-  const firstPath = selectedPaths.find(Boolean);
+  const fileUrls = normalizeSelectedPaths(selectedPaths);
+  const firstPath = fileUrls[0];
   if (firstPath) {
     return {
       status: 'selected',
       source: 'shell',
       text: '',
       fileUrl: firstPath,
+      fileUrls,
     };
   }
 
@@ -257,7 +275,7 @@ export async function getSelectedContent(
   try {
     await simulateCopy();
   } catch {
-    return { status: 'none', text: '', fileUrl: '' };
+    return { status: 'none', text: '', fileUrl: '', fileUrls: [] };
   }
 
   const timeoutMs = options.copyTimeoutMs ?? 250;
@@ -277,7 +295,7 @@ export async function getSelectedContent(
       const payload = readClipboardPayload(clipboard);
       // Some applications empty the clipboard and publish the new formats in
       // separate steps. Do not treat the intermediate empty state as a copy.
-      if (!payload.text && !payload.fileUrl) {
+      if (!payload.text && payload.fileUrls.length === 0) {
         await wait(pollIntervalMs);
         continue;
       }
@@ -290,7 +308,7 @@ export async function getSelectedContent(
     await wait(pollIntervalMs);
   }
 
-  return { status: 'timeout', text: '', fileUrl: '' };
+  return { status: 'timeout', text: '', fileUrl: '', fileUrls: [] };
 }
 
 /**

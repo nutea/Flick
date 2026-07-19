@@ -187,7 +187,11 @@ watch(
 );
 
 const changeIndex = (index) => {
-  const len = visibleOptions.value.length || visibleHistory.value.length;
+  const len = visibleOptions.value.length
+    ? visibleOptions.value.length
+    : recentPluginNavigationEnabled.value
+      ? visibleHistory.value.length
+      : 0;
   if (!len) return;
   keyboardNavigation.value = true;
   if (currentSelect.value + index > len - 1) {
@@ -200,7 +204,11 @@ const changeIndex = (index) => {
 };
 
 const setCurrentSelect = (index: number) => {
-  const len = visibleOptions.value.length || visibleHistory.value.length;
+  const len = visibleOptions.value.length
+    ? visibleOptions.value.length
+    : recentPluginNavigationEnabled.value
+      ? visibleHistory.value.length
+      : 0;
   if (!Number.isInteger(index) || index < 0 || index >= len) return;
   keyboardNavigation.value = false;
   currentSelect.value = index;
@@ -210,7 +218,7 @@ const openMenu = (ext) => {
   openPlugin({
     ...toRaw(menuPluginInfo.value),
     feature: menuPluginInfo.value.features[0],
-    cmd: '插件市场',
+    cmd: '设置中心',
     ext,
     click: () => openMenu(ext),
   });
@@ -224,7 +232,11 @@ const choosePlugin = async (plugin) => {
     currentChoose?.click();
   } else {
     const localPlugins = window.flick.getLocalPlugins();
-    const currentChoose = plugin || visibleHistory.value[currentSelect.value];
+    const currentChoose =
+      plugin ||
+      (recentPluginNavigationEnabled.value
+        ? visibleHistory.value[currentSelect.value]
+        : undefined);
     if (!currentChoose) return;
     let hasRemove = true;
     if (currentChoose.pluginType === 'app') {

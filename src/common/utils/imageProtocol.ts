@@ -1,4 +1,5 @@
 const IMAGE_PROTOCOL_BASE = 'image://local/';
+const FILE_ICON_PROTOCOL_BASE = 'image://file-icon/';
 
 export function toImageProtocolUrl(raw: unknown): string {
   const value = String(raw || '').trim();
@@ -13,6 +14,13 @@ export function toImageProtocolUrl(raw: unknown): string {
   return isLocal
     ? `${IMAGE_PROTOCOL_BASE}?src=${encodeURIComponent(value)}`
     : value;
+}
+
+export function toFileIconProtocolUrl(raw: unknown): string {
+  const value = String(raw || '').trim();
+  return value
+    ? `${FILE_ICON_PROTOCOL_BASE}?src=${encodeURIComponent(value)}`
+    : '';
 }
 
 export function imageProtocolSource(requestUrl: string): string | null {

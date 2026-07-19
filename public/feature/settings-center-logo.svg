@@ -1,0 +1,24 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 256 256" role="img" aria-label="Flick 设置中心">
+  <defs>
+    <linearGradient id="gear-fill" x1="54" y1="38" x2="205" y2="218" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#8074FF"/>
+      <stop offset=".52" stop-color="#6657EA"/>
+      <stop offset="1" stop-color="#493AC2"/>
+    </linearGradient>
+    <mask id="gear-cutout">
+      <rect width="256" height="256" fill="#fff"/>
+      <circle cx="128" cy="128" r="35" fill="#000"/>
+    </mask>
+  </defs>
+  <g fill="url(#gear-fill)" mask="url(#gear-cutout)">
+    <circle cx="128" cy="128" r="76"/>
+    <rect class="gear-tooth" x="111" y="14" width="34" height="58" rx="11"/>
+    <rect class="gear-tooth" x="111" y="14" width="34" height="58" rx="11" transform="rotate(45 128 128)"/>
+    <rect class="gear-tooth" x="111" y="14" width="34" height="58" rx="11" transform="rotate(90 128 128)"/>
+    <rect class="gear-tooth" x="111" y="14" width="34" height="58" rx="11" transform="rotate(135 128 128)"/>
+    <rect class="gear-tooth" x="111" y="14" width="34" height="58" rx="11" transform="rotate(180 128 128)"/>
+    <rect class="gear-tooth" x="111" y="14" width="34" height="58" rx="11" transform="rotate(225 128 128)"/>
+    <rect class="gear-tooth" x="111" y="14" width="34" height="58" rx="11" transform="rotate(270 128 128)"/>
+    <rect class="gear-tooth" x="111" y="14" width="34" height="58" rx="11" transform="rotate(315 128 128)"/>
+  </g>
+</svg>

@@ -1,5 +1,12 @@
 <template>
   <div class="user-info">
+    <div class="save-status" role="status" aria-live="polite">
+      {{
+        saved
+          ? $t('feature.settings.account.saved')
+          : $t('feature.settings.account.saving')
+      }}
+    </div>
     <div class="settings-container">
       <div class="setting-item">
         <div class="title">
@@ -48,7 +55,11 @@
             {{ $t('feature.settings.account.logo') }}
           </div>
           <div class="img-container">
-            <img class="custom-img" :src="custom.logoUrl" />
+            <img
+              class="custom-img"
+              :src="custom.logoUrl"
+              :alt="$t('feature.settings.account.logo')"
+            />
             <a-button
               class="btn"
               @click="changeLogo"
@@ -77,6 +88,7 @@ const state = reactive({
 const { perf } = localConfig.getConfig();
 
 const theme = ref(perf.custom.theme);
+const saved = ref(true);
 
 state.custom = perf.custom || {};
 
@@ -94,15 +106,23 @@ const setConfig = debounce(() => {
     )
   );
   window.market.reregisterShortcuts();
+  saved.value = true;
 }, 500);
 
-watch(state, setConfig);
+watch(
+  state,
+  () => {
+    saved.value = false;
+    setConfig();
+  },
+  { deep: true }
+);
 const { custom } = toRefs(state);
 
 const changeLogo = () => {
   const [logoPath] = window.flick.showOpenDialog({
     title: '请选择 logo 路径',
-    filters: [{ name: 'images', extensions: ['png'] }],
+    filters: [{ name: 'images', extensions: ['png', 'jpg', 'jpeg', 'webp'] }],
     properties: ['openFile'],
   });
   if (!logoPath) return;
@@ -160,7 +180,7 @@ const changeTheme = () => {
   }
 }
 .img-container {
-  width: 300px;
+  width: min(300px, 100%);
   .btn {
     margin-left: 10px;
     font-size: 12px;
@@ -169,10 +189,19 @@ const changeTheme = () => {
 .custom-img {
   width: 60px;
   height: 60px;
+  object-fit: cover;
+  border-radius: 14px;
+  border: 1px solid var(--color-border-light);
+}
+.save-status {
+  margin: -4px 0 12px;
+  color: var(--color-text-desc);
+  font-size: 12px;
+  text-align: right;
 }
 .footer-btn {
   text-align: right;
-  border-top: 1px dashed #ddd;
+  border-top: 1px dashed var(--color-border-strong);
   padding-top: 12px;
 }
 </style>

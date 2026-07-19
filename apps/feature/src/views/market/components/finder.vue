@@ -1,39 +1,48 @@
 <template>
-  <div class="finder">
-    <a-alert
-      v-if="data.unavailable"
-      type="warning"
-      show-icon
-      message="插件市场数据源暂不可用，已安装插件仍可在“自定义插件”中管理。"
-      style="margin-bottom: 16px"
-    />
-    <Carousel :itemsToShow="2" :transition="500">
-      <Slide :key="index" v-for="(banner, index) in data.banners || []">
-        <img
-          class="carousel__item"
-          @click="jumpTo(banner.link)"
-          :src="banner.src"
-        />
-      </Slide>
-    </Carousel>
-    <a-divider />
-    <PluginList
-      v-if="must && !!must.length"
-      @downloadSuccess="downloadSuccess"
-      :title="$t('feature.market.finder.must')"
-      :list="must"
-    />
-    <PluginList
-      v-if="recommend && !!recommend.length"
-      @downloadSuccess="downloadSuccess"
-      :title="$t('feature.market.finder.recommended')"
-      :list="recommend"
-    />
-    <PluginList
-      v-if="newList && !!newList.length"
-      :title="$t('feature.market.finder.lastUpdated')"
-      :list="newList"
-    />
+  <div class="finder settings-page">
+    <div class="market-content settings-card">
+      <a-alert
+        v-if="data.unavailable"
+        type="warning"
+        show-icon
+        message="插件市场数据源暂不可用，已安装插件仍可在“已安装”中管理。"
+        style="margin-bottom: 16px"
+      />
+      <a-skeleton v-if="loading" active :paragraph="{ rows: 8 }" />
+      <Carousel
+        v-else-if="data.banners?.length"
+        :itemsToShow="2"
+        :transition="500"
+      >
+        <Slide :key="index" v-for="(banner, index) in data.banners || []">
+          <img
+            class="carousel__item"
+            @click="jumpTo(banner.link)"
+            :src="banner.src"
+          />
+        </Slide>
+      </Carousel>
+      <a-empty
+        v-if="!loading && !data.unavailable && !hasContent"
+        description="插件市场暂无内容"
+      />
+      <a-divider />
+      <PluginList
+        v-if="must && !!must.length"
+        :title="$t('feature.market.finder.must')"
+        :list="must"
+      />
+      <PluginList
+        v-if="recommend && !!recommend.length"
+        :title="$t('feature.market.finder.recommended')"
+        :list="recommend"
+      />
+      <PluginList
+        v-if="newList && !!newList.length"
+        :title="$t('feature.market.finder.lastUpdated')"
+        :list="newList"
+      />
+    </div>
   </div>
 </template>
 
@@ -48,11 +57,20 @@ import { useStore } from 'vuex';
 const store = useStore();
 const totalPlugins = computed(() => store.state.totalPlugins);
 
-const data = ref([]);
+const data = ref({});
+const loading = ref(true);
 
 onBeforeMount(async () => {
-  data.value = await request.getFinderDetail();
+  try {
+    data.value = await request.getFinderDetail();
+  } finally {
+    loading.value = false;
+  }
 });
+
+const hasContent = computed(
+  () => must.value.length || recommend.value.length || newList.value.length
+);
 
 const must = computed(() => {
   const defaultData = data.value.must || [];
@@ -113,11 +131,16 @@ const newList = computed(() => {
   .ant-divider-horizontal {
     margin: 17px 0;
   }
+  .market-content {
+    padding: 20px;
+  }
 }
 
 .carousel__item {
   cursor: pointer;
   min-height: 180px;
+  aspect-ratio: 16 / 7;
+  object-fit: cover;
   width: 100%;
   background-color: var(--vc-clr-primary);
   color: var(--vc-clr-white);
@@ -142,6 +165,12 @@ const newList = computed(() => {
 .carousel__prev,
 .carousel__next {
   box-sizing: content-box;
-  border: 5px solid white;
+  border: 5px solid var(--color-body-bg);
+}
+
+@media (max-width: 820px) {
+  .carousel__item {
+    min-height: 140px;
+  }
 }
 </style>

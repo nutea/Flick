@@ -4,6 +4,7 @@ const electron_1 = require("electron");
 const ALLOWED_DOCUMENT_IDS = new Set([
     'super-panel-user-plugins',
     'flick-system-super-panel-preferences',
+    'super-panel-match-rules',
 ]);
 function sendSync(type, data) {
     const result = electron_1.ipcRenderer.sendSync('msg-trigger', { type, data });

@@ -2,38 +2,48 @@
   <div class="export-header">
     <a-button
       @click="exportData"
+      :loading="syncing === 'backup'"
+      :disabled="Boolean(syncing && syncing !== 'backup')"
       size="small"
       type="primary"
       style="margin-right: 10px"
     >
-      导出数据
+      备份到 WebDAV
       <template #icon>
         <ExportOutlined />
       </template>
     </a-button>
     <a-button
       @click="importData"
+      :loading="syncing === 'restore'"
+      :disabled="Boolean(syncing && syncing !== 'restore')"
       danger
       size="small"
       style="margin-right: 10px; background-color: var(--color-input-hover)"
     >
-      导入数据
+      从 WebDAV 恢复
       <template #icon>
         <ImportOutlined />
       </template>
     </a-button>
-    <a-button type="link" size="small" @click="showSetting = true">
-      <template #icon>
-        <SettingOutlined />
-      </template>
-    </a-button>
+    <a-tooltip title="WebDAV 账户设置">
+      <a-button
+        type="text"
+        size="small"
+        aria-label="WebDAV 账户设置"
+        @click="showSetting = true"
+      >
+        <template #icon><SettingOutlined /></template>
+      </a-button>
+    </a-tooltip>
   </div>
+  <a-empty v-if="!dataPlugins.length" description="暂无可同步的插件数据" />
   <a-list item-layout="horizontal" :data-source="dataPlugins">
     <template #renderItem="{ item }">
       <a-list-item>
         <template #actions>
           <a
-            v-if="!item.plugin?.isdownload && !item.plugin?.isloading"
+            v-if="item.canDownload && !item.plugin?.isloading"
             key="list-loadmore-edit"
             @click="() => downloadPlugin(item.plugin)"
           >
@@ -53,11 +63,18 @@
             </div>
           </template>
           <template #avatar>
-            <a-avatar shape="square" :src="item.plugin?.logoUrl" />
+            <a-avatar
+              v-if="item.plugin?.logoUrl"
+              shape="square"
+              :src="item.plugin.logoUrl"
+            />
+            <a-avatar v-else shape="square" class="fallback-avatar">
+              <template #icon><AppstoreOutlined /></template>
+            </a-avatar>
           </template>
           <template #description>
             <div style="color: var(--color-text-desc)">
-              <span>{{ item.keys.length }} 份文档</span>
+              <span>{{ item.keys.length }} 项同步数据</span>
             </div>
           </template>
         </a-list-item-meta>
@@ -67,15 +84,19 @@
   <a-drawer
     v-model:visible="open"
     width="400"
-    :closable="false"
-    :title="currentSelect.plugin.pluginName"
+    :closable="true"
+    :title="currentSelect.plugin?.pluginName || '同步数据'"
     placement="right"
     class="exportDrawer"
   >
     <p
       class="key-item"
+      role="button"
+      tabindex="0"
       :key="key"
       @click="() => showDetail(key)"
+      @keydown.enter.prevent="() => showDetail(key)"
+      @keydown.space.prevent="() => showDetail(key)"
       v-for="key in currentSelect.keys"
     >
       {{ key }}
@@ -90,14 +111,14 @@
       color: 'var(--color-text-primary)',
     }"
     :footer="null"
-    :closable="false"
+    :closable="true"
     v-model:visible="show"
   >
     <pre>{{ JSON.stringify(detail, null, 2) }}</pre>
   </a-modal>
   <a-modal
     v-model:visible="showSetting"
-    title="webdav 账户配置"
+    title="WebDAV 账户配置"
     :footer="null"
     class="webdavModel"
   >
@@ -165,6 +186,7 @@ import {
   ExportOutlined,
   ImportOutlined,
   SettingOutlined,
+  AppstoreOutlined,
 } from '@ant-design/icons-vue';
 import { message, Modal } from 'ant-design-vue';
 import { useI18n } from 'vue-i18n';
@@ -176,6 +198,7 @@ const { t } = useI18n();
 const open = ref(false);
 const show = ref(false);
 const showSetting = ref(false);
+const syncing = ref('');
 const currentSelect = ref({ plugin: {} });
 const detail = ref({});
 
@@ -210,11 +233,19 @@ const showDetail = (key) => {
   detail.value = window.flick.db.get(key);
 };
 
-const exportData = () => {
+const exportData = async () => {
   if (!formState.password || !formState.username) {
     return (showSetting.value = true);
   }
-  window.market.dbDump(JSON.parse(JSON.stringify(formState)));
+  syncing.value = 'backup';
+  try {
+    await window.market.dbDump(JSON.parse(JSON.stringify(formState)));
+    message.success('备份任务已提交');
+  } catch {
+    message.error('备份失败，请检查 WebDAV 配置和网络状态');
+  } finally {
+    syncing.value = '';
+  }
 };
 
 const importData = () => {
@@ -222,10 +253,19 @@ const importData = () => {
     return (showSetting.value = true);
   }
   Modal.confirm({
-    title: '导入确认',
-    content: '导入坚果云数据将会覆盖本地数据，是否确认导入？',
-    onOk() {
-      window.market.dbImport(JSON.parse(JSON.stringify(formState)));
+    title: '确认从 WebDAV 恢复？',
+    content: '恢复操作会覆盖本地数据，建议先完成一次备份。是否继续？',
+    async onOk() {
+      syncing.value = 'restore';
+      try {
+        await window.market.dbImport(JSON.parse(JSON.stringify(formState)));
+        message.success('数据恢复任务已提交');
+      } catch {
+        message.error('恢复失败，请检查 WebDAV 配置和网络状态');
+        throw new Error('RESTORE_FAILED');
+      } finally {
+        syncing.value = '';
+      }
     },
   });
 };
@@ -240,29 +280,76 @@ const pluginsData = window.flick.db.get('FLICK_PLUGIN_INFO');
 
 const totalPlugins = computed(() => store.state.totalPlugins);
 
+const SYSTEM_FEATURE_ALIASES = new Set([
+  'flick-system-feature',
+  '设置中心',
+  '偏好设置',
+  '插件市场',
+]);
+
+const normalizePluginDataIndex = (items) => {
+  const grouped = new Map();
+  items.forEach((item) => {
+    if (!item?.name) return;
+    const name = SYSTEM_FEATURE_ALIASES.has(item.name)
+      ? 'flick-system-feature'
+      : item.name;
+    const current = grouped.get(name) || { name, keys: [] };
+    current.keys = Array.from(
+      new Set([
+        ...current.keys,
+        ...(Array.isArray(item.keys) ? item.keys.filter(Boolean) : []),
+      ])
+    );
+    grouped.set(name, current);
+  });
+  return Array.from(grouped.values());
+};
+
 const dataPlugins = computed(() => {
   if (!pluginsData) return [];
-  return pluginsData.data.map((item) => {
+  return normalizePluginDataIndex(pluginsData.data || []).map((item) => {
     let plugin = null;
+    let canDownload = false;
     if (item.name === 'flick-system-feature') {
       plugin = {
+        name: item.name,
         pluginName: '主程序',
+        description: 'Flick 设置、历史记录与功能配置',
         isdownload: true,
-        logo: featureLogoUrl,
+        logoUrl: featureLogoUrl,
       };
     } else if (item.name === 'flick-system-super-panel') {
       plugin = {
+        name: item.name,
         pluginName: '超级面板',
         isdownload: true,
-        logo: featureLogoUrl,
+        logoUrl: featureLogoUrl,
       };
     } else {
-      plugin = totalPlugins.value.find((p) => p.name === item.name);
+      const installedPlugin = (store.state.localPlugins || []).find(
+        (p) => p.name === item.name
+      );
+      const catalogPlugin = (totalPlugins.value || []).find(
+        (p) => p.name === item.name
+      );
+      plugin = installedPlugin || catalogPlugin;
+      canDownload = Boolean(catalogPlugin && !installedPlugin);
+    }
+    if (!plugin) {
+      plugin = {
+        name: item.name,
+        pluginName: `${item.name}（插件未安装）`,
+        description: '保留的历史同步数据',
+        isdownload: true,
+        logoUrl: '',
+      };
     }
     const data = item.keys.map((key) => window.flick.db.get(key));
     return {
       ...item,
       plugin,
+      canDownload,
       data,
     };
   });
@@ -294,9 +381,17 @@ const downloadPlugin = async (plugin) => {
 }
 .export-header {
   width: 100%;
-  height: 40px;
+  min-height: 48px;
+  display: flex;
+  align-items: flex-start;
+  justify-content: flex-end;
+  flex-wrap: wrap;
+  gap: 8px;
   border-bottom: 1px solid var(--color-border-light);
-  text-align: right;
+  margin-bottom: 8px;
+  .ant-btn {
+    margin-right: 0 !important;
+  }
 }
 .key-item {
   cursor: pointer;
@@ -304,6 +399,10 @@ const downloadPlugin = async (plugin) => {
   &:hover {
     color: var(--ant-primary-color);
   }
+}
+.fallback-avatar {
+  background: var(--color-surface-subtle);
+  color: var(--color-text-desc);
 }
 .exportDrawer {
   .ant-drawer-header {

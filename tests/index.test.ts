@@ -1,6 +1,7 @@
 import './db.test';
 import './startup-mode.test';
 import './superx-selection.test';
+import './superx-multifile.test';
 import './superx-plugin-icon.test';
 import './ipc-payload.test';
 import './renderer-architecture.test';
@@ -11,3 +12,5 @@ import './plugin-history.test';
 import './search-input-lifecycle.test';
 import './window-geometry.test';
 import './window-geometry-architecture.test';
+import './market-source.test';
+import './settings-center-navigation.test';

@@ -113,6 +113,7 @@ const {
   loading,
   selectedText,
   selectedFileUrl,
+  selectedFiles,
   selectedFileIsDirectory,
   matchPlugins,
   userPlugins,
@@ -135,6 +136,26 @@ const selectedPreview = computed(() => {
       typeLabel: '文本',
       title: text,
       subtitle: `长度 ${text.length}`,
+    };
+  }
+
+  if (selectedFiles.value.length > 1) {
+    const directoryCount = selectedFiles.value.filter(
+      (file) => file.isDirectory
+    ).length;
+    const fileCount = selectedFiles.value.length - directoryCount;
+    const firstName = selectedFiles.value[0]?.name || '多个项目';
+    const summary = [
+      fileCount ? `${fileCount} 个文件` : '',
+      directoryCount ? `${directoryCount} 个文件夹` : '',
+    ]
+      .filter(Boolean)
+      .join('、');
+    return {
+      kind: 'file',
+      typeLabel: `${selectedFiles.value.length} 个项目`,
+      title: `${firstName} 等`,
+      subtitle: summary,
     };
   }
 
@@ -268,7 +289,7 @@ watch(loading, (isLoading) => {
   if (isLoading) collapseFullTranslation();
 });
 
-watch([selectedText, selectedFileUrl], collapseFullTranslation);
+watch([selectedText, selectedFileUrl, selectedFiles], collapseFullTranslation);
 
 onMounted(() => {
   window.addEventListener('blur', collapseFullTranslation);

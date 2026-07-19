@@ -2,7 +2,6 @@
   <div class="tools">
     <PluginList
       v-if="tools && !!tools.length"
-      @downloadSuccess="downloadSuccess"
       :title="$t('feature.market.searchTool')"
       :list="tools"
     />

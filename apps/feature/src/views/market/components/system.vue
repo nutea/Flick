@@ -2,7 +2,6 @@
   <div class="system">
     <PluginList
       v-if="system && !!system.length"
-      @downloadSuccess="downloadSuccess"
       :title="$t('feature.market.systemTool')"
       :list="system"
     />

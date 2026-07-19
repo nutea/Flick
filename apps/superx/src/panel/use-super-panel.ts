@@ -1,10 +1,21 @@
 import { computed, nextTick, onMounted, onUnmounted, reactive, ref } from 'vue';
 import { flickDb } from './db';
 import { openPlugin } from './open-plugin';
-import { parseCmdRegex } from './cmd-regex';
+import { matchesFileCommand, toPluginFilePayload } from './file-selection';
+import { matchesTextCommand, normalizeSelectionText } from './text-selection';
+import {
+  commandMatchKey,
+  matchRuleOverrideId,
+  normalizeMatchRulesDocument,
+  SUPER_PANEL_MATCH_RULES_DB_ID,
+  type SuperPanelMatchRuleOverride,
+} from '../../../shared/super-panel-match-rules';
 import type {
+  CmdItem,
+  FeatureItem,
   MatchPluginItem,
   OptionPlugin,
+  SelectedFileItem,
   TriggerSuperPanelPayload,
   TranslateState,
   UserPluginItem,
@@ -27,13 +38,6 @@ function basenameWinOrMac(p: string): string {
 function normalizeFsPath(p: string): string {
   return String(p || '')
     .replace(/^file:\/\//, '')
-    .trim();
-}
-
-/** 仅保留可见文本：去掉零宽/方向控制/BOM 等不可见字符，再 trim。 */
-function normalizeVisibleText(raw: string): string {
-  return String(raw || '')
-    .replace(/[\u200B-\u200D\uFEFF\u2060\u00AD\u200E\u200F\u202A-\u202E]/g, '')
     .trim();
 }
 
@@ -61,6 +65,7 @@ export function useSuperPanel() {
     fileUrl: '',
     selectedText: '',
     selectedFileUrl: '',
+    selectedFiles: [] as SelectedFileItem[],
     selectedFileIsDirectory: false,
     autoTranslate: false,
     /** 选中文本超过该长度则不发起翻译（与偏好 `translateMaxChars` 一致，默认 2000） */
@@ -69,6 +74,7 @@ export function useSuperPanel() {
     matchPlugins: [] as MatchPluginItem[],
     userPlugins: [] as UserPluginItem[],
   });
+  let matchRuleOverrides = new Map<string, SuperPanelMatchRuleOverride>();
 
   const commonPlugins: MatchPluginItem[] = [
     {
@@ -95,7 +101,7 @@ export function useSuperPanel() {
       logo: '',
       icon: 'copy',
       click: () => {
-        panel.copyText(normalizeFsPath(state.fileUrl));
+        panel.copyText(state.selectedFiles.map((file) => file.path).join('\n'));
       },
     },
   ];
@@ -107,7 +113,7 @@ export function useSuperPanel() {
       logo: '',
       icon: 'copy',
       click: () => {
-        panel.copyText(normalizeFsPath(state.fileUrl));
+        panel.copyText(state.selectedFiles.map((file) => file.path).join('\n'));
       },
     },
   ];
@@ -122,7 +128,7 @@ export function useSuperPanel() {
 
   function runTranslate(word: string) {
     const mySeq = translateSeq;
-    const visibleWord = normalizeVisibleText(word);
+    const visibleWord = normalizeSelectionText(word);
     const prefs = state.translatePrefs;
     const maxLen = effectiveTranslateMaxChars();
     const allow =
@@ -165,98 +171,131 @@ export function useSuperPanel() {
     state.loading = false;
   }
 
-  function collectTextPlugins(text: string, optionPlugin: OptionPlugin[]) {
+  interface PluginCandidate {
+    key: string;
+    priority: number;
+    order: number;
+    item: MatchPluginItem;
+  }
+
+  function isCommandObject(cmd: string | CmdItem): cmd is CmdItem {
+    return !!cmd && typeof cmd === 'object' && typeof cmd.type === 'string';
+  }
+
+  function refreshMatchRuleOverrides() {
+    const document = normalizeMatchRulesDocument(
+      flickDb.get(SUPER_PANEL_MATCH_RULES_DB_ID)
+    );
+    matchRuleOverrides = new Map(document.data.map((row) => [row.id, row]));
+  }
+
+  function effectiveCommand(
+    pluginName: string,
+    featureCode: string,
+    command: CmdItem,
+    commandIndex: number
+  ): CmdItem {
+    const key = commandMatchKey(command, commandIndex);
+    const override = matchRuleOverrides.get(
+      matchRuleOverrideId(pluginName, featureCode, key)
+    );
+    if (!override) return command;
+    return {
+      ...command,
+      ...(typeof override.priority === 'number'
+        ? { priority: override.priority }
+        : {}),
+      matchRules: {
+        ...(command.matchRules || {}),
+        ...override.matchRules,
+      },
+    };
+  }
+
+  function collectCandidates(
+    optionPlugin: OptionPlugin[],
+    matchCommand: (cmd: CmdItem) => boolean,
+    payloadForCommand: (cmd: CmdItem) => unknown
+  ): MatchPluginItem[] {
+    const candidates: PluginCandidate[] = [];
+    let order = 0;
     for (const plugin of optionPlugin) {
-      for (const feature of plugin.features) {
-        for (const cmd of feature.cmds) {
-          if (
-            cmd.type === 'regex' &&
-            cmd.match &&
-            parseCmdRegex(cmd.match).test(text)
-          ) {
-            state.matchPlugins.push({
+      const features = Array.isArray(plugin?.features) ? plugin.features : [];
+      for (const feature of features) {
+        const commands = Array.isArray(feature?.cmds) ? feature.cmds : [];
+        for (const [commandIndex, sourceCommand] of commands.entries()) {
+          if (!isCommandObject(sourceCommand)) continue;
+          const cmd = effectiveCommand(
+            plugin.name,
+            feature.code,
+            sourceCommand,
+            commandIndex
+          );
+          if (cmd.matchRules?.enabled === false || !matchCommand(cmd)) continue;
+          const name = cmd.label || feature.code;
+          candidates.push({
+            key: `${plugin.name}\u0000${feature.code}\u0000${name}`,
+            priority:
+              typeof cmd.priority === 'number' && Number.isFinite(cmd.priority)
+                ? cmd.priority
+                : 0,
+            order: order++,
+            item: {
               type: 'ext',
-              name: cmd.label || feature.code,
+              name,
               logo: plugin.logoUrl || plugin.logo,
               click: () =>
                 openPlugin({
                   plugin: plugin as unknown as Record<string, unknown>,
                   feature,
                   cmd,
-                  data: text,
+                  data: payloadForCommand(cmd),
                 }),
-            });
-          }
-          if (cmd.type === 'over') {
-            state.matchPlugins.push({
-              type: 'ext',
-              name: cmd.label || feature.code,
-              logo: plugin.logoUrl || plugin.logo,
-              click: () =>
-                openPlugin({
-                  plugin: plugin as unknown as Record<string, unknown>,
-                  feature,
-                  cmd,
-                  data: text,
-                }),
-            });
-          }
+            },
+          });
         }
       }
     }
+    candidates.sort((a, b) => b.priority - a.priority || a.order - b.order);
+    const seen = new Set<string>();
+    return candidates
+      .filter((candidate) => {
+        if (seen.has(candidate.key)) return false;
+        seen.add(candidate.key);
+        return true;
+      })
+      .map((candidate) => candidate.item);
+  }
+
+  function collectTextPlugins(
+    text: string,
+    optionPlugin: OptionPlugin[]
+  ): MatchPluginItem[] {
+    return collectCandidates(
+      optionPlugin,
+      (cmd) => matchesTextCommand(cmd, text),
+      () => text
+    );
   }
 
   function collectFilePlugins(
-    fileUrl: string,
-    ext: string,
+    files: SelectedFileItem[],
     selectedFileDataUrl: string,
     optionPlugin: OptionPlugin[]
-  ) {
+  ): MatchPluginItem[] {
     const imgRe = /\.(png|jpg|gif|jpeg|webp)$/i;
-    for (const plugin of optionPlugin) {
-      for (const feature of plugin.features) {
-        for (const cmd of feature.cmds) {
-          if (cmd.type === 'img' && imgRe.test(ext) && selectedFileDataUrl) {
-            state.matchPlugins.unshift({
-              type: 'ext',
-              name: cmd.label || feature.code,
-              logo: plugin.logoUrl || plugin.logo,
-              click: () => {
-                openPlugin({
-                  plugin: plugin as unknown as Record<string, unknown>,
-                  feature,
-                  cmd,
-                  data: selectedFileDataUrl,
-                });
-              },
-            });
-          }
-          if (
-            cmd.type === 'file' &&
-            cmd.match &&
-            parseCmdRegex(cmd.match).test(ext)
-          ) {
-            state.matchPlugins.unshift({
-              type: 'ext',
-              name: cmd.label || feature.code,
-              logo: plugin.logoUrl || plugin.logo,
-              click: () =>
-                openPlugin({
-                  plugin: plugin as unknown as Record<string, unknown>,
-                  feature,
-                  cmd,
-                  data: {
-                    isFile: true,
-                    isDirectory: false,
-                    name: basenameWinOrMac(fileUrl),
-                    path: fileUrl,
-                  },
-                }),
-            });
-          }
-        }
-      }
-    }
+    const singleFile = files.length === 1 ? files[0] : null;
+    const pluginPayload = toPluginFilePayload(files);
+    return collectCandidates(
+      optionPlugin,
+      (cmd) =>
+        (cmd.type === 'img' &&
+          !!singleFile?.isFile &&
+          imgRe.test(singleFile.extension) &&
+          !!selectedFileDataUrl) ||
+        matchesFileCommand(cmd, files),
+      (cmd) => (cmd.type === 'img' ? selectedFileDataUrl : pluginPayload)
+    );
   }
 
   let currentPluginLogos = new Map<string, string>();
@@ -282,7 +321,7 @@ export function useSuperPanel() {
       click: () =>
         openPlugin({
           plugin: row as unknown as Record<string, unknown>,
-          feature: row.ext,
+          feature: row.ext as FeatureItem,
           cmd: row.cmd,
         }),
     }));
@@ -322,48 +361,87 @@ export function useSuperPanel() {
       state.translate = null;
       state.loading = false;
       refreshPreferences();
+      refreshMatchRuleOverrides();
       const {
         text,
         fileUrl,
+        fileUrls = [],
+        selectedFiles = [],
         optionPlugin = [],
         selectedFileIsDirectory = false,
         selectedFileDataUrl = '',
       } = payload;
       refreshUserPlugins(optionPlugin);
+      const normalizedFiles = selectedFiles
+        .filter(
+          (file): file is SelectedFileItem =>
+            !!file && typeof file.path === 'string' && !!file.path.trim()
+        )
+        .map((file) => ({
+          path: normalizeFsPath(file.path),
+          name: file.name || basenameWinOrMac(file.path),
+          extension: file.extension || extensionName(file.path),
+          isFile: file.isFile === true,
+          isDirectory: file.isDirectory === true,
+        }));
+      if (normalizedFiles.length === 0) {
+        const legacyPaths = fileUrls.length
+          ? fileUrls
+          : fileUrl
+            ? [String(fileUrl)]
+            : [];
+        normalizedFiles.push(
+          ...legacyPaths.map((rawPath, index) => ({
+            path: normalizeFsPath(rawPath),
+            name: basenameWinOrMac(rawPath),
+            extension: extensionName(rawPath),
+            isFile: index > 0 || selectedFileIsDirectory !== true,
+            isDirectory: index === 0 && selectedFileIsDirectory === true,
+          }))
+        );
+      }
+      state.selectedFiles = normalizedFiles;
       state.selectedText = String(text ?? '');
-      state.selectedFileUrl = fileUrl == null ? '' : String(fileUrl);
-      state.selectedFileIsDirectory = selectedFileIsDirectory === true;
-      const ext = extensionName(fileUrl || '');
-      state.fileUrl = (fileUrl ?? '') as string;
+      state.selectedFileUrl = normalizedFiles[0]?.path || '';
+      state.selectedFileIsDirectory =
+        normalizedFiles.length === 1 && normalizedFiles[0].isDirectory;
+      state.fileUrl = normalizedFiles[0]?.path || '';
 
-      if (!fileUrl && text) {
-        collectTextPlugins(text, optionPlugin);
+      if (normalizedFiles.length === 0 && text) {
+        state.matchPlugins = collectTextPlugins(text, optionPlugin);
         runTranslate(text);
         return;
       }
 
-      if (!fileUrl && !text) {
+      if (normalizedFiles.length === 0 && !text) {
         state.fileUrl = '';
         state.selectedFileUrl = '';
         return;
       }
 
-      if (fileUrl && selectedFileIsDirectory) {
-        const folder = normalizeFsPath(String(fileUrl));
-        state.matchPlugins = [...commonPlugins];
+      if (normalizedFiles.length === 1 && normalizedFiles[0].isDirectory) {
+        const folder = normalizedFiles[0].path;
+        state.matchPlugins = [
+          ...collectFilePlugins(
+            normalizedFiles,
+            selectedFileDataUrl,
+            optionPlugin
+          ),
+          ...commonPlugins,
+        ];
         state.fileUrl = folder;
         state.selectedFileUrl = folder;
         return;
       }
 
-      state.matchPlugins = [...selectedPlugins];
-      state.fileUrl = String(fileUrl);
-      collectFilePlugins(
-        String(fileUrl),
-        ext,
-        selectedFileDataUrl,
-        optionPlugin
-      );
+      state.matchPlugins = [
+        ...collectFilePlugins(
+          normalizedFiles,
+          selectedFileDataUrl,
+          optionPlugin
+        ),
+        ...selectedPlugins,
+      ];
     } finally {
       const requestId = payload.requestId;
       nextTick(() => {
@@ -412,6 +490,7 @@ export function useSuperPanel() {
   const loading = computed(() => state.loading);
   const selectedText = computed(() => state.selectedText);
   const selectedFileUrl = computed(() => state.selectedFileUrl);
+  const selectedFiles = computed(() => state.selectedFiles);
   const selectedFileIsDirectory = computed(() => state.selectedFileIsDirectory);
   const matchPlugins = computed(() => state.matchPlugins);
   const userPlugins = computed(() => state.userPlugins);
@@ -485,6 +564,7 @@ export function useSuperPanel() {
     loading,
     selectedText,
     selectedFileUrl,
+    selectedFiles,
     selectedFileIsDirectory,
     matchPlugins,
     userPlugins,

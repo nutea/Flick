@@ -52,6 +52,34 @@ const INITIAL_KEYBOARD_REGISTER_MS = 1000;
 
 type TriggerButton = (typeof BTN)[keyof typeof BTN];
 
+interface SelectedFileInfo {
+  path: string;
+  name: string;
+  extension: string;
+  isFile: boolean;
+  isDirectory: boolean;
+}
+
+function describeSelectedFile(selectedPath: string): SelectedFileInfo {
+  const cleanPath = selectedPath.replace(/^file:\/\//, '');
+  let isFile = false;
+  let isDirectory = false;
+  try {
+    const stat = fs.statSync(cleanPath);
+    isDirectory = isDirectorySelection(cleanPath, stat.isDirectory());
+    isFile = stat.isFile();
+  } catch {
+    // Active application/window fallbacks are not guaranteed to be files.
+  }
+  return {
+    path: cleanPath,
+    name: path.basename(cleanPath) || cleanPath,
+    extension: path.extname(cleanPath),
+    isFile,
+    isDirectory,
+  };
+}
+
 function isMouseTrigger(s: string): boolean {
   return Object.values(SP_MOUSE).includes(
     s as (typeof SP_MOUSE)[keyof typeof SP_MOUSE]
@@ -135,11 +163,12 @@ function createPlugin() {
         }
         if (requestId !== requestSequence) return;
 
-        if (!copyResult.text && !copyResult.fileUrl) {
+        if (!copyResult.text && copyResult.fileUrls.length === 0) {
           copyResult.fileUrl = await getActiveWindowFallbackPath(
             undefined,
             await activeWindowPromise
           );
+          copyResult.fileUrls = copyResult.fileUrl ? [copyResult.fileUrl] : [];
         }
         if (requestId !== requestSequence) return;
 
@@ -155,16 +184,13 @@ function createPlugin() {
 
         const localPlugins = API.getLocalPlugins();
 
-        let selectedFileIsDirectory = false;
+        const selectedFiles = copyResult.fileUrls.map(describeSelectedFile);
+        const selectedFileIsDirectory = selectedFiles[0]?.isDirectory === true;
         let selectedFileDataUrl = '';
-        if (typeof copyResult.fileUrl === 'string' && copyResult.fileUrl) {
-          const selectedPath = copyResult.fileUrl.replace(/^file:\/\//, '');
+        if (selectedFiles.length === 1 && selectedFiles[0].isFile) {
+          const selectedPath = selectedFiles[0].path;
           try {
             const stat = fs.statSync(selectedPath);
-            selectedFileIsDirectory = isDirectorySelection(
-              selectedPath,
-              stat.isDirectory()
-            );
             if (
               stat.isFile() &&
               stat.size <= 20 * 1024 * 1024 &&
@@ -208,6 +234,7 @@ function createPlugin() {
             requestId,
             ...copyResult,
             optionPlugin: localPlugins,
+            selectedFiles,
             selectedFileIsDirectory,
             selectedFileDataUrl,
           });

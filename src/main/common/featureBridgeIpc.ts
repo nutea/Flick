@@ -1,4 +1,4 @@
-import { ipcMain, shell, type WebContents } from 'electron';
+import { ipcMain, net, shell, type WebContents } from 'electron';
 import fs from 'fs';
 import { presentPlugins } from './pluginPresentation';
 
@@ -7,6 +7,7 @@ const CHANNELS = {
   downloadPlugin: 'feature:download-plugin',
   deletePlugin: 'feature:delete-plugin',
   refreshPlugin: 'feature:refresh-plugin',
+  testSourceConnection: 'feature:test-source-connection',
   pathExists: 'feature:path-exists',
   openExternal: 'feature:open-external',
 } as const;
@@ -37,6 +38,33 @@ function normalizePluginPayload(raw: unknown): Record<string, unknown> {
     throw new TypeError('Plugin name or path is invalid');
   }
   return payload;
+}
+
+function normalizeHttpUrl(raw: unknown, field: string): URL {
+  if (typeof raw !== 'string' || !raw.trim() || raw.length > 4096) {
+    throw new TypeError(`${field} URL is invalid`);
+  }
+  const url = new URL(raw.trim());
+  if (!['http:', 'https:'].includes(url.protocol)) {
+    throw new TypeError(`${field} URL protocol is invalid`);
+  }
+  return url;
+}
+
+async function checkSourceUrl(url: URL) {
+  try {
+    const response = await net.fetch(url.toString(), {
+      redirect: 'follow',
+      signal: AbortSignal.timeout(8000),
+    });
+    return { ok: response.ok, status: response.status };
+  } catch (error) {
+    return {
+      ok: false,
+      status: 0,
+      error: error instanceof Error ? error.message : 'Request failed',
+    };
+  }
 }
 
 export function registerFeatureBridgeIpc(contents: WebContents): void {
@@ -81,6 +109,32 @@ export function registerFeatureBridgeIpc(contents: WebContents): void {
     return presentPlugins(
       await pluginManager().refreshPlugin(normalizePluginPayload(raw))
     );
+  });
+  ipcMain.handle(CHANNELS.testSourceConnection, async (event, raw: unknown) => {
+    if (!isFeatureSender(event.sender)) throw new Error('Untrusted sender');
+    if (!raw || typeof raw !== 'object' || Array.isArray(raw)) {
+      throw new TypeError('Market source configuration is invalid');
+    }
+    const config = cloneForRenderer(raw as Record<string, unknown>);
+    const registry = normalizeHttpUrl(config.register, 'Registry');
+    const database = normalizeHttpUrl(config.database, 'Database');
+    registry.pathname = `${registry.pathname.replace(/\/$/, '')}/-/ping`;
+    const marketUrl = new URL(
+      `${database.toString().replace(/\/$/, '')}/plugins/finder.json`
+    );
+    if (typeof config.access_token === 'string' && config.access_token) {
+      marketUrl.searchParams.set('access_token', config.access_token);
+      marketUrl.searchParams.set('ref', 'master');
+    }
+    const [registryResult, databaseResult] = await Promise.all([
+      checkSourceUrl(registry),
+      checkSourceUrl(marketUrl),
+    ]);
+    return {
+      ok: registryResult.ok && databaseResult.ok,
+      registry: registryResult,
+      database: databaseResult,
+    };
   });
   ipcMain.handle(CHANNELS.pathExists, (event, rawPath: unknown) => {
     if (!isFeatureSender(event.sender) || typeof rawPath !== 'string') {

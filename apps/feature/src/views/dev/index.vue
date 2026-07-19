@@ -1,9 +1,8 @@
 <template>
-  <div class="dev">
-    <div class="view-title">{{ $t('feature.dev.title') }}</div>
-    <div class="view-container">
+  <div class="dev settings-page">
+    <div class="view-container settings-card">
       <a-alert
-        style="margin-bottom: 40px"
+        style="margin-bottom: 20px"
         :message="$t('feature.dev.tips')"
         type="warning"
       />
@@ -11,14 +10,14 @@
         ref="formRef"
         :model="formState"
         :rules="rules"
-        :label-col="labelCol"
-        :wrapper-col="wrapperCol"
+        layout="vertical"
+        class="dev-form"
       >
         <a-form-item :label="$t('feature.dev.pluginName')" name="name">
           <a-input v-model:value="formState.name" />
         </a-form-item>
 
-        <a-form-item :wrapper-col="{ span: 14, offset: 4 }">
+        <a-form-item>
           <a-button :loading="loading" type="primary" @click="onSubmit">
             {{ $t('feature.dev.install') }}
           </a-button>
@@ -44,7 +43,7 @@ const formState = reactive({
 const rules = {
   name: {
     required: true,
-    message: 'Please input name',
+    message: t('feature.dev.nameRequired'),
   },
 };
 const onSubmit = () => {
@@ -82,30 +81,16 @@ const refresh = () => {
     );
   });
 };
-
-const labelCol = { span: 4 };
-const wrapperCol = { span: 14 };
 </script>
 
 <style lang="less" scoped>
 .dev {
-  box-sizing: border-box;
-  width: 100%;
-  overflow-x: hidden;
-  height: calc(~'100vh - 34px');
-  .view-title {
-    font-size: 16px;
-    font-weight: 500;
-    margin-bottom: 16px;
-    color: var(--color-text-primary);
-  }
   .view-container {
-    padding: 10px;
-    box-sizing: border-box;
-    border-radius: 8px;
-    background: var(--color-body-bg);
-    overflow: auto;
-    height: calc(~'100vh - 84px');
+    min-height: 360px;
+    padding: 24px 26px;
+  }
+  .dev-form {
+    max-width: 620px;
   }
   :deep(label) {
     color: var(--color-text-content);
@@ -113,6 +98,12 @@ const wrapperCol = { span: 14 };
   :deep(.ant-input) {
     background: var(--color-input-hover) !important;
     color: var(--color-text-content);
+  }
+}
+
+@media (max-width: 900px) {
+  .dev .view-container {
+    padding: 18px 16px;
   }
 }
 </style>

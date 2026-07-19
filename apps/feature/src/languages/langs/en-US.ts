@@ -1,8 +1,16 @@
 export default {
   'en-US': {
     feature: {
+      navigation: {
+        plugins: 'PLUGINS',
+        features: 'FEATURES',
+        settings: 'SETTINGS',
+        preferences: 'PREFERENCES',
+        advanced: 'ADVANCED',
+      },
       market: {
         title: 'Market',
+        description: 'Explore and install extensions built for Flick.',
         search: 'Search Plugins',
         searchResult: 'Search Results',
         explore: 'Explore',
@@ -20,9 +28,12 @@ export default {
           lastUpdated: 'Total',
         },
         install: 'Install',
+        open: 'Open',
       },
       installed: {
         title: 'Installed',
+        description:
+          'Manage installed plugins, offline bundles, and panel pins.',
         export: 'Export offline bundle',
         import: 'Import offline bundle',
         exportSuccess:
@@ -52,6 +63,68 @@ export default {
         developer: 'Developer',
         unknown: 'Unknown',
         remove: 'Remove',
+        pluginList: 'Plugins',
+        searchPlaceholder: 'Search installed plugins',
+        noSearchResults: 'No matching plugins',
+        version: 'Version',
+        commandCount: 'Commands',
+        pluginOverview: 'Plugin information',
+        availableCommands: 'Available commands',
+        commandHint: 'Run a command or pin it to the Super Panel.',
+        run: 'Run',
+        pin: 'Pin',
+        unpin: 'Unpin',
+        noCommands: 'This plugin has no directly runnable commands.',
+        matchRules: {
+          title: 'Manage matching rules',
+          description:
+            'Choose when this command appears for selected content in the Super Panel.',
+          manage: 'Matching rules',
+          save: 'Save rules',
+          restore: 'Restore plugin defaults',
+          saved:
+            'Matching rules saved and will apply the next time the panel opens.',
+          restored: 'Plugin default matching rules restored.',
+          autoMatch: 'Auto match',
+          customized: 'Customized',
+          disabled: 'Automatic matching is disabled',
+          contentType: 'Selected content',
+          text: 'Text',
+          files: 'Files',
+          priority: 'Display priority',
+          pattern: 'Regular expression',
+          patternPlaceholder:
+            'For example /^https?:\\/\\//i; empty matches any text',
+          optionalPattern:
+            'Optional; empty does not restrict extension, name, or path',
+          minChars: 'Minimum characters',
+          maxChars: 'Maximum characters',
+          unlimited: 'Unlimited',
+          fileKinds: 'Item types',
+          regularFile: 'regular files',
+          directory: 'Folders',
+          minCount: 'Minimum count',
+          maxCount: 'Maximum count',
+          target: 'Regex target',
+          extension: 'Extension',
+          fileName: 'File name',
+          fullPath: 'Full path',
+          mode: 'Multiple selection mode',
+          all: 'All items match',
+          any: 'At least one matches',
+          imageFixedRule:
+            'Image commands match one PNG, JPG, GIF, or WebP file.',
+          imageSummary: 'One image file',
+          textPatternSummary: 'Matches selected text by regular expression',
+          anyTextSummary: 'Matches any selected text',
+          fileSummary: 'At least {count} {kind}',
+          fileAndDirectory: 'files or folders',
+        },
+        dangerZone: 'Remove plugin',
+        dangerHint: 'Delete this plugin and clear its Super Panel pins.',
+        removeConfirmTitle: 'Remove plugin?',
+        removeConfirmContent:
+          'Remove "{name}" from this device and clear its panel pins.',
         functionKey: 'Function Key',
         detailInfo: 'Detail Info',
         addToPanel: 'Click the + sign to pin the keyword to the super panel',
@@ -59,9 +132,10 @@ export default {
           'Click the - sign to remove the keyword from the super panel',
       },
       settings: {
-        title: 'Account And Setting',
+        title: 'Preferences',
         account: {
           accountInfo: 'Account Info',
+          description: 'Manage your theme, avatar, name, and search greeting.',
           tips1: 'flick',
           tips2:
             'After the software preferences are set, please restart the software. Please go to the mini program set avatar and nickname.',
@@ -76,16 +150,18 @@ export default {
           replace: 'Repalce Logo',
           reset: 'Reset Default',
           name: 'User Name',
+          saved: 'Saved automatically',
+          saving: 'Saving…',
         },
         basic: {
           title: 'Basic',
+          description: 'Configure startup, appearance, language, and behavior.',
           shortcutKey: 'Shortcut Key',
           showOrHiddle: 'Show Or Hiddle',
           screenCapture: 'Screen Capture',
           common: 'Common',
           autoPaste: 'Auto Paste',
           autoBoot: 'Auto Boot Up',
-          spaceExec: 'Space Execution',
           on: 'on',
           off: 'off',
           theme: 'Theme',
@@ -98,6 +174,8 @@ export default {
         },
         global: {
           title: 'Global Shortcut Key',
+          description:
+            'Create direct shortcuts for apps, plugins, and commands.',
           instructions: 'Instructions and examples',
           tips: 'Press the shortcut key, automatically search for the corresponding keyword, when the keyword result is exactly matched, and the result is unique, it will point directly to this function.',
           example: 'Example',
@@ -108,6 +186,8 @@ export default {
           shortcutKey: 'Shortcut Key',
           funtionKey: 'Funtion Key',
           addShortcutKey: 'ADD Global Shortcut Key',
+          removeShortcut: 'Remove shortcut',
+          conflict: 'This shortcut is already in use',
           addShortcutKeyTips:
             'Press the function keys (Ctrl, Shift, {optionKeyName}) first, and then press other normal keys. Or press the F1-F12 button.',
         },
@@ -118,7 +198,9 @@ export default {
           remove: 'Revome',
         },
         intranet: {
-          title: 'Intranet Deployment',
+          title: 'Market Source',
+          description: 'Configure plugin registries, market data, and access.',
+          tipsTitle: 'Private plugin sources',
           tips: "If publishing plug-ins to the public network npm does not meet your company's security requirements, flick supports private network private sources and private plug-in libraries. If you need private network deployment, you can configure the following rules.",
           npmMirror: 'npm mirror',
           dbUrl: 'database url',
@@ -126,13 +208,17 @@ export default {
           placeholder: 'required for private network gitlab warehouse',
         },
         localstart: {
-          title: 'Local Start',
+          title: 'Quick Launch',
+          description: 'Add local apps, files, or folders to quick launch.',
         },
         database: {
           title: 'Data Synchronization',
+          description: 'Import, export, and sync Flick data over WebDAV.',
         },
       },
       superPanelShortcut: {
+        description:
+          'Configure panel triggers, shortcuts, and translation services.',
         tabShortcut: 'Shortcut',
         tabTranslate: 'Translate',
         tipDesc:
@@ -177,7 +263,7 @@ export default {
         systemPromptBuiltinCollapse: 'View built-in default (used when empty)',
         systemPromptFillBuiltin: 'Insert built-in prompt',
         llmExtraHeaders: 'Extra headers JSON (optional)',
-        llmExtraHeadersPh: 'e.g. {"HTTP-Referer":"https://example.com"}',
+        llmExtraHeadersPh: 'For example, a JSON object containing HTTP-Referer',
         switchNeedConfig: 'Configure and save translation API first',
         translateMaxCharsTitle: 'Max characters for translation',
         translateMaxCharsDesc:
@@ -190,6 +276,8 @@ export default {
       },
       dev: {
         title: 'Developer',
+        description: 'Install, refresh, and debug local plugins.',
+        nameRequired: 'Enter a plugin package or local link name',
         tips: 'The flick plug-in system relies on npm management. Local debugging needs to first execute npm link in the current directory of the local plug-in.',
         pluginName: 'Plugin Name',
         install: 'Install',
@@ -199,6 +287,9 @@ export default {
       },
       localPlugin: {
         title: 'Import Local Plugin',
+        description:
+          'Manage custom plugin sources imported from files or URLs.',
+        empty: 'No custom plugins yet. Import a configuration to get started.',
         okText: 'Import',
         cancelText: 'Cancel',
         importType: 'Import Type',
@@ -213,8 +304,10 @@ export default {
           'Please input the correct remote plugin config file url',
         configFetchSuccess: 'Plugin config file import success',
         deleteLocalPluginSuccess: 'Plugin delete success',
-        deleteLocalPluginButton: 'Delete Plugin',
-        deleteLocalPluginConfirm: 'Confirm Delete Plugin',
+        deleteLocalPluginButton: 'Clear custom plugins',
+        deleteLocalPluginConfirm: 'Clear all custom plugins?',
+        importParseError:
+          'Could not read configuration. Check the URL, network, and JSON format.',
         deleteLocalPluginConfirmText: 'Confirm',
         deleteLocalPluginCancelText: 'Cancel',
         tips: 'Local Import and Remote Import both only support importing Json format configuration files. The specific content of the Json file can refer to the link: https://gitee.com/monkeyWang/rubickdatabase/raw/master/plugins/total-plugins.json',

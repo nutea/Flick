@@ -6,18 +6,19 @@
       "input": "optional"
     }
   },
-  "pluginName": "系统菜单",
-  "description": "系统菜单",
+  "pluginName": "设置中心",
+  "description": "管理插件、超级面板与 Flick 偏好设置",
   "main": "index.html",
-  "logo": "./plugin-logo.png",
+  "logo": "./settings-center-logo.png",
   "version": "0.0.1",
   "preload": "preload.js",
   "pluginType": "ui",
   "features": [
     {
-      "code": "finder",
-      "explain": "插件市场",
+      "code": "设置中心",
+      "explain": "设置中心",
       "cmds": [
+        "设置中心",
         "插件市场"
       ]
     },

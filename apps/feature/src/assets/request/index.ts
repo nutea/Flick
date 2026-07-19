@@ -1,26 +1,23 @@
 import axios from 'axios';
+import { resolveMarketSourceConfig } from '@/assets/marketConfig';
 
-let baseURL = 'https://gitee.com/monkeyWang/flickdatabase/raw/master';
-let access_token = '';
+let marketConfig = resolveMarketSourceConfig(undefined);
 
 try {
   const dbdata = window.flick.db.get('flick-localhost-config');
-  if (dbdata && dbdata.data) {
-    baseURL = dbdata.data.database || baseURL;
-    access_token = dbdata.data.access_token || '';
-  }
+  marketConfig = resolveMarketSourceConfig(dbdata?.data);
 } catch (e) {
   // ignore
 }
 
 const instance = axios.create({
   timeout: 4000,
-  baseURL: baseURL || 'https://gitee.com/monkeyWang/flickdatabase/raw/master',
+  baseURL: marketConfig.database,
 });
 
 const withAccessToken = (targetPath: string) => {
-  if (!access_token) return targetPath;
-  return `${targetPath}?access_token=${encodeURIComponent(access_token)}&ref=master`;
+  if (!marketConfig.access_token) return targetPath;
+  return `${targetPath}?access_token=${encodeURIComponent(marketConfig.access_token)}&ref=master`;
 };
 
 const getJson = async <T>(targetPath: string, fallback: T): Promise<T> => {

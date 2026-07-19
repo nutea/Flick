@@ -1,36 +1,9 @@
 <template>
-  <div class="settings">
-    <div class="view-title">{{ $t('feature.settings.title') }}</div>
-    <div class="view-container">
-      <a-menu v-model:selectedKeys="currentSelect" mode="horizontal">
-        <a-menu-item key="userInfo">
-          {{ $t('feature.settings.account.accountInfo') }}
-        </a-menu-item>
-        <a-menu-item key="normal">
-          {{ $t('feature.settings.basic.title') }}
-        </a-menu-item>
-        <a-menu-item key="localstart">
-          {{ $t('feature.settings.localstart.title') }}
-        </a-menu-item>
-        <a-menu-item key="global">
-          {{ $t('feature.settings.global.title') }}
-        </a-menu-item>
-        <!--        <a-menu-item key="superpanel">-->
-        <!--          <template #icon>-->
-        <!--            <FileAddOutlined />-->
-        <!--          </template>-->
-        <!--          {{ $t('feature.settings.superPanel.title') }}-->
-        <!--        </a-menu-item>-->
-        <a-menu-item key="database">
-          {{ $t('feature.settings.database.title') }}
-        </a-menu-item>
-        <a-menu-item key="localhost">
-          {{ $t('feature.settings.intranet.title') }}
-        </a-menu-item>
-      </a-menu>
+  <div class="settings settings-page">
+    <div class="view-container settings-card">
       <div class="settings-detail">
-        <UserInfo v-if="currentSelect[0] === 'userInfo'" />
-        <div v-if="currentSelect[0] === 'normal'">
+        <UserInfo v-if="props.section === 'userInfo'" />
+        <div v-if="props.section === 'normal'">
           <div class="setting-item">
             <div class="title">
               {{ $t('feature.settings.basic.shortcutKey') }}
@@ -62,13 +35,13 @@
                     </span>
                   </template>
                 </template>
-                <div
-                  class="value"
-                  tabIndex="-1"
-                  @keyup="(e) => changeShortCut(e, 'showAndHidden')"
+                <button
+                  type="button"
+                  class="value shortcut-recorder"
+                  @keydown.prevent="(e) => changeShortCut(e, 'showAndHidden')"
                 >
                   {{ shortCut.showAndHidden }}
-                </div>
+                </button>
               </a-tooltip>
             </div>
             <div class="settings-item-li">
@@ -79,13 +52,13 @@
                 <template #title>
                   <span>{{ tipText }}</span>
                 </template>
-                <div
-                  class="value"
-                  tabIndex="-1"
-                  @keyup="(e) => changeShortCut(e, 'capture')"
+                <button
+                  type="button"
+                  class="value shortcut-recorder"
+                  @keydown.prevent="(e) => changeShortCut(e, 'capture')"
                 >
                   {{ shortCut.capture }}
-                </div>
+                </button>
               </a-tooltip>
             </div>
           </div>
@@ -107,16 +80,6 @@
               </div>
               <a-switch
                 v-model:checked="common.start"
-                :checked-children="$t('feature.settings.basic.on')"
-                :un-checked-children="$t('feature.settings.basic.off')"
-              ></a-switch>
-            </div>
-            <div class="settings-item-li">
-              <div class="label">
-                {{ $t('feature.settings.basic.spaceExec') }}
-              </div>
-              <a-switch
-                v-model:checked="common.space"
                 :checked-children="$t('feature.settings.basic.on')"
                 :un-checked-children="$t('feature.settings.basic.off')"
               ></a-switch>
@@ -153,7 +116,6 @@
               </div>
               <a-select
                 v-model:value="state.common.lang"
-                label-in-value
                 style="width: 240px"
                 :options="options"
                 @change="changeLanguage"
@@ -161,7 +123,7 @@
             </div>
           </div>
         </div>
-        <div v-if="currentSelect[0] === 'global'">
+        <div v-if="props.section === 'global'">
           <a-collapse>
             <a-collapse-panel
               key="1"
@@ -187,55 +149,74 @@
               </a-list>
             </a-collapse-panel>
           </a-collapse>
-          <div class="feature-container">
-            <div class="keywords item">
-              <div>{{ $t('feature.settings.global.shortcutKey') }}</div>
-              <template :key="index" v-for="(item, index) in global">
+          <div class="shortcut-list" role="list">
+            <div
+              v-for="(item, index) in global"
+              :key="index"
+              class="shortcut-row"
+              role="listitem"
+            >
+              <div class="shortcut-field">
+                <label>{{ $t('feature.settings.global.shortcutKey') }}</label>
                 <a-tooltip placement="top" trigger="click">
                   <template #title>
                     <span>{{ tipText }}</span>
                   </template>
-                  <div
-                    class="value"
-                    tabIndex="2"
-                    @keyup="(e) => changeGlobalKey(e, index)"
+                  <button
+                    type="button"
+                    class="value shortcut-recorder"
+                    :class="{
+                      'has-conflict': hasShortcutConflict(item.key, index),
+                    }"
+                    @keydown.prevent="(e) => changeGlobalKey(e, index)"
                   >
-                    {{ item.key }}
-                    <MinusCircleOutlined
-                      @click.stop="deleteGlobalKey(e, index)"
-                    />
-                  </div>
+                    {{
+                      item.key || $t('feature.superPanelShortcut.captureHint')
+                    }}
+                  </button>
                 </a-tooltip>
-              </template>
-            </div>
-            <div class="short-cut item">
-              <div>{{ $t('feature.settings.global.funtionKey') }}</div>
-              <template v-for="(item, index) in global" :key="index">
+                <span
+                  v-if="hasShortcutConflict(item.key, index)"
+                  class="field-error"
+                >
+                  {{ $t('feature.settings.global.conflict') }}
+                </span>
+              </div>
+              <div class="shortcut-field shortcut-command">
+                <label>{{ $t('feature.settings.global.funtionKey') }}</label>
                 <a-input
                   :value="item.value"
-                  class="value"
                   allowClear
                   :disabled="!item.key"
                   @change="(e) => changeGlobalValue(index, e.target.value)"
                 />
-              </template>
+              </div>
+              <a-button
+                type="text"
+                danger
+                class="shortcut-delete"
+                :aria-label="$t('feature.settings.global.removeShortcut')"
+                @click="deleteGlobalKey(index)"
+              >
+                <template #icon><DeleteOutlined /></template>
+              </a-button>
             </div>
           </div>
-          <div @click="addConfig" class="add-global">
+          <button type="button" @click="addConfig" class="add-global">
             <PlusCircleOutlined />
             {{ $t('feature.settings.global.addShortcutKey') }}
-          </div>
+          </button>
         </div>
-        <Localhost v-if="currentSelect[0] === 'localhost'" />
-        <LocalStart v-if="currentSelect[0] === 'localstart'" />
-        <DataBase v-if="currentSelect[0] === 'database'" />
+        <Localhost v-if="props.section === 'localhost'" />
+        <LocalStart v-if="props.section === 'localstart'" />
+        <DataBase v-if="props.section === 'database'" />
       </div>
     </div>
   </div>
 </template>
 
 <script setup>
-import { MinusCircleOutlined, PlusCircleOutlined } from '@ant-design/icons-vue';
+import { DeleteOutlined, PlusCircleOutlined } from '@ant-design/icons-vue';
 import debounce from 'lodash.debounce';
 import { ref, reactive, watch, toRefs, computed } from 'vue';
 import keycodes from './keycode';
@@ -247,6 +228,13 @@ import { useI18n } from 'vue-i18n';
 import localConfig from '@/confOp';
 
 const { locale, t } = useI18n();
+
+const props = defineProps({
+  section: {
+    type: String,
+    default: 'normal',
+  },
+});
 
 const examples = [
   {
@@ -280,8 +268,6 @@ const tipText = computed(() => {
     }) + `此外你也可以双击修饰键如（Ctrl+Ctrl）`
   );
 });
-
-const currentSelect = ref(['userInfo']);
 
 const { perf, global: defaultGlobal } = localConfig.getConfig();
 
@@ -438,10 +424,18 @@ const changeGlobalValue = (index, value) => {
   state.global[index].value = value;
 };
 
-const deleteGlobalKey = (e, index) => {
+const deleteGlobalKey = (index) => {
   state.global.splice(index, 1);
   // delete state.global[index];
 };
+
+const hasShortcutConflict = (key, currentIndex) =>
+  Boolean(
+    key &&
+    state.global.some(
+      (item, index) => index !== currentIndex && item.key === key
+    )
+  );
 
 const addConfig = () => {
   state.global.push({
@@ -464,67 +458,64 @@ const options = ref([
 ]);
 
 const changeLanguage = (value) => {
-  state.common.lang = value.key;
-  locale.value = value.key;
+  state.common.lang = value;
+  locale.value = value;
 };
 </script>
 
 <style lang="less">
-@import '@/assets/common.less';
-
 .settings {
   box-sizing: border-box;
   width: 100%;
-  overflow-x: hidden;
-  background: var(--color-body-bg2);
-  height: calc(~'100vh - 34px');
-  .ant-menu-horizontal {
-    border-bottom: 1px solid var(--color-border-light);
-  }
-  .view-title {
-    font-size: 16px;
-    font-weight: 500;
-    margin-bottom: 16px;
-    color: var(--color-text-primary);
-  }
+  max-width: 1040px;
+  min-height: 100%;
+  margin: 0 auto;
+  padding: 4px 8px 24px;
+  overflow: visible;
+  background: transparent;
   .view-container {
-    border-radius: 8px;
+    border: 1px solid var(--color-border-light);
+    border-radius: 12px;
     background: var(--color-body-bg);
-    overflow: auto;
-    height: calc(~'100vh - 84px');
-  }
-  .ant-menu {
-    background: var(--color-body-bg) !important;
-    color: var(--color-text-content) !important;
+    overflow: hidden;
+    box-shadow: 0 8px 24px rgba(15, 23, 42, 0.04);
   }
 
   .settings-detail {
-    padding: 20px;
+    min-height: 360px;
+    padding: 24px 26px;
     box-sizing: border-box;
-    flex: 1;
-    overflow: auto;
     background: var(--color-body-bg);
 
     .setting-item {
-      margin-bottom: 20px;
+      margin-bottom: 22px;
+      padding-bottom: 22px;
+      border-bottom: 1px solid var(--color-border-light);
+      &:last-child {
+        margin-bottom: 0;
+        padding-bottom: 0;
+        border-bottom: 0;
+      }
 
       .ant-form-item {
         margin-bottom: 0;
       }
 
       .title {
-        color: var(--ant-primary-color);
-        font-size: 14px;
-        margin-bottom: 10px;
+        color: var(--color-text-primary);
+        font-size: 13px;
+        font-weight: 600;
+        margin-bottom: 12px;
       }
 
       .settings-item-li {
-        padding-left: 20px;
+        min-height: 42px;
+        padding: 0 4px;
         display: flex;
         width: 100%;
         align-items: center;
         justify-content: space-between;
-        margin-bottom: 10px;
+        margin-bottom: 4px;
 
         .label {
           color: var(--color-text-content);
@@ -535,17 +526,29 @@ const changeLanguage = (value) => {
           cursor: pointer;
           text-align: center;
           border: 1px solid var(--color-border-light);
-          color: var(--ant-primary-color);
+          color: var(--color-accent-text);
           font-size: 14px;
-          height: 24px;
+          min-height: 34px;
+          line-height: 32px;
+          border-radius: 8px;
           font-weight: lighter;
           background: var(--color-input-hover);
           .ant-input {
             text-align: center;
-            color: var(--ant-primary-color);
+            color: var(--color-accent-text);
             font-size: 14px;
             font-weight: lighter;
             background: var(--color-input-hover);
+          }
+        }
+
+        .shortcut-recorder {
+          appearance: none;
+          padding: 0 12px;
+          font-family: inherit;
+          &:hover,
+          &:focus-visible {
+            border-color: var(--ant-primary-color);
           }
         }
 
@@ -566,71 +569,82 @@ const changeLanguage = (value) => {
     }
   }
 
-  .feature-container {
-    display: flex;
-    align-items: center;
-    justify-content: space-between;
-    margin-top: 10px;
-    font-size: 14px;
+  .shortcut-list {
+    margin-top: 16px;
+    display: grid;
+    gap: 10px;
+  }
 
-    .item {
-      flex: 1;
-      color: var(--color-text-content);
+  .shortcut-row {
+    display: grid;
+    grid-template-columns: minmax(180px, 0.8fr) minmax(220px, 1.2fr) 36px;
+    align-items: end;
+    gap: 12px;
+    padding: 12px;
+    border: 1px solid var(--color-border-light);
+    border-radius: 10px;
+    background: var(--color-surface-subtle);
+  }
+
+  .shortcut-field {
+    display: grid;
+    gap: 6px;
+    min-width: 0;
+    label {
+      color: var(--color-text-desc);
+      font-size: 12px;
     }
-
-    .short-cut {
-      margin-left: 20px;
-    }
-
-    .value {
-      cursor: pointer;
-      text-align: center;
-      border: 1px solid var(--color-border-light);
-      color: var(--ant-primary-color);
-      font-size: 14px;
-      height: 24px;
-      font-weight: lighter;
-      margin-top: 10px;
-      position: relative;
+    .ant-input-affix-wrapper {
+      min-height: 36px;
       background: var(--color-input-hover);
-
-      .ant-input {
-        color: var(--ant-primary-color);
-        font-weight: lighter;
-        background: none;
-      }
-
-      .anticon {
-        color: var(--color-text-desc);
-      }
-
-      &.ant-input-affix-wrapper {
-        display: flex;
-      }
-
-      &:hover {
-        .anticon {
-          display: block;
-          color: var(--color-text-content);
-        }
-      }
-
-      .anticon {
-        position: absolute;
-        display: none;
-        right: 4px;
-        top: 50%;
-        transform: translateY(-50%);
-      }
     }
   }
 
+  .shortcut-recorder {
+    appearance: none;
+    width: 100%;
+    min-height: 36px;
+    padding: 0 12px;
+    cursor: pointer;
+    border: 1px solid var(--color-border-light);
+    border-radius: 8px;
+    background: var(--color-input-hover);
+    color: var(--color-accent-text);
+    font: inherit;
+    text-align: center;
+    &:hover,
+    &:focus-visible {
+      border-color: var(--ant-primary-color);
+    }
+    &.has-conflict {
+      border-color: var(--ant-error-color);
+    }
+  }
+
+  .field-error {
+    color: var(--ant-error-color);
+    font-size: 12px;
+  }
+
+  .shortcut-delete {
+    width: 36px;
+    height: 36px;
+  }
+
   .add-global {
-    color: var(--ant-primary-color);
+    color: var(--color-accent-text);
     margin-top: 20px;
     width: 100%;
+    min-height: 40px;
     text-align: center;
     cursor: pointer;
+    border: 1px dashed var(--color-border-strong);
+    border-radius: 8px;
+    background: transparent;
+    &:hover {
+      border-color: var(--ant-primary-color);
+      background: var(--color-surface-subtle);
+    }
   }
 
   .ant-collapse {
@@ -648,6 +662,35 @@ const changeLanguage = (value) => {
 
     .ant-list-item-meta-description {
       color: var(--color-text-desc);
+    }
+  }
+}
+
+@media (max-width: 900px) {
+  .settings {
+    .settings-detail {
+      padding: 18px 16px;
+      .setting-item .settings-item-li {
+        align-items: flex-start;
+        flex-direction: column;
+        gap: 8px;
+        padding: 8px 0;
+        .value,
+        .ant-select {
+          width: 100% !important;
+        }
+      }
+    }
+    .shortcut-row {
+      grid-template-columns: 1fr 36px;
+    }
+    .shortcut-command {
+      grid-column: 1;
+    }
+    .shortcut-delete {
+      grid-column: 2;
+      grid-row: 1 / span 2;
+      align-self: center;
     }
   }
 }

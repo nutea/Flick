@@ -1,147 +1,258 @@
 <template>
-  <div class="installed">
-    <div class="view-header">
-      <div class="view-title">{{ $t('feature.installed.title') }}</div>
-      <div class="view-actions">
-        <a-button size="small" :loading="importing" @click="importBundle">
+  <div class="installed settings-page">
+    <div class="view-container settings-card">
+      <div v-if="!localPlugins.length" class="installed-empty-toolbar">
+        <a-button :loading="importing" @click="importBundle">
+          <template #icon><ImportOutlined /></template>
           {{ $t('feature.installed.import') }}
         </a-button>
       </div>
-    </div>
-    <div class="view-container">
       <div v-if="!localPlugins.length">
         <a-result
           class="error-content"
-          sub-title="哎呀，暂时还没有安装任何插件！"
+          :sub-title="$t('feature.installed.tips1')"
         >
           <template #extra>
             <a-button @click="gotoFinder" key="console" type="primary">
-              去插件市场看看吧
+              {{ $t('feature.installed.tips2') }}
             </a-button>
           </template>
         </a-result>
       </div>
-      <div class="container" v-else>
-        <div class="installed-list">
-          <div
-            :class="currentSelect[0] === plugin.name ? 'item active' : 'item'"
-            :key="index"
-            @click="currentSelect = [plugin.name]"
-            v-for="(plugin, index) in localPlugins"
+      <div class="installed-layout" v-else>
+        <div class="installed-toolbar">
+          <div class="list-summary">
+            <strong>{{ $t('feature.installed.pluginList') }}</strong>
+            <span class="plugin-count">{{ localPlugins.length }}</span>
+          </div>
+          <a-input
+            v-model:value="searchKeyword"
+            allow-clear
+            class="plugin-search"
+            :placeholder="$t('feature.installed.searchPlaceholder')"
           >
-            <img :src="plugin.logoUrl" />
-            <div class="info">
-              <div class="title">
-                {{ plugin.pluginName }}
-              </div>
-              <div class="desc">{{ plugin.description }}</div>
-            </div>
-          </div>
+            <template #prefix><SearchOutlined /></template>
+          </a-input>
+          <a-button :loading="importing" @click="importBundle">
+            <template #icon><ImportOutlined /></template>
+            {{ $t('feature.installed.import') }}
+          </a-button>
         </div>
-        <div class="plugin-detail">
-          <div class="plugin-top">
-            <div class="left">
-              <div class="title">
-                {{ pluginDetail.pluginName }}
-                <a-tag>{{ pluginDetail.version }}</a-tag>
-              </div>
-              <div class="desc">
-                {{ $t('feature.installed.developer') }}：{{
-                  `${pluginDetail.author || $t('feature.installed.unknown')}`
-                }}
-              </div>
-              <div class="desc">
-                {{ pluginDetail.description }}
-              </div>
-            </div>
-            <div class="right plugin-actions">
-              <a-button
-                size="small"
-                shape="round"
-                :loading="exporting"
-                @click="exportBundle"
-              >
-                {{ $t('feature.installed.export') }}
-              </a-button>
-              <a-button
-                type="primary"
-                size="small"
-                shape="round"
-                :loading="pluginDetail.isloading"
-                @click="deletePlugin(pluginDetail)"
-              >
-                {{ $t('feature.installed.remove') }}
-              </a-button>
-            </div>
-          </div>
-          <div class="feature-container">
-            <template
-              :key="index"
-              v-for="(item, index) in pluginDetail.features"
+        <div
+          class="plugin-accordion"
+          :aria-label="$t('feature.installed.pluginList')"
+        >
+          <article
+            v-for="plugin in filteredPlugins"
+            :key="plugin.name"
+            :class="[
+              'plugin-panel',
+              { expanded: selectedPluginName === plugin.name },
+            ]"
+          >
+            <button
+              type="button"
+              class="plugin-trigger"
+              :aria-expanded="selectedPluginName === plugin.name"
+              :aria-controls="`plugin-detail-${plugin.name}`"
+              @click="togglePlugin(plugin.name)"
             >
-              <div
-                class="desc-item"
-                v-if="item.cmds.filter((cmd) => !cmd.label).length > 0"
-              >
-                <div>{{ item.explain }}</div>
-                <template :key="cmd" v-for="cmd in item.cmds">
-                  <a-dropdown
-                    v-if="!cmd.label"
-                    :class="{ executable: !cmd.label }"
-                  >
-                    <template #overlay>
-                      <a-menu
-                        @click="({ key }) => handleMenuClick(key, item, cmd)"
-                      >
-                        <a-menu-item key="open">
-                          <CaretRightOutlined />
-                          运行
-                        </a-menu-item>
-                        <a-menu-item v-if="!hasAdded(cmd)" key="add">
-                          <PushpinOutlined />
-                          固定到超级面板
-                        </a-menu-item>
-                        <a-menu-item v-else key="remove">
-                          <PushpinFilled />
-                          从超级面板中取消固定
-                        </a-menu-item>
-                      </a-menu>
-                    </template>
-                    <a-button size="small" class="keyword-tag">
-                      {{ cmd.label || cmd }}
-                      <DownOutlined />
-                    </a-button>
-                  </a-dropdown>
-                </template>
+              <img :src="plugin.logoUrl" :alt="plugin.pluginName" />
+              <div class="info">
+                <div class="title-row">
+                  <span class="title">{{ plugin.pluginName }}</span>
+                  <span class="item-version">v{{ plugin.version || '-' }}</span>
+                </div>
+                <div class="desc">{{ plugin.description }}</div>
               </div>
-            </template>
-          </div>
+              <RightOutlined class="expand-icon" />
+            </button>
+            <div
+              v-if="selectedPluginName === plugin.name"
+              :id="`plugin-detail-${plugin.name}`"
+              class="plugin-detail"
+            >
+              <section class="plugin-overview">
+                <div class="plugin-top">
+                  <div>
+                    <strong>
+                      {{ $t('feature.installed.pluginOverview') }}
+                    </strong>
+                    <p>{{ pluginDetail.description }}</p>
+                  </div>
+                  <a-button :loading="exporting" @click="exportBundle">
+                    <template #icon><ExportOutlined /></template>
+                    {{ $t('feature.installed.export') }}
+                  </a-button>
+                </div>
+                <dl class="plugin-meta">
+                  <div>
+                    <dt>{{ $t('feature.installed.version') }}</dt>
+                    <dd>v{{ pluginDetail.version || '-' }}</dd>
+                  </div>
+                  <div>
+                    <dt>{{ $t('feature.installed.developer') }}</dt>
+                    <dd>
+                      {{
+                        pluginDetail.author || $t('feature.installed.unknown')
+                      }}
+                    </dd>
+                  </div>
+                  <div>
+                    <dt>{{ $t('feature.installed.commandCount') }}</dt>
+                    <dd>{{ runnableCommandCount }}</dd>
+                  </div>
+                </dl>
+              </section>
+              <section class="feature-container">
+                <div class="section-heading">
+                  <strong>
+                    {{ $t('feature.installed.availableCommands') }}
+                  </strong>
+                  <p>{{ $t('feature.installed.commandHint') }}</p>
+                </div>
+                <template
+                  v-for="(item, index) in pluginDetail.features"
+                  :key="index"
+                >
+                  <div v-if="item.cmds?.length" class="command-group">
+                    <div class="command-group-title">
+                      {{ item.explain || item.code }}
+                      <span>{{ item.cmds.length }}</span>
+                    </div>
+                    <div
+                      v-for="(cmd, cmdIndex) in item.cmds"
+                      :key="commandRowKey(item, cmd, cmdIndex)"
+                      class="command-row"
+                    >
+                      <div class="command-info">
+                        <div class="command-title-line">
+                          <span class="command-name">
+                            {{ commandDisplayName(item, cmd) }}
+                          </span>
+                          <span v-if="isMatchCommand(cmd)" class="match-badge">
+                            {{ $t('feature.installed.matchRules.autoMatch') }}
+                          </span>
+                          <span
+                            v-if="isRuleCustomized(item, cmd, cmdIndex)"
+                            class="customized-badge"
+                          >
+                            {{ $t('feature.installed.matchRules.customized') }}
+                          </span>
+                        </div>
+                        <span
+                          v-if="isMatchCommand(cmd)"
+                          class="command-rule-summary"
+                        >
+                          {{ matchRuleSummary(item, cmd, cmdIndex) }}
+                        </span>
+                      </div>
+                      <div class="command-actions">
+                        <template v-if="!isMatchCommand(cmd)">
+                          <a-button
+                            type="text"
+                            @click="openPlugin({ feature: item, cmd })"
+                          >
+                            <template #icon><CaretRightOutlined /></template>
+                            {{ $t('feature.installed.run') }}
+                          </a-button>
+                          <a-button
+                            :type="hasAdded(item, cmd) ? 'primary' : 'default'"
+                            @click="togglePanelPin(item, cmd)"
+                          >
+                            <template #icon>
+                              <PushpinFilled v-if="hasAdded(item, cmd)" />
+                              <PushpinOutlined v-else />
+                            </template>
+                            {{
+                              hasAdded(item, cmd)
+                                ? $t('feature.installed.unpin')
+                                : $t('feature.installed.pin')
+                            }}
+                          </a-button>
+                        </template>
+                        <a-button
+                          v-else
+                          @click="openMatchRuleEditor(item, cmd, cmdIndex)"
+                        >
+                          <template #icon><SettingOutlined /></template>
+                          {{ $t('feature.installed.matchRules.manage') }}
+                        </a-button>
+                      </div>
+                    </div>
+                  </div>
+                </template>
+                <a-empty
+                  v-if="!runnableFeatureCount"
+                  :description="$t('feature.installed.noCommands')"
+                />
+              </section>
+              <section class="danger-zone">
+                <div>
+                  <strong>{{ $t('feature.installed.dangerZone') }}</strong>
+                  <p>{{ $t('feature.installed.dangerHint') }}</p>
+                </div>
+                <a-button
+                  danger
+                  :loading="pluginDetail.isloading"
+                  @click="confirmDeletePlugin(pluginDetail)"
+                >
+                  <template #icon><DeleteOutlined /></template>
+                  {{ $t('feature.installed.remove') }}
+                </a-button>
+              </section>
+            </div>
+          </article>
+          <a-empty
+            v-if="!filteredPlugins.length"
+            :image="simpleImage"
+            :description="$t('feature.installed.noSearchResults')"
+          />
         </div>
       </div>
     </div>
+    <MatchRuleEditor
+      :visible="matchRuleEditorVisible"
+      :command="editingEffectiveCommand"
+      :customized="editingRuleCustomized"
+      @close="closeMatchRuleEditor"
+      @save="saveMatchRule"
+      @reset="resetMatchRule"
+    />
   </div>
 </template>
 
 <script setup>
 import { useStore } from 'vuex';
 import { computed, ref, toRaw, watch } from 'vue';
-import { useRoute, useRouter } from 'vue-router';
+import { useRouter } from 'vue-router';
 import {
   PushpinOutlined,
   PushpinFilled,
   CaretRightOutlined,
-  DownOutlined,
+  ExportOutlined,
+  ImportOutlined,
+  DeleteOutlined,
+  SearchOutlined,
+  RightOutlined,
+  SettingOutlined,
 } from '@ant-design/icons-vue';
-import { message } from 'ant-design-vue';
+import { Empty, message, Modal } from 'ant-design-vue';
 import { useI18n } from 'vue-i18n';
 
 import { buildPluginLaunchPayload } from '@/utils/pluginLaunchPayload';
 import { toMarketPayload } from '@/utils/marketPayload';
+import MatchRuleEditor from './match-rule-editor.vue';
+import {
+  commandMatchKey,
+  matchRuleOverrideId,
+  normalizeMatchRulesDocument,
+  SUPER_PANEL_MATCH_RULES_DB_ID,
+} from '../../../../shared/super-panel-match-rules';
 
 const { t } = useI18n();
 
 const store = useStore();
-const route = useRoute();
 const router = useRouter();
 
 const localPlugins = computed(() =>
@@ -155,6 +266,8 @@ const updateLocalPlugin = () => store.dispatch('updateLocalPlugin');
 
 const exporting = ref(false);
 const importing = ref(false);
+const searchKeyword = ref('');
+const simpleImage = Empty.PRESENTED_IMAGE_SIMPLE;
 
 const exportBundle = async () => {
   const name = pluginDetail.value?.name;
@@ -227,17 +340,186 @@ const importBundle = async () => {
 const startUnDownload = (name) => store.dispatch('startUnDownload', name);
 const errorUnDownload = (name) => store.dispatch('errorUnDownload', name);
 
-const currentSelect = ref([route.query.plugin || localPlugins?.value[0]?.name]);
+const selectedPluginName = ref('');
+
+const filteredPlugins = computed(() => {
+  const keyword = searchKeyword.value.trim().toLocaleLowerCase();
+  if (!keyword) return localPlugins.value;
+  return localPlugins.value.filter((plugin) =>
+    [plugin.pluginName, plugin.description, plugin.author]
+      .filter(Boolean)
+      .some((value) => String(value).toLocaleLowerCase().includes(keyword))
+  );
+});
+
+const togglePlugin = (name) => {
+  selectedPluginName.value = selectedPluginName.value === name ? '' : name;
+};
 
 watch(localPlugins, () => {
-  currentSelect.value = [localPlugins?.value[0]?.name];
+  const selectedStillExists = localPlugins.value.some(
+    (plugin) => plugin.name === selectedPluginName.value
+  );
+  if (!selectedStillExists) {
+    selectedPluginName.value = '';
+  }
 });
 
 const pluginDetail = computed(() => {
   return (
-    localPlugins.value.find((v) => v.name === currentSelect.value[0]) || {}
+    localPlugins.value.find((v) => v.name === selectedPluginName.value) || {}
   );
 });
+
+const runnableFeatureCount = computed(
+  () =>
+    (pluginDetail.value.features || []).filter(
+      (feature) => feature.cmds?.length
+    ).length
+);
+const runnableCommandCount = computed(() =>
+  (pluginDetail.value.features || []).reduce(
+    (total, feature) => total + (feature.cmds || []).length,
+    0
+  )
+);
+
+const matchRulesDocument = ref(
+  normalizeMatchRulesDocument(
+    window.flick.db.get(SUPER_PANEL_MATCH_RULES_DB_ID)
+  )
+);
+if (!matchRulesDocument.value._id) {
+  matchRulesDocument.value._id = SUPER_PANEL_MATCH_RULES_DB_ID;
+}
+const matchRuleEditorVisible = ref(false);
+const editingRuleContext = ref(null);
+
+const isMatchCommand = (cmd) => !!cmd && typeof cmd === 'object';
+const commandDisplayName = (feature, cmd) =>
+  isMatchCommand(cmd) ? cmd.label || feature.code : String(cmd);
+const commandRowKey = (feature, cmd, index) =>
+  `${feature.code}:${commandMatchKey(cmd, index)}`;
+
+const commandOverrideId = (feature, cmd, index) => {
+  const key = commandMatchKey(cmd, index);
+  return matchRuleOverrideId(pluginDetail.value.name, feature.code, key);
+};
+
+const findRuleOverride = (feature, cmd, index) => {
+  const id = commandOverrideId(feature, cmd, index);
+  return matchRulesDocument.value.data.find((row) => row.id === id);
+};
+
+const effectiveRuleCommand = (feature, cmd, index) => {
+  const override = findRuleOverride(feature, cmd, index);
+  if (!override) return cmd;
+  return {
+    ...cmd,
+    ...(Number.isFinite(override.priority)
+      ? { priority: override.priority }
+      : {}),
+    matchRules: {
+      ...(cmd.matchRules || {}),
+      ...override.matchRules,
+    },
+  };
+};
+
+const isRuleCustomized = (feature, cmd, index) =>
+  !!findRuleOverride(feature, cmd, index);
+
+const matchRuleSummary = (feature, cmd, index) => {
+  const effective = effectiveRuleCommand(feature, cmd, index);
+  if (effective.matchRules?.enabled === false) {
+    return t('feature.installed.matchRules.disabled');
+  }
+  const selection =
+    effective.matchRules?.selection ||
+    (['files', 'img'].includes(effective.type) ? 'files' : 'text');
+  if (effective.type === 'img') {
+    return t('feature.installed.matchRules.imageSummary');
+  }
+  if (selection === 'text') {
+    return effective.matchRules?.pattern || effective.match
+      ? t('feature.installed.matchRules.textPatternSummary')
+      : t('feature.installed.matchRules.anyTextSummary');
+  }
+  const minCount = effective.matchRules?.minCount ?? effective.minLength ?? 1;
+  const kinds = effective.matchRules?.kinds || ['file'];
+  return t('feature.installed.matchRules.fileSummary', {
+    count: minCount,
+    kind: kinds.includes('directory')
+      ? t('feature.installed.matchRules.fileAndDirectory')
+      : t('feature.installed.matchRules.regularFile'),
+  });
+};
+
+const editingEffectiveCommand = computed(() => {
+  const context = editingRuleContext.value;
+  return context
+    ? effectiveRuleCommand(context.feature, context.cmd, context.index)
+    : {};
+});
+const editingRuleCustomized = computed(() => {
+  const context = editingRuleContext.value;
+  return context
+    ? isRuleCustomized(context.feature, context.cmd, context.index)
+    : false;
+});
+
+const openMatchRuleEditor = (feature, cmd, index) => {
+  editingRuleContext.value = { feature, cmd, index };
+  matchRuleEditorVisible.value = true;
+};
+const closeMatchRuleEditor = () => {
+  matchRuleEditorVisible.value = false;
+};
+
+const persistMatchRulesDocument = () => {
+  const { rev } = window.flick.db.put(
+    JSON.parse(JSON.stringify(matchRulesDocument.value))
+  );
+  matchRulesDocument.value._rev = rev;
+};
+
+const saveMatchRule = ({ priority, matchRules }) => {
+  const context = editingRuleContext.value;
+  if (!context) return;
+  const commandKey = commandMatchKey(context.cmd, context.index);
+  const id = matchRuleOverrideId(
+    pluginDetail.value.name,
+    context.feature.code,
+    commandKey
+  );
+  const row = {
+    id,
+    pluginName: pluginDetail.value.name,
+    featureCode: context.feature.code,
+    commandKey,
+    priority,
+    matchRules,
+  };
+  matchRulesDocument.value.data = [
+    ...matchRulesDocument.value.data.filter((item) => item.id !== id),
+    row,
+  ];
+  persistMatchRulesDocument();
+  closeMatchRuleEditor();
+  message.success(t('feature.installed.matchRules.saved'));
+};
+
+const resetMatchRule = () => {
+  const context = editingRuleContext.value;
+  if (!context) return;
+  const id = commandOverrideId(context.feature, context.cmd, context.index);
+  matchRulesDocument.value.data = matchRulesDocument.value.data.filter(
+    (item) => item.id !== id
+  );
+  persistMatchRulesDocument();
+  closeMatchRuleEditor();
+  message.success(t('feature.installed.matchRules.restored'));
+};
 
 const superPanelPlugins = ref(
   window.flick.db.get('super-panel-user-plugins') || {
@@ -245,19 +527,6 @@ const superPanelPlugins = ref(
     _id: 'super-panel-user-plugins',
   }
 );
-
-const handleMenuClick = (key, item, cmd) => {
-  if (key === 'open') {
-    openPlugin({
-      feature: item,
-      cmd,
-    });
-  } else if (key === 'add') {
-    addCmdToSuperPanel({ cmd, code: item.code });
-  } else {
-    removePluginToSuperPanel({ cmd, name: item.name });
-  }
-};
 
 const addCmdToSuperPanel = ({ cmd, code }) => {
   const plugin = buildPluginLaunchPayload({
@@ -284,16 +553,29 @@ const removePluginToSuperPanel = ({ cmd, name }) => {
   superPanelPlugins.value._rev = rev;
 };
 
-const hasAdded = (cmd) => {
-  let added = false;
-  superPanelPlugins.value.data.some((item) => {
-    if (item.cmd === cmd) {
-      added = true;
-      return true;
-    }
-    return false;
-  });
-  return added;
+const hasAdded = (feature, cmd) =>
+  superPanelPlugins.value.data.some(
+    (item) =>
+      item.name === pluginDetail.value.name &&
+      item.cmd === cmd &&
+      (item.ext?.code || item.feature?.code) === feature.code
+  );
+
+const togglePanelPin = (feature, cmd) => {
+  if (hasAdded(feature, cmd)) {
+    superPanelPlugins.value.data = toRaw(superPanelPlugins.value).data.filter(
+      (item) =>
+        !(
+          item.name === pluginDetail.value.name &&
+          item.cmd === cmd &&
+          (item.ext?.code || item.feature?.code) === feature.code
+        )
+    );
+    const { rev } = window.flick.db.put(toRaw(superPanelPlugins.value));
+    superPanelPlugins.value._rev = rev;
+    return;
+  }
+  addCmdToSuperPanel({ cmd, code: feature.code });
 };
 
 const openPlugin = ({ cmd, feature }) => {
@@ -315,6 +597,13 @@ const deletePlugin = async (plugin) => {
   try {
     await window.market.deletePlugin(toMarketPayload(plugin));
     removePluginToSuperPanel({ name: plugin.name });
+    const remainingRules = matchRulesDocument.value.data.filter(
+      (item) => item.pluginName !== plugin.name
+    );
+    if (remainingRules.length !== matchRulesDocument.value.data.length) {
+      matchRulesDocument.value.data = remainingRules;
+      persistMatchRulesDocument();
+    }
     await updateLocalPlugin();
   } catch (e) {
     errorUnDownload(plugin.name);
@@ -322,6 +611,19 @@ const deletePlugin = async (plugin) => {
   } finally {
     clearTimeout(timer);
   }
+};
+
+const confirmDeletePlugin = (plugin) => {
+  Modal.confirm({
+    title: t('feature.installed.removeConfirmTitle'),
+    content: t('feature.installed.removeConfirmContent', {
+      name: plugin.pluginName || plugin.name,
+    }),
+    okText: t('feature.installed.remove'),
+    okType: 'danger',
+    cancelText: t('feature.localPlugin.cancelText'),
+    onOk: () => deletePlugin(plugin),
+  });
 };
 
 const gotoFinder = () => {
@@ -335,30 +637,18 @@ const gotoFinder = () => {
   box-sizing: border-box;
   width: 100%;
   overflow: hidden;
-  height: calc(~'100vh - 34px');
-  .view-header {
+  .installed-empty-toolbar {
+    min-height: 56px;
+    padding: 10px 16px;
     display: flex;
     align-items: center;
-    justify-content: space-between;
-    margin-bottom: 16px;
-    gap: 12px;
-  }
-  .view-actions {
-    display: flex;
-    flex-shrink: 0;
-    gap: 8px;
-  }
-  .view-title {
-    font-size: 16px;
-    font-weight: 500;
-    margin-bottom: 0;
-    color: var(--color-text-primary);
+    justify-content: flex-end;
+    border-bottom: 1px solid var(--color-border-light);
   }
   .view-container {
-    border-radius: 8px;
     background: var(--color-body-bg);
-    overflow: auto;
-    height: calc(~'100vh - 84px');
+    overflow: hidden;
+    min-height: 440px;
   }
   :deep(.ant-result-title) {
     color: var(--color-text-primary);
@@ -366,132 +656,380 @@ const gotoFinder = () => {
   :deep(.ant-result-subtitle) {
     color: var(--color-text-desc);
   }
-  .keyword-tag {
-    font-size: 13px;
-    margin: 4px;
-  }
-
-  .container {
-    box-sizing: border-box;
+  .installed-layout {
     width: 100%;
-    overflow: hidden;
-    background: #f3efef;
-    height: 100%;
-    display: flex;
-  }
-
-  .installed-list {
-    width: 38%;
+    min-height: calc(100vh - 89px);
+    padding: 18px;
     background: var(--color-body-bg);
-    height: 100%;
-    padding: 10px 0;
-    border-right: 1px solid var(--color-border-light);
-    overflow: auto;
-
-    .item {
-      padding: 10px 20px;
+  }
+  .installed-toolbar {
+    margin-bottom: 14px;
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    white-space: nowrap;
+  }
+  .list-summary {
+    min-width: max-content;
+    display: flex;
+    flex: 0 0 auto;
+    align-items: center;
+    gap: 8px;
+    color: var(--color-text-primary);
+    font-size: 14px;
+  }
+  .plugin-count {
+    min-width: 22px;
+    padding: 1px 6px;
+    border-radius: 999px;
+    background: var(--color-body-bg);
+    color: var(--color-text-desc);
+    font-size: 12px;
+    text-align: center;
+  }
+  .plugin-search {
+    width: auto;
+    min-width: 180px;
+    flex: 1 1 320px;
+    border-radius: 8px;
+  }
+  .installed-toolbar > .ant-btn {
+    flex: 0 0 auto;
+  }
+  .plugin-accordion {
+    display: grid;
+    gap: 10px;
+  }
+  .plugin-panel {
+    overflow: hidden;
+    border: 1px solid var(--color-border-light);
+    border-radius: 11px;
+    background: var(--color-surface-elevated);
+    transition:
+      border-color 0.16s ease,
+      box-shadow 0.16s ease;
+    &.expanded {
+      border-color: color-mix(
+        in srgb,
+        var(--ant-primary-color) 28%,
+        var(--color-border-light)
+      );
+      box-shadow: 0 6px 18px rgba(15, 23, 42, 0.06);
+      .expand-icon {
+        color: var(--color-accent-text);
+        transform: rotate(90deg);
+      }
+      .plugin-trigger {
+        background: var(--color-surface-subtle);
+      }
+    }
+  }
+  .plugin-trigger {
+    width: 100%;
+    min-height: 72px;
+    padding: 12px 16px;
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    cursor: pointer;
+    border: 0;
+    background: var(--color-surface-elevated);
+    color: var(--color-text-content);
+    font: inherit;
+    text-align: left;
+    transition: background-color 0.16s ease;
+    &:hover {
+      background: var(--color-surface-subtle);
+    }
+    img {
+      width: 44px;
+      height: 44px;
+      flex: 0 0 44px;
+      border-radius: 10px;
+      object-fit: cover;
+    }
+    .info {
+      min-width: 0;
+      flex: 1;
+    }
+    .title-row {
       display: flex;
       align-items: center;
-      color: var(--color-text-content);
-      border-bottom: 1px dashed var(--color-border-light);
-      cursor: pointer;
-      &:last-child {
-        border-bottom: none;
-      }
-      img {
-        width: 34px;
-        height: 34px;
-        margin-right: 12px;
-      }
-
-      .desc {
-        font-size: 12px;
-        color: var(--color-text-desc);
-        display: -webkit-box;
-        -webkit-box-orient: vertical;
-        overflow: hidden;
-        -webkit-line-clamp: 2;
-        text-overflow: ellipsis;
-      }
-
-      &.active {
-        color: var(--ant-primary-color);
-        background: var(--color-list-hover);
-      }
+      gap: 8px;
+    }
+    .title {
+      min-width: 0;
+      overflow: hidden;
+      color: var(--color-text-primary);
+      font-size: 14px;
+      font-weight: 600;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+    }
+    .item-version {
+      flex-shrink: 0;
+      color: var(--color-text-desc);
+      font-size: 11px;
+    }
+    .desc {
+      margin-top: 2px;
+      overflow: hidden;
+      color: var(--color-text-desc);
+      font-size: 12px;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+    }
+    .expand-icon {
+      flex: 0 0 auto;
+      color: var(--color-text-desc);
+      transition:
+        color 0.16s ease,
+        transform 0.16s ease;
     }
   }
 
   .plugin-detail {
-    padding: 20px 20px 0 20px;
-    box-sizing: border-box;
-    width: 62%;
-    height: 100%;
+    min-width: 0;
+    padding: 0 16px;
+    border-top: 1px solid var(--color-border-light);
     background: var(--color-body-bg);
+  }
+  .plugin-overview,
+  .feature-container,
+  .danger-zone {
+    border: 0;
+    border-radius: 0;
+    background: transparent;
+  }
+  .plugin-overview {
+    padding: 14px 0 12px;
     .plugin-top {
       display: flex;
-      align-items: flex-start;
+      align-items: center;
       justify-content: space-between;
-      border-bottom: 1px solid #eee;
-      padding-bottom: 12px;
-      margin-bottom: 12px;
-      .plugin-actions {
-        display: flex;
-        flex-wrap: wrap;
-        gap: 8px;
-        justify-content: flex-end;
-      }
-      .title {
-        font-size: 16px;
-        display: flex;
-        align-items: center;
-        color: var(--color-text-primary);
-        .ant-tag {
-          background: var(--color-input-hover);
-          border: 1px solid var(--color-border-light);
-          color: var(--color-text-content);
-          margin-left: 8px;
-        }
-      }
-
-      .desc {
-        font-size: 13px;
-        color: var(--color-text-desc);
+      gap: 20px;
+    }
+    .plugin-top strong {
+      color: var(--color-text-primary);
+      font-size: 14px;
+    }
+    .plugin-top p {
+      max-width: 720px;
+      margin: 3px 0 0;
+      overflow: hidden;
+      color: var(--color-text-desc);
+      font-size: 12px;
+      line-height: 1.55;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+    }
+    .plugin-top .ant-btn {
+      width: auto;
+      flex: 0 0 auto;
+    }
+  }
+  .plugin-meta {
+    margin: 10px 0 0;
+    display: flex;
+    align-items: center;
+    flex-wrap: wrap;
+    gap: 8px 0;
+    > div {
+      min-width: 0;
+      padding: 0 14px;
+      display: flex;
+      align-items: baseline;
+      gap: 6px;
+      border-left: 1px solid var(--color-border-light);
+      &:first-child {
+        padding-left: 0;
+        border-left: 0;
       }
     }
+    dt {
+      color: var(--color-text-desc);
+      font-size: 12px;
+    }
+    dd {
+      margin: 0;
+      color: var(--color-text-primary);
+      font-size: 13px;
+      font-weight: 500;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+    }
+  }
+  .feature-container {
+    min-height: 0;
+    padding: 12px 0;
+    border-top: 1px solid var(--color-border-light);
+    color: var(--color-text-content);
+  }
+  .section-heading {
+    margin-bottom: 8px;
+    display: flex;
+    align-items: baseline;
+    gap: 10px;
+    strong {
+      color: var(--color-text-primary);
+      font-size: 13px;
+      font-weight: 600;
+    }
+    p {
+      margin: 0;
+      color: var(--color-text-desc);
+      font-size: 12px;
+    }
+  }
+  .command-group {
+    margin-bottom: 6px;
+    border: 0;
+    border-radius: 0;
+    &:last-child {
+      margin-bottom: 0;
+    }
+  }
+  .command-group-title {
+    padding: 5px 8px;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    border: 0;
+    background: transparent;
+    color: var(--color-text-desc);
+    font-size: 12px;
+    font-weight: 500;
+    span {
+      color: var(--color-text-desc);
+      font-size: 11px;
+      font-weight: 400;
+    }
+  }
+  .command-row {
+    min-height: 42px;
+    padding: 5px 6px 5px 10px;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 16px;
+    border-bottom: 1px solid var(--color-border-light);
+    &:last-child {
+      border-bottom: 0;
+    }
+  }
+  .command-name {
+    min-width: 0;
+    overflow: hidden;
+    color: var(--color-text-content);
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+  .command-info {
+    min-width: 0;
+    display: flex;
+    flex: 1;
+    flex-direction: column;
+    gap: 2px;
+  }
+  .command-title-line {
+    min-width: 0;
+    display: flex;
+    align-items: center;
+    gap: 6px;
+  }
+  .match-badge,
+  .customized-badge {
+    flex: 0 0 auto;
+    padding: 1px 6px;
+    border-radius: 999px;
+    font-size: 10px;
+    line-height: 18px;
+  }
+  .match-badge {
+    background: var(--color-surface-subtle);
+    color: var(--color-text-desc);
+  }
+  .customized-badge {
+    background: color-mix(in srgb, var(--ant-primary-color) 10%, transparent);
+    color: var(--color-accent-text);
+  }
+  .command-rule-summary {
+    overflow: hidden;
+    color: var(--color-text-desc);
+    font-size: 11px;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+  .command-actions {
+    display: flex;
+    flex-shrink: 0;
+    gap: 6px;
+  }
+  .danger-zone {
+    padding: 10px 0 12px;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 16px;
+    border-top: 1px solid var(--color-border-light);
+    strong {
+      color: var(--color-text-primary);
+      font-size: 13px;
+    }
+    p {
+      margin: 2px 0 0;
+      color: var(--color-text-desc);
+      font-size: 12px;
+    }
+  }
+}
 
-    .detail-container,
-    .feature-container {
-      height: 380px;
-      overflow: auto;
-      color: var(--color-text-content);
-      img {
+@media (max-width: 680px) {
+  .installed {
+    .installed-layout {
+      padding: 12px;
+    }
+    .installed-toolbar {
+      align-items: stretch;
+      flex-wrap: wrap;
+      .list-summary {
         width: 100%;
       }
+      .plugin-search {
+        width: auto;
+        min-width: 0;
+        flex: 1;
+      }
     }
-
-    .desc-item {
-      padding: 10px 0;
-      color: var(--color-text-content);
-      .ant-tag {
-        margin-top: 6px;
-
-        &.executable {
-          cursor: pointer;
-          color: var(--ant-info-color);
-          &:hover {
-            transform: translateY(-2px);
-          }
+    .plugin-detail {
+      padding: 0 12px;
+      .plugin-top {
+        align-items: flex-start;
+        gap: 12px;
+        flex-direction: column;
+      }
+      .plugin-meta {
+        align-items: flex-start;
+        flex-direction: column;
+        > div {
+          padding: 0;
+          border-left: 0;
         }
       }
-
-      .desc-title {
-        display: flex;
-        align-items: center;
-        justify-content: space-between;
+      .command-row {
+        align-items: flex-start;
+        flex-direction: column;
       }
-
-      .desc-info {
-        color: var(--color-text-desc);
+      .command-actions {
+        width: 100%;
+        .ant-btn {
+          flex: 1;
+        }
+      }
+      .danger-zone {
+        align-items: flex-start;
+        flex-direction: column;
       }
     }
   }

@@ -40,7 +40,7 @@ function ensureBuiltinPluginsInList(): void {
         global.LOCAL_PLUGINS.addPlugin(payload);
       } else {
         const next = [...plugins];
-        next[idx] = normalizePluginLogoLocalPath({ ...next[idx], ...payload });
+        next[idx] = normalizePluginForStorage({ ...next[idx], ...payload });
         global.LOCAL_PLUGINS.PLUGINS = next;
         fs.writeFileSync(configPath, JSON.stringify(next));
       }
@@ -300,37 +300,42 @@ function removeInstalledPluginFromDisk(pluginName: string): void {
   }
 }
 
-let registry;
-let pluginInstance;
-(async () => {
-  try {
-    const res = await API.dbGet({
-      data: {
-        id: 'flick-localhost-config',
-      },
-    });
+let pluginInstancePromise: Promise<PluginHandler> | null = null;
 
-    registry = res && res.data.register;
-    pluginInstance = new PluginHandler({
-      baseDir,
-      registry,
-    });
-  } catch (e) {
-    pluginInstance = new PluginHandler({
-      baseDir,
-      registry,
-    });
+function getPluginInstance(): Promise<PluginHandler> {
+  if (!pluginInstancePromise) {
+    pluginInstancePromise = (async () => {
+      let registry: string | undefined;
+      try {
+        const res = await API.dbGet({
+          data: {
+            id: 'flick-localhost-config',
+          },
+        });
+        registry =
+          typeof res?.data?.register === 'string'
+            ? res.data.register
+            : undefined;
+      } catch {
+        // The plugin handler applies the public default registry below.
+      }
+      return new PluginHandler({
+        baseDir,
+        registry,
+      });
+    })();
   }
-})();
+  return pluginInstancePromise;
+}
 
 global.LOCAL_PLUGINS = {
   PLUGINS: [],
   async upgradePlugin(name) {
-    if (!pluginInstance) throw new Error('Plugin manager is unavailable');
+    const pluginInstance = await getPluginInstance();
     await pluginInstance.upgrade(name);
   },
   async downloadPlugin(plugin) {
-    if (!pluginInstance) throw new Error('Plugin manager is unavailable');
+    const pluginInstance = await getPluginInstance();
     await pluginInstance.install([plugin.name], { isDev: plugin.isDev });
     if (plugin.isDev) {
       // 获取 dev 插件信息
@@ -358,6 +363,7 @@ global.LOCAL_PLUGINS = {
       ...pluginInfo,
     };
     plugin = await normalizeInstalledPluginLogo(plugin);
+    plugin = normalizePluginForStorage(plugin);
     // 刷新
     let currentPlugins = global.LOCAL_PLUGINS.getLocalPlugins();
 
@@ -422,7 +428,7 @@ global.LOCAL_PLUGINS = {
     ) {
       return global.LOCAL_PLUGINS.getLocalPlugins();
     }
-    if (!pluginInstance) throw new Error('Plugin manager is unavailable');
+    const pluginInstance = await getPluginInstance();
     try {
       await pluginInstance.uninstall([plugin.name], { isDev: plugin.isDev });
     } catch (_e) {

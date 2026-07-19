@@ -20,7 +20,6 @@ export default {
     },
     common: {
       start: true,
-      space: true,
       hideOnBlur: true,
       autoPast: false,
       darkMode: false,

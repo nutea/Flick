@@ -41,7 +41,10 @@ import {
   flipPluginAutoDetachSync,
   flipPluginDetachInputPolicySync,
 } from './pluginFlickConfig';
-import { executePluginSubInputChangeHook } from './pluginSubInputHook';
+import {
+  executePluginEnterHook,
+  executePluginSubInputChangeHook,
+} from './pluginSubInputHook';
 import {
   DEV_APP_PORTS,
   devSubAppHttpUrl,
@@ -538,6 +541,7 @@ class API extends DBInstance {
       return;
     }
     if (this.isSingletonAlreadyInMainWindow(plugin, window)) {
+      runnerInstance.executeHooks('PluginEnter', plugin.ext ?? null);
       windowGeometryController.showMainWindow(window);
       return;
     }
@@ -622,6 +626,18 @@ void window.loadPlugin(${JSON.stringify(plugin)});`
       value = payload;
     } else if (typeof payload === 'number' && !Number.isNaN(payload)) {
       value = String(payload);
+    } else if (Array.isArray(payload)) {
+      value = payload
+        .map((item) =>
+          item &&
+          typeof item === 'object' &&
+          'path' in item &&
+          typeof (item as { path?: unknown }).path === 'string'
+            ? (item as { path: string }).path
+            : ''
+        )
+        .filter(Boolean)
+        .join('\n');
     } else if (
       payload &&
       typeof payload === 'object' &&
@@ -683,6 +699,7 @@ void window.loadPlugin(${JSON.stringify(plugin)});`
     const ep = (plugin as { ext?: { payload?: unknown } })?.ext?.payload;
     if (
       (typeof ep === 'string' && ep.length > 0) ||
+      (Array.isArray(ep) && ep.length > 0) ||
       (ep &&
         typeof ep === 'object' &&
         !Array.isArray(ep) &&
@@ -697,6 +714,7 @@ void window.loadPlugin(${JSON.stringify(plugin)});`
       return;
     }
     if (this.isSingletonAlreadyInMainWindow(plugin, window)) {
+      runnerInstance.executeHooks('PluginEnter', plugin.ext ?? null);
       windowGeometryController.showMainWindow(window);
       return;
     }
@@ -788,6 +806,7 @@ void window.loadPlugin(${JSON.stringify(plugin)});`
         })()`
       );
       const bv = detachWin.getBrowserView();
+      executePluginEnterHook(bv?.webContents ?? null, launchPlugin?.ext);
       executePluginSubInputChangeHook(bv?.webContents ?? null, value);
       await mainWindow.webContents.executeJavaScript(`window.initFlick()`);
       applyMainWindowContentHeight(mainWindow, 60);

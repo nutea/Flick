@@ -307,11 +307,15 @@ export default () => {
 
     view.webContents.session.webRequest.onHeadersReceived(
       (details, callback) => {
+        const responseHeaders = { ...details.responseHeaders };
+        const hasCorsHeader = Object.keys(responseHeaders).some(
+          (key) => key.toLowerCase() === 'access-control-allow-origin'
+        );
+        if (!hasCorsHeader) {
+          responseHeaders['Access-Control-Allow-Origin'] = ['*'];
+        }
         callback({
-          responseHeaders: {
-            'Access-Control-Allow-Origin': ['*'],
-            ...details.responseHeaders,
-          },
+          responseHeaders,
         });
       }
     );

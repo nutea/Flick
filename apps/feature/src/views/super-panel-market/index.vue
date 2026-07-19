@@ -1,15 +1,16 @@
 <template>
-  <div class="super-panel-settings">
-    <div class="view-title">{{ $t('feature.market.superPanelSettings') }}</div>
-    <div class="view-container">
-      <a-menu v-model:selectedKeys="activeTab" mode="horizontal">
-        <a-menu-item key="shortcut">
-          {{ $t('feature.superPanelShortcut.tabShortcut') }}
-        </a-menu-item>
-        <a-menu-item key="translate">
-          {{ $t('feature.superPanelShortcut.tabTranslate') }}
-        </a-menu-item>
-      </a-menu>
+  <div class="super-panel-settings settings-page">
+    <div class="view-container settings-card">
+      <div class="section-tabs">
+        <a-radio-group v-model:value="activeTabKey" button-style="solid">
+          <a-radio-button value="shortcut">
+            {{ $t('feature.superPanelShortcut.tabShortcut') }}
+          </a-radio-button>
+          <a-radio-button value="translate">
+            {{ $t('feature.superPanelShortcut.tabTranslate') }}
+          </a-radio-button>
+        </a-radio-group>
+      </div>
       <div class="settings-detail">
         <template v-if="activeTab[0] === 'shortcut'">
           <div class="setting-item">
@@ -409,6 +410,12 @@ const triggerSelect = ref<string>(
   initialRaw.startsWith('flick:sp:') ? initialRaw : 'keyboard'
 );
 const activeTab = ref<string[]>(['shortcut']);
+const activeTabKey = computed({
+  get: () => activeTab.value[0],
+  set: (value: string) => {
+    activeTab.value = [value];
+  },
+});
 
 type TranslateEditorForm = {
   profileId: string;
@@ -754,44 +761,31 @@ function onSaveTranslate() {
 </script>
 
 <style lang="less" scoped>
-@import '@/assets/common.less';
-
 /* 与 views/settings/index.vue 中 .settings 对齐 */
 .super-panel-settings {
   box-sizing: border-box;
   width: 100%;
   overflow-x: hidden;
-  background: var(--color-body-bg2);
-  height: calc(~'100vh - 34px');
-
-  .view-title {
-    font-size: 16px;
-    font-weight: 500;
-    margin-bottom: 16px;
-    color: var(--color-text-primary);
-  }
+  background: transparent;
 
   .view-container {
-    border-radius: 8px;
     background: var(--color-body-bg);
-    overflow: auto;
-    height: calc(~'100vh - 84px');
+    overflow: hidden;
   }
 
-  .ant-menu-horizontal {
+  .section-tabs {
+    padding: 14px 20px 0;
     border-bottom: 1px solid var(--color-border-light);
-  }
-
-  .ant-menu {
-    background: var(--color-body-bg) !important;
-    color: var(--color-text-content) !important;
+    .ant-radio-group {
+      margin-bottom: 14px;
+    }
   }
 
   .settings-detail {
     padding: 20px;
     box-sizing: border-box;
     flex: 1;
-    overflow: auto;
+    overflow: visible;
     background: var(--color-body-bg);
     color: var(--color-text-content);
   }
@@ -822,7 +816,7 @@ function onSaveTranslate() {
   }
 
   .translate-page {
-    max-width: 640px;
+    max-width: 720px;
   }
 
   .translate-layout {
@@ -1125,6 +1119,24 @@ function onSaveTranslate() {
 
   .settings-item-li.action {
     justify-content: flex-end;
+  }
+}
+
+@media (max-width: 900px) {
+  .super-panel-settings {
+    .settings-detail {
+      padding: 16px;
+    }
+    .translate-auto-row {
+      flex-direction: column;
+    }
+    .translate-footer {
+      position: sticky;
+      bottom: 0;
+      margin: 20px -16px -16px;
+      padding: 12px 16px;
+      background: var(--color-body-bg);
+    }
   }
 }
 </style>

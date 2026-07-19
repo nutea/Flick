@@ -6,31 +6,10 @@ const routes: Array<RouteRecordRaw> = [
     name: 'result',
     component: () => import('../views/market/components/result.vue'),
   },
-  {
-    path: '/devPlugin',
-    name: 'devPlugin',
-    component: () => import('../views/market/components/devlopment.vue'),
-  },
-  {
-    path: '/image',
-    name: 'image',
-    component: () => import('../views/market/components/image.vue'),
-  },
-  {
-    path: '/tools',
-    name: 'tools',
-    component: () => import('../views/market/components/tools.vue'),
-  },
-  {
-    path: '/worker',
-    name: 'worker',
-    component: () => import('../views/market/components/worker.vue'),
-  },
-  {
-    path: '/system',
-    name: 'system',
-    component: () => import('../views/market/components/system.vue'),
-  },
+  ...['/devPlugin', '/image', '/tools', '/worker', '/system'].map((path) => ({
+    path,
+    redirect: '/finder',
+  })),
   {
     path: '/localPlugin',
     name: 'localPlugin',
@@ -54,12 +33,42 @@ const routes: Array<RouteRecordRaw> = [
   {
     path: '/account',
     name: 'account',
-    component: () => import('../views/account/index.vue'),
+    component: () => import('../views/settings/index.vue'),
+    props: { section: 'userInfo' },
   },
   {
     path: '/settings',
-    name: 'settings',
-    component: () => import('../views/settings/user.vue'),
+    redirect: '/general',
+  },
+  {
+    path: '/general',
+    name: 'general',
+    component: () => import('../views/settings/index.vue'),
+    props: { section: 'normal' },
+  },
+  {
+    path: '/localStart',
+    name: 'localStart',
+    component: () => import('../views/settings/index.vue'),
+    props: { section: 'localstart' },
+  },
+  {
+    path: '/shortcuts',
+    name: 'shortcuts',
+    component: () => import('../views/settings/index.vue'),
+    props: { section: 'global' },
+  },
+  {
+    path: '/dataSync',
+    name: 'dataSync',
+    component: () => import('../views/settings/index.vue'),
+    props: { section: 'database' },
+  },
+  {
+    path: '/marketSource',
+    name: 'marketSource',
+    component: () => import('../views/settings/index.vue'),
+    props: { section: 'localhost' },
   },
   {
     path: '/dev',

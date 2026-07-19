@@ -47,6 +47,13 @@ const ipcInvoke = (type, data) => {
   });
 };
 
+const toFileIconUrl = (filePath) => {
+  const value = String(filePath || '').trim();
+  return value
+    ? `image://file-icon/?src=${encodeURIComponent(value)}`
+    : '';
+};
+
 window.flick = {
   hooks: {},
   __event__: {},
@@ -292,7 +299,9 @@ window.flick = {
     ipcSend('shellBeep');
   },
 
-  getFileIcon: (path) => ipcInvoke('getFileIcon', { path }),
+  // Rubick plugins expect this legacy API to return an img.src string
+  // synchronously. The custom protocol performs the native icon lookup later.
+  getFileIcon: (path) => toFileIconUrl(path),
 
   getPluginInfo: (pluginName, pluginPath) =>
     ipcInvoke('getPluginInfo', { pluginName, pluginPath }),
