@@ -52,9 +52,12 @@ extraMetadata:
   main: dist/main/entry.js
 win:
   icon: public/icons/icon.ico
-  artifactName: flick-Setup-${version}-x64.exe
+  artifactName: flick-${version}-${arch}.${ext}
   target:
     - target: nsis
+      arch:
+        - x64
+    - target: zip
       arch:
         - x64
 mac:
@@ -73,6 +76,7 @@ linux:
       arch:
         - x64
 nsis:
+  artifactName: flick-Setup-${version}-x64.exe
   shortcutName: Flick
   oneClick: false
   allowToChangeInstallationDirectory: true

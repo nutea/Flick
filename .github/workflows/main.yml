@@ -257,6 +257,7 @@ jobs:
           path: |
             build/*.exe
             build/*.exe.blockmap
+            build/*.zip
             build/latest.yml
           if-no-files-found: error
 
@@ -283,16 +284,17 @@ jobs:
         shell: bash
         run: |
           shopt -s nullglob
-          windows=(release-assets/*.exe)
+          windows_exe=(release-assets/*.exe)
+          windows_zip=(release-assets/*.zip)
           macos=(release-assets/*.dmg)
           linux=(release-assets/*.AppImage)
-          if (( ${#windows[@]} != 1 || ${#macos[@]} != 1 || ${#linux[@]} != 1 )); then
-            echo "Expected exactly one Windows EXE, macOS DMG, and Linux AppImage."
+          if (( ${#windows_exe[@]} != 1 || ${#windows_zip[@]} != 1 || ${#macos[@]} != 1 || ${#linux[@]} != 1 )); then
+            echo "Expected exactly one Windows EXE, Windows ZIP, macOS DMG, and Linux AppImage."
             find release-assets -maxdepth 1 -type f -print
             exit 1
           fi
-          printf 'Windows: %s\nmacOS: %s\nLinux: %s\n' \
-            "${windows[0]}" "${macos[0]}" "${linux[0]}"
+          printf 'Windows EXE: %s\nWindows ZIP: %s\nmacOS: %s\nLinux: %s\n' \
+            "${windows_exe[0]}" "${windows_zip[0]}" "${macos[0]}" "${linux[0]}"
 
       - name: Publish GitHub Release
         env:
