@@ -207,7 +207,7 @@ window.flick = {
     },
   },
   isDarkColors() {
-    return false;
+    return nativeTheme.shouldUseDarkColors;
   },
   getFeatures() {
     return ipcSendSync('getFeatures');
@@ -378,12 +378,6 @@ window.flick = {
     return win;
   },
 };
-
-// Backward compatibility for legacy Rubick plugins.
-// Many existing plugins still access window.rubick.* APIs.
-if (!window.rubick) {
-  window.rubick = window.flick;
-}
 
 ipcRenderer.on('flick:open-menu', (_event, payload) => {
   window.flick.hooks.onOpenMenu?.(payload);

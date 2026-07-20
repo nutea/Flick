@@ -7,6 +7,7 @@ import {
   imageProtocolSource,
   toImageProtocolUrl,
 } from '@/common/utils/imageProtocol';
+import { normalizeRubickPluginManifest } from '@/compat/rubick/manifest';
 
 export type PluginPresentation = Record<string, unknown> & {
   name?: string;
@@ -68,17 +69,18 @@ export function resolvePluginAsset(pluginName: string, raw: unknown): string {
 export function presentPlugin(
   plugin: Record<string, unknown>
 ): PluginPresentation {
-  const name = typeof plugin.name === 'string' ? plugin.name : '';
-  const logoUrl = name ? resolvePluginAsset(name, plugin.logo) : '';
+  const canonical = normalizeRubickPluginManifest(plugin);
+  const name = canonical.name;
+  const logoUrl = name ? resolvePluginAsset(name, canonical.logo) : '';
   const root = name ? pluginRoot(name) : '';
-  const main = typeof plugin.main === 'string' ? plugin.main : '';
+  const main = typeof canonical.main === 'string' ? canonical.main : '';
   const entry = root && main ? path.resolve(root, main) : '';
   const indexUrl =
     entry && isInside(root, entry)
       ? pathToFileURL(entry).toString()
       : undefined;
   return {
-    ...plugin,
+    ...canonical,
     logoUrl,
     icon: logoUrl,
     ...(indexUrl ? { indexUrl } : {}),

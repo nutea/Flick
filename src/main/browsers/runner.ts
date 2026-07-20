@@ -14,6 +14,12 @@ import { secureWebContentsNavigation } from '@/main/common/navigationSecurity';
 import { registerFeatureBridgeIpc } from '@/main/common/featureBridgeIpc';
 import { installImageProtocol } from '@/main/common/imageProtocolService';
 import { windowGeometryController } from '@/main/common/windowGeometryController';
+import {
+  isFlickFeaturePlugin,
+  isFlickSuperPanelPlugin,
+  normalizeRubickRuntimePlugin,
+  rubickRuntimePluginName,
+} from '@/compat/rubick/runtime';
 
 /** 通用插件 API 的编译后 preload；脚本自身会跳过 DevTools 与子 frame。 */
 function flickSessionPreloadPath(): string {
@@ -99,13 +105,13 @@ const getRelativePath = (indexPath) => {
 };
 
 const getPreloadPath = (plugin, pluginIndexPath) => {
-  const { name, preload, tplPath, indexPath } = plugin;
+  const { preload, tplPath, indexPath } = plugin;
   if (!preload) return;
-  if (name === 'flick-system-super-panel') {
+  if (isFlickSuperPanelPlugin(plugin)) {
     return path.join(__static, 'superx', preload || 'preload.js');
   }
   // 子项目走 Vite 时 indexPath 为 http://，不可用 path.resolve 相对其推导 preload，须固定磁盘路径
-  if (name === 'flick-system-feature') {
+  if (isFlickFeaturePlugin(plugin)) {
     return path.join(__static, 'feature', preload || 'preload.js');
   }
   if (tplPath) {
@@ -148,6 +154,7 @@ export default () => {
   };
 
   const init = (plugin, window: BrowserWindow) => {
+    plugin = normalizeRubickRuntimePlugin(plugin);
     if (
       view == null ||
       view.inDetach ||
@@ -165,19 +172,16 @@ export default () => {
       //   viewInstance.addView(plugin.name, view);
       // }
 
-      const runtimeName = plugin.originName || plugin.name;
-      if (runtimeName !== 'flick-system-feature') {
+      if (!isFlickFeaturePlugin(plugin)) {
         require('@electron/remote/main').enable(view.webContents);
       }
     }
   };
 
   const createView = (plugin, window: BrowserWindow) => {
+    plugin = normalizeRubickRuntimePlugin(plugin);
     const { tplPath, indexPath, development, main = 'index.html' } = plugin;
-    const name =
-      typeof plugin.originName === 'string' && plugin.originName
-        ? plugin.originName
-        : plugin.name;
+    const name = rubickRuntimePluginName(plugin);
     const runtimePlugin = { ...plugin, name };
     let pluginIndexPath = tplPath || indexPath;
     let preloadPath;
@@ -188,25 +192,25 @@ export default () => {
       preloadPath = `file://${path.join(pluginPath, './', main)}`;
     }
     // 系统插件入口由主进程权威决定，不能信任历史记录或渲染进程携带的旧 URL。
-    if (name === 'flick-system-feature') {
+    if (isFlickFeaturePlugin(runtimePlugin)) {
       pluginIndexPath = `file://${__static}/feature/index.html`;
     }
-    if (name === 'flick-system-super-panel') {
+    if (isFlickSuperPanelPlugin(runtimePlugin)) {
       pluginIndexPath = `file://${path.join(__static, 'superx', main)}`;
     }
     if (!pluginIndexPath) {
       const pluginPath = path.resolve(baseDir, 'node_modules', name);
       pluginIndexPath = `file://${path.join(pluginPath, './', main)}`;
     }
-    if (name === 'flick-system-feature') {
+    if (isFlickFeaturePlugin(runtimePlugin)) {
       const h = devSubAppHttpUrl(DEV_APP_PORTS.feature, '/');
       if (h) pluginIndexPath = h;
-    } else if (name === 'flick-system-super-panel') {
+    } else if (isFlickSuperPanelPlugin(runtimePlugin)) {
       const h = devSubAppHttpUrl(DEV_APP_PORTS.superxWeb, `/${main}`);
       if (h) pluginIndexPath = h;
     }
     assertSafePluginEntryUrl(pluginIndexPath, runtimePlugin);
-    const secureFeature = name === 'flick-system-feature';
+    const secureFeature = isFlickFeaturePlugin(runtimePlugin);
     const preload = secureFeature
       ? path.join(app.getAppPath(), 'dist', 'preload', 'feature.js')
       : getPreloadPath(runtimePlugin, preloadPath || pluginIndexPath);

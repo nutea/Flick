@@ -5,6 +5,7 @@ import { PluginHandler } from '@/core';
 import { PLUGIN_INSTALL_DIR as baseDir } from '@/common/constans/main';
 import API from '@/main/common/api';
 import { imageProtocolSource } from '@/common/utils/imageProtocol';
+import { normalizeRubickPluginManifest } from '@/compat/rubick/manifest';
 
 declare const __static: string;
 
@@ -246,6 +247,7 @@ function normalizePluginLogoLocalPath(
 function normalizePluginForStorage(
   plugin: Record<string, unknown>
 ): Record<string, unknown> {
+  const canonical = normalizeRubickPluginManifest(plugin);
   const {
     logoUrl: _logoUrl,
     indexUrl: _indexUrl,
@@ -253,7 +255,7 @@ function normalizePluginForStorage(
     tplPath: _tplPath,
     icon: _icon,
     ...persisted
-  } = plugin;
+  } = canonical;
   return normalizePluginLogoLocalPath(persisted);
 }
 

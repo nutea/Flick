@@ -26,13 +26,18 @@ app.whenReady().then(async () => {
       flick: typeof window.flick === 'object',
       onPluginEnter: typeof window.flick?.onPluginEnter,
       dbGet: typeof window.flick?.db?.get,
-      rubickAlias: window.rubick === window.flick
+      rubickAlias: window.rubick === window.flick,
+      legacyRemote: typeof require('electron').remote?.getCurrentWindow,
+      missingApis: window.__flickRubickCompatibility?.missingApis || null
     })`);
     const passed =
       result.flick === true &&
       result.onPluginEnter === 'function' &&
       result.dbGet === 'function' &&
-      result.rubickAlias === true;
+      result.rubickAlias === true &&
+      result.legacyRemote === 'function' &&
+      Array.isArray(result.missingApis) &&
+      result.missingApis.length === 0;
     console.log('[flick-plugin] preload smoke:', { passed, result });
     app.exit(passed ? 0 : 1);
   } catch (error) {

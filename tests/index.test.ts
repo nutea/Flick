@@ -3,6 +3,7 @@ import './startup-mode.test';
 import './superx-selection.test';
 import './superx-multifile.test';
 import './superx-plugin-icon.test';
+import './rubick-compatibility.test';
 import './ipc-payload.test';
 import './renderer-architecture.test';
 import './detach-input.test';

@@ -78,7 +78,7 @@ test('plugin views establish layout before loading and secure feature skips lega
   );
   assert.match(
     runner,
-    /runtimeName !== 'flick-system-feature'[\s\S]*@electron\/remote\/main/
+    /!isFlickFeaturePlugin\(plugin\)[\s\S]*@electron\/remote\/main/
   );
 });
 

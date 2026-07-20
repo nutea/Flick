@@ -59,6 +59,10 @@ import {
 } from '@/common/utils/detachInput';
 import { matchesInputAccelerator } from '@/common/utils/inputAccelerator';
 import localConfig from './initLocalConfig';
+import {
+  canonicalRubickPluginName,
+  normalizeRubickPluginManifest,
+} from '@/compat/rubick/manifest';
 
 /**
  *  sanitize input files 剪贴板文件合法性校验
@@ -153,7 +157,7 @@ class API extends DBInstance {
   private detachInProgress = false;
 
   public getBuiltinPlugin({ data }: { data?: { name?: unknown } }) {
-    const name = typeof data?.name === 'string' ? data.name : '';
+    const name = canonicalRubickPluginName(data?.name);
     const manifest =
       name === 'flick-system-feature'
         ? path.join(__static, 'feature', 'package.json')
@@ -559,6 +563,7 @@ class API extends DBInstance {
     window: BrowserWindow,
     event?: IpcMainEvent
   ) {
+    plugin = normalizeRubickPluginManifest(plugin);
     if (this.tryRedirectSingletonDetach({ data: plugin }, window)) {
       return;
     }
@@ -709,6 +714,7 @@ void window.loadPlugin(${JSON.stringify(plugin)});`
   }
 
   public async openPlugin({ data: plugin }, window) {
+    plugin = normalizeRubickPluginManifest(plugin);
     await warmupDevSubAppServers();
     if (plugin.platform && !plugin.platform.includes(process.platform)) {
       return new Notification({

@@ -1,3 +1,8 @@
+import {
+  installRubickElectronRemoteCompatibility,
+  installRubickPreloadCompatibility,
+} from '@/compat/rubick/preload';
+
 // Compatibility preload for third-party plugin BrowserViews. Keep this entry
 // separate from the context-isolated main-window bridge.
 if (process.isMainFrame && globalThis.location?.protocol !== 'devtools:') {
@@ -7,4 +12,9 @@ if (process.isMainFrame && globalThis.location?.protocol !== 'devtools:') {
     : path.join(process.resourcesPath, 'app.asar', 'public');
   (globalThis as typeof globalThis & { __static: string }).__static = staticDir;
   require(path.join(staticDir, 'preload.js'));
+  installRubickElectronRemoteCompatibility(
+    require('electron'),
+    require('@electron/remote')
+  );
+  installRubickPreloadCompatibility(globalThis);
 }
