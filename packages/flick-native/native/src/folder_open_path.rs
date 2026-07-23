@@ -2,10 +2,14 @@
 
 use windows::core::{Interface, BSTR, HRESULT};
 use windows::Win32::System::Com::{
-    CoCreateInstance, CoInitializeEx, IDispatch, CLSCTX_ALL, COINIT_APARTMENTTHREADED,
+    CoCreateInstance, CoInitializeEx, CoTaskMemFree, IDispatch, IServiceProvider, CLSCTX_ALL,
+    COINIT_APARTMENTTHREADED,
 };
 use windows::Win32::System::Variant::VARIANT;
-use windows::Win32::UI::Shell::{IShellFolderViewDual, IShellWindows, IWebBrowser2, ShellWindows};
+use windows::Win32::UI::Shell::{
+    IFolderView2, IShellBrowser, IShellFolderViewDual, IShellItemArray, IShellWindows,
+    IWebBrowser2, SID_STopLevelBrowser, ShellWindows, SIGDN_FILESYSPATH,
+};
 use windows::Win32::UI::WindowsAndMessaging::{GetAncestor, GetForegroundWindow, GA_ROOT};
 
 const RPC_E_CHANGED_MODE: HRESULT = HRESULT(0x80010106u32 as i32);
@@ -90,6 +94,88 @@ unsafe fn com_init() {
     if hr.is_err() && hr != RPC_E_CHANGED_MODE {
         let _ = hr;
     }
+}
+
+/// Captures the foreground root synchronously, before an async N-API task can
+/// be delayed or another Flick window can become active.
+pub fn get_foreground_root_handle() -> usize {
+    unsafe {
+        let foreground = GetForegroundWindow();
+        if foreground.is_invalid() {
+            return 0;
+        }
+        let root = GetAncestor(foreground, GA_ROOT);
+        if root.is_invalid() {
+            foreground.0 as usize
+        } else {
+            root.0 as usize
+        }
+    }
+}
+
+unsafe fn shell_item_array_paths(items: &IShellItemArray) -> windows::core::Result<Vec<String>> {
+    let item_count = items.GetCount()?;
+    let mut paths = Vec::with_capacity(item_count as usize);
+    for item_index in 0..item_count {
+        let item = match items.GetItemAt(item_index) {
+            Ok(value) => value,
+            Err(_) => continue,
+        };
+        let raw_path = match item.GetDisplayName(SIGDN_FILESYSPATH) {
+            Ok(value) => value,
+            Err(_) => continue,
+        };
+        let path = raw_path.to_string().unwrap_or_default();
+        CoTaskMemFree(Some(raw_path.0.cast()));
+        if !path.is_empty() {
+            paths.push(path);
+        }
+    }
+    Ok(paths)
+}
+
+/// Reads the actual native folder view rather than the legacy scripting
+/// collection. This path has been available since Windows Vista and avoids the
+/// stale/single-item SelectedItems collection observed in Windows 10 Explorer.
+unsafe fn get_native_view_selected_paths(
+    browser: &IWebBrowser2,
+) -> windows::core::Result<Vec<String>> {
+    let service_provider: IServiceProvider = browser.cast()?;
+    let shell_browser: IShellBrowser = service_provider.QueryService(&SID_STopLevelBrowser)?;
+    let shell_view = shell_browser.QueryActiveShellView()?;
+    let folder_view: IFolderView2 = shell_view.cast()?;
+    let selection = folder_view.GetSelection(false)?;
+    shell_item_array_paths(&selection)
+}
+
+unsafe fn get_legacy_view_selected_paths(browser: &IWebBrowser2) -> Vec<String> {
+    let document = match browser.Document() {
+        Ok(value) => value,
+        Err(_) => return Vec::new(),
+    };
+    let view: IShellFolderViewDual = match document.cast() {
+        Ok(value) => value,
+        Err(_) => return Vec::new(),
+    };
+    let items = match view.SelectedItems() {
+        Ok(value) => value,
+        Err(_) => return Vec::new(),
+    };
+    let item_count = items.Count().unwrap_or(0);
+    let mut paths = Vec::new();
+    for item_index in 0..item_count {
+        let Ok(item) = items.Item(&VARIANT::from(item_index)) else {
+            continue;
+        };
+        let Ok(path) = item.Path() else {
+            continue;
+        };
+        let value = bstr_to_string(path);
+        if !value.is_empty() && !value.starts_with("::") {
+            paths.push(value);
+        }
+    }
+    paths
 }
 
 /// Returns the folder path shown in the foreground Explorer window, or the last `file:` folder
@@ -202,8 +288,19 @@ pub fn get_foreground_folder_path() -> Option<String> {
 /// Unlike a simulated copy, querying Shell automation does not publish a new
 /// clipboard data object.
 pub fn get_explorer_selected_paths() -> Vec<String> {
+    get_explorer_selected_paths_for_root(get_foreground_root_handle())
+}
+
+/// Returns selected filesystem items from the Explorer window that was in the
+/// foreground when the request was issued. Passing the captured root avoids a
+/// race with async worker scheduling and panel activation.
+pub fn get_explorer_selected_paths_for_root(foreground_root: usize) -> Vec<String> {
     unsafe {
         com_init();
+
+        if foreground_root == 0 {
+            return Vec::new();
+        }
 
         let shell_windows: IShellWindows = match CoCreateInstance(&ShellWindows, None, CLSCTX_ALL) {
             Ok(value) => value,
@@ -213,12 +310,6 @@ pub fn get_explorer_selected_paths() -> Vec<String> {
             Ok(value) => value,
             Err(_) => return Vec::new(),
         };
-        let foreground = GetForegroundWindow();
-        if foreground.is_invalid() {
-            return Vec::new();
-        }
-        let root = GetAncestor(foreground, GA_ROOT);
-
         for index in 0..count {
             let dispatch: IDispatch = match shell_windows.Item(&VARIANT::from(index)) {
                 Ok(value) => value,
@@ -232,37 +323,14 @@ pub fn get_explorer_selected_paths() -> Vec<String> {
                 Ok(value) => value.0 as usize,
                 Err(_) => continue,
             };
-            if hwnd != root.0 as usize && hwnd != foreground.0 as usize {
+            if hwnd != foreground_root {
                 continue;
             }
 
-            let document = match browser.Document() {
-                Ok(value) => value,
-                Err(_) => return Vec::new(),
-            };
-            let view: IShellFolderViewDual = match document.cast() {
-                Ok(value) => value,
-                Err(_) => return Vec::new(),
-            };
-            let items = match view.SelectedItems() {
-                Ok(value) => value,
-                Err(_) => return Vec::new(),
-            };
-            let item_count = items.Count().unwrap_or(0);
-            let mut paths = Vec::new();
-            for item_index in 0..item_count {
-                let Ok(item) = items.Item(&VARIANT::from(item_index)) else {
-                    continue;
-                };
-                let Ok(path) = item.Path() else {
-                    continue;
-                };
-                let value = bstr_to_string(path);
-                if !value.is_empty() && !value.starts_with("::") {
-                    paths.push(value);
-                }
+            match get_native_view_selected_paths(&browser) {
+                Ok(paths) if !paths.is_empty() => return paths,
+                _ => return get_legacy_view_selected_paths(&browser),
             }
-            return paths;
         }
 
         Vec::new()

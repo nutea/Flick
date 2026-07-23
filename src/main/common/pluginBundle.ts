@@ -5,6 +5,14 @@ import * as compressing from 'compressing';
 import semver from 'semver';
 import { app } from 'electron';
 import { PLUGIN_INSTALL_DIR as baseDir } from '@/common/constans/main';
+import {
+  isolatedPluginRoot,
+  isIsolatedPluginInstalled,
+  pluginWorkspaceDir,
+  removeLegacyPluginPackage,
+  resolveInstalledPluginRoot,
+} from '@/main/common/pluginStorage';
+import { collectResolvedDependencyClosure } from './pluginDependencies';
 
 const MANIFEST = 'flick-plugins-bundle.json';
 
@@ -26,17 +34,6 @@ function errMsg(e: unknown): string {
   return e instanceof Error ? e.message : String(e);
 }
 
-/** 与 PluginHandler 首次初始化一致，避免从未装过插件时目录下无 package.json */
-function defaultRootPackageJson(): {
-  dependencies: Record<string, string>;
-  volta: { node: string };
-} {
-  return {
-    dependencies: {},
-    volta: { node: '16.19.1' },
-  };
-}
-
 /** 用于文件名：包名中的非法字符与 scope 处理 */
 export function sanitizePluginNameForFile(name: string): string {
   return name
@@ -50,7 +47,7 @@ function nmPackagePath(nmRoot: string, packageName: string): string {
 }
 
 function pluginRootDir(pluginName: string): string {
-  return nmPackagePath(path.join(baseDir, 'node_modules'), pluginName);
+  return resolveInstalledPluginRoot(pluginName);
 }
 
 function isHttpUrl(v: unknown): v is string {
@@ -115,60 +112,19 @@ function toImportAbsoluteLogo(
   return abs;
 }
 
-/**
- * 从扁平 node_modules 收集入口插件及其 npm 依赖闭包（含 optionalDependencies，不含 devDependencies）
- */
-async function collectHoistedDependencyClosure(
-  nmRoot: string,
-  entryName: string
-): Promise<string[]> {
-  const seen = new Set<string>();
-  const queue: string[] = [entryName];
-
-  while (queue.length > 0) {
-    const name = queue.shift()!;
-    if (seen.has(name)) continue;
-
-    const pkgDir = nmPackagePath(nmRoot, name);
-    if (!(await fs.pathExists(pkgDir))) {
-      continue;
-    }
-
-    seen.add(name);
-
-    const pkgJsonPath = path.join(pkgDir, 'package.json');
-    if (!(await fs.pathExists(pkgJsonPath))) continue;
-
-    let pkg: {
-      dependencies?: Record<string, string>;
-      optionalDependencies?: Record<string, string>;
-    };
-    try {
-      pkg = JSON.parse(await fs.readFile(pkgJsonPath, 'utf-8'));
-    } catch {
-      continue;
-    }
-
-    const deps = [
-      ...Object.keys(pkg.dependencies || {}),
-      ...Object.keys(pkg.optionalDependencies || {}),
-    ];
-    for (const dep of deps) {
-      if (!seen.has(dep)) {
-        queue.push(dep);
-      }
-    }
-  }
-
-  return [...seen];
+function isInside(root: string, candidate: string): boolean {
+  const relative = path.relative(path.resolve(root), path.resolve(candidate));
+  return (
+    relative === '' ||
+    (!relative.startsWith(`..${path.sep}`) &&
+      relative !== '..' &&
+      !path.isAbsolute(relative))
+  );
 }
 
 function readVersionFromNodeModules(pluginName: string): string | undefined {
   try {
-    const p = path.join(
-      nmPackagePath(path.join(baseDir, 'node_modules'), pluginName),
-      'package.json'
-    );
+    const p = path.join(resolveInstalledPluginRoot(pluginName), 'package.json');
     const j = JSON.parse(fs.readFileSync(p, 'utf-8')) as { version?: string };
     return j.version;
   } catch {
@@ -265,28 +221,63 @@ export async function exportPluginBundle(
 
   const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'flick-export-'));
   try {
-    const nm = path.join(tmpDir, 'node_modules');
+    const exportedWorkspace = path.join(tmpDir, 'workspace');
+    const nm = path.join(exportedWorkspace, 'node_modules');
     await fs.mkdirp(nm);
 
-    const nmInstalled = path.join(baseDir, 'node_modules');
-    const srcRoot = path.join(nmInstalled, plugin.name);
+    const srcRoot = resolveInstalledPluginRoot(plugin.name);
     if (!(await fs.pathExists(srcRoot))) {
       return { ok: false, error: 'NO_PLUGIN_FILES' };
     }
 
-    const closure = await collectHoistedDependencyClosure(
-      nmInstalled,
-      plugin.name
-    );
-    if (!closure.length) {
-      return { ok: false, error: 'NO_PLUGIN_FILES' };
-    }
-
-    for (const name of closure) {
-      const from = nmPackagePath(nmInstalled, name);
-      const to = nmPackagePath(nm, name);
-      await fs.mkdirp(path.dirname(to));
-      await fs.copy(from, to, { overwrite: true, dereference: true });
+    let bundledPackagePaths: string[] = [];
+    if (isIsolatedPluginInstalled(plugin.name)) {
+      await fs.copy(pluginWorkspaceDir(plugin.name), exportedWorkspace, {
+        overwrite: true,
+        dereference: true,
+      });
+      const closure = await collectResolvedDependencyClosure(nm, plugin.name);
+      if (closure.missing.length) {
+        return { ok: false, error: 'INCOMPLETE_DEPENDENCIES' };
+      }
+      bundledPackagePaths = closure.packageDirs.map((packageDir) =>
+        normalizeSlashes(path.relative(nm, packageDir))
+      );
+    } else {
+      const legacyNm = path.join(baseDir, 'node_modules');
+      const closure = await collectResolvedDependencyClosure(
+        legacyNm,
+        plugin.name
+      );
+      if (!closure.packageDirs.length) {
+        return { ok: false, error: 'NO_PLUGIN_FILES' };
+      }
+      if (closure.missing.length) {
+        return { ok: false, error: 'INCOMPLETE_DEPENDENCIES' };
+      }
+      for (const packageDir of closure.packageDirs) {
+        const relative = path.relative(legacyNm, packageDir);
+        const to = path.join(nm, relative);
+        await fs.mkdirp(path.dirname(to));
+        await fs.copy(packageDir, to, { overwrite: true, dereference: true });
+      }
+      bundledPackagePaths = closure.packageDirs.map((packageDir) =>
+        normalizeSlashes(path.relative(legacyNm, packageDir))
+      );
+      await fs.writeFile(
+        path.join(exportedWorkspace, 'package.json'),
+        JSON.stringify(
+          {
+            private: true,
+            dependencies: {
+              [plugin.name]: plugin.version || '*',
+            },
+          },
+          null,
+          2
+        ),
+        'utf-8'
+      );
     }
 
     let flickVersion = '';
@@ -303,11 +294,12 @@ export async function exportPluginBundle(
 
     const manifest = {
       format: 'flick-plugins-bundle',
-      version: 1,
+      version: 2,
       exportedAt: new Date().toISOString(),
       flickVersion,
       plugins: [pluginForManifest],
-      bundledPackageNames: closure,
+      workspace: 'workspace',
+      bundledPackagePaths,
     };
 
     await fs.writeFile(
@@ -318,7 +310,11 @@ export async function exportPluginBundle(
 
     // 必须带 ignoreBase，否则 zip 内路径为「临时目录名/…」，解压后清单不在根目录，导入会判 INVALID_BUNDLE
     await compressing.zip.compressDir(tmpDir, destZip, { ignoreBase: true });
-    return { ok: true, count: 1, bundledPackages: closure.length };
+    return {
+      ok: true,
+      count: 1,
+      bundledPackages: bundledPackagePaths.length,
+    };
   } catch (e: unknown) {
     return { ok: false, error: errMsg(e) };
   } finally {
@@ -402,6 +398,8 @@ export async function importPluginBundle(
 
     const manifest = JSON.parse(await fs.readFile(manifestPath, 'utf-8')) as {
       format?: string;
+      version?: number;
+      workspace?: string;
       plugins?: LocalPluginRecord[];
     };
 
@@ -413,13 +411,18 @@ export async function importPluginBundle(
       return { ok: false, error: 'INVALID_BUNDLE' };
     }
 
-    const nmSrc = path.join(bundleRoot, 'node_modules');
+    const workspaceRelative =
+      manifest.version === 2 && typeof manifest.workspace === 'string'
+        ? manifest.workspace
+        : '.';
+    const sourceWorkspace = path.resolve(bundleRoot, workspaceRelative);
+    if (!isInside(bundleRoot, sourceWorkspace)) {
+      return { ok: false, error: 'INVALID_BUNDLE' };
+    }
+    const nmSrc = path.join(sourceWorkspace, 'node_modules');
     if (!(await fs.pathExists(nmSrc))) {
       return { ok: false, error: 'INVALID_BUNDLE' };
     }
-
-    const nmDest = path.join(baseDir, 'node_modules');
-    await fs.mkdirp(nmDest);
 
     const list = readLocalPlugins();
     const imported: string[] = [];
@@ -434,7 +437,7 @@ export async function importPluginBundle(
       ) {
         continue;
       }
-      const src = path.join(nmSrc, plugin.name);
+      const src = nmPackagePath(nmSrc, plugin.name);
       if (!(await fs.pathExists(src))) {
         skipped.push(plugin.name);
         continue;
@@ -448,11 +451,22 @@ export async function importPluginBundle(
       const pkgJson = JSON.parse(
         await fs.readFile(pkgJsonPath, 'utf-8')
       ) as Record<string, unknown>;
+      const closure = await collectResolvedDependencyClosure(
+        nmSrc,
+        plugin.name
+      );
+      if (closure.missing.length) {
+        return {
+          ok: false,
+          error: 'INCOMPLETE_DEPENDENCIES',
+          skipped: [plugin.name],
+        };
+      }
       const importedVersion = (pkgJson.version as string) || '0.0.0';
 
       const existing = list.find((p) => p.name === plugin.name);
       const existingFolderExists = await fs.pathExists(
-        path.join(nmDest, plugin.name)
+        resolveInstalledPluginRoot(plugin.name)
       );
 
       if (
@@ -487,26 +501,6 @@ export async function importPluginBundle(
       return { ok: false, error: 'NOTHING_IMPORTED', skipped };
     }
 
-    // 合并复制 zip 内整个 node_modules（插件本体 + 导出时打入的依赖闭包）
-    const bundledTop = await fs.readdir(nmSrc);
-    for (const entry of bundledTop) {
-      const from = path.join(nmSrc, entry);
-      const to = path.join(nmDest, entry);
-      await fs.copy(from, to, { overwrite: true, dereference: true });
-    }
-
-    await fs.mkdirp(baseDir);
-    const pkgPath = path.join(baseDir, 'package.json');
-    const rootPkg = (
-      (await fs.pathExists(pkgPath))
-        ? JSON.parse(await fs.readFile(pkgPath, 'utf-8'))
-        : defaultRootPackageJson()
-    ) as {
-      dependencies?: Record<string, string>;
-      volta?: { node: string };
-    };
-    rootPkg.dependencies = rootPkg.dependencies || {};
-
     const system = list.filter((p) =>
       ['flick-system-feature', 'flick-system-super-panel'].includes(p.name)
     );
@@ -517,15 +511,58 @@ export async function importPluginBundle(
     );
 
     for (const name of imported) {
-      const pkgJsonPath = path.join(nmDest, name, 'package.json');
+      const destination = pluginWorkspaceDir(name);
+      await fs.mkdirp(path.dirname(destination));
+      const staging = fs.mkdtempSync(
+        path.join(path.dirname(destination), `.${path.basename(destination)}-`)
+      );
+      try {
+        await fs.copy(nmSrc, path.join(staging, 'node_modules'), {
+          overwrite: true,
+          dereference: true,
+        });
+        const sourceLock = path.join(sourceWorkspace, 'package-lock.json');
+        if (await fs.pathExists(sourceLock)) {
+          await fs.copy(sourceLock, path.join(staging, 'package-lock.json'));
+        }
+        const importedPackageJson = path.join(
+          staging,
+          'node_modules',
+          ...name.split('/'),
+          'package.json'
+        );
+        const installedManifest = JSON.parse(
+          await fs.readFile(importedPackageJson, 'utf-8')
+        ) as { version?: string };
+        await fs.writeFile(
+          path.join(staging, 'package.json'),
+          JSON.stringify(
+            {
+              private: true,
+              description: `Isolated Flick plugin workspace for ${name}`,
+              dependencies: {
+                [name]: installedManifest.version || '*',
+              },
+            },
+            null,
+            2
+          ),
+          'utf-8'
+        );
+        await fs.remove(destination);
+        await fs.move(staging, destination, { overwrite: true });
+        removeLegacyPluginPackage(name);
+      } finally {
+        await fs.remove(staging).catch(() => undefined);
+      }
+
+      const pkgJsonPath = path.join(isolatedPluginRoot(name), 'package.json');
       if (!(await fs.pathExists(pkgJsonPath))) {
         continue;
       }
       const pkgJson = JSON.parse(
         await fs.readFile(pkgJsonPath, 'utf-8')
       ) as Record<string, unknown>;
-      rootPkg.dependencies[name] = `^${(pkgJson.version as string) || '0.0.0'}`;
-
       const manifestPluginsArr = manifestPlugins || [];
       const saved =
         manifestPluginsArr.find((p) => p.name === name) ||
@@ -545,7 +582,6 @@ export async function importPluginBundle(
       JSON.stringify(nextList, null, 2),
       'utf-8'
     );
-    await fs.writeFile(pkgPath, JSON.stringify(rootPkg, null, 2), 'utf-8');
 
     return { ok: true, imported, skipped, skippedNotNewer };
   } catch (e: unknown) {

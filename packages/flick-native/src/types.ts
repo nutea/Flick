@@ -75,6 +75,7 @@ export interface NativeSystemApi {
 export interface NativeInputApi {
   sendCopyShortcut(): Promise<void>;
   sendKeyboardTap(key: string, modifiers?: string[]): Promise<void>;
+  setMouseButtonSuppression(button: NativeMouseButton | null): void;
   onInputEvent(listener: (event: NativeInputEvent) => void): () => void;
 }
 

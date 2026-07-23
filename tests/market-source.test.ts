@@ -57,9 +57,11 @@ test('market source connection test uses the main-process network path', () => {
   assert.match(runner, /hasCorsHeader/);
 });
 
-test('plugin operations wait for plugin manager initialization', () => {
+test('plugin operations wait for registry initialization and use isolated managers', () => {
   const source = read('src/common/utils/localPlugin.ts');
-  assert.match(source, /pluginInstancePromise/);
+  assert.match(source, /registryPromise/);
+  assert.match(source, /ensurePluginWorkspace\(pluginName\)/);
+  assert.match(source, /new PluginHandler\(\{/);
   assert.doesNotMatch(source, /Plugin manager is unavailable/);
-  assert.equal(source.match(/await getPluginInstance\(\)/g)?.length, 3);
+  assert.equal(source.match(/await getPluginInstance\(/g)?.length, 3);
 });

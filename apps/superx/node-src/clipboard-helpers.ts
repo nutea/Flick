@@ -246,16 +246,6 @@ export async function getSelectedContent(
       [] as string[]
     ),
   ]);
-  if (directText.length > 0) {
-    return {
-      status: 'selected',
-      source: 'accessibility',
-      text: directText,
-      fileUrl: '',
-      fileUrls: [],
-    };
-  }
-
   const fileUrls = normalizeSelectedPaths(selectedPaths);
   const firstPath = fileUrls[0];
   if (firstPath) {
@@ -265,6 +255,19 @@ export async function getSelectedContent(
       text: '',
       fileUrl: firstPath,
       fileUrls,
+    };
+  }
+
+  // A focused Explorer item can expose its label through UI Automation. The
+  // Shell path is the more specific selection and must win so file plugins
+  // (especially multi-file actions) are not misclassified as text commands.
+  if (directText.length > 0) {
+    return {
+      status: 'selected',
+      source: 'accessibility',
+      text: directText,
+      fileUrl: '',
+      fileUrls: [],
     };
   }
 

@@ -9,6 +9,7 @@ import {
   getSelectedFilePaths,
   getSelectedText,
   onNativeInputEvent,
+  setNativeMouseButtonSuppression,
   simulateCopyShortcut,
 } from './native';
 import {
@@ -60,16 +61,34 @@ interface SelectedFileInfo {
   isDirectory: boolean;
 }
 
-function describeSelectedFile(selectedPath: string): SelectedFileInfo {
+const FILE_STAT_TIMEOUT_MS = 150;
+
+async function readSelectedFileStat(
+  selectedPath: string
+): Promise<fs.Stats | null> {
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  try {
+    return await Promise.race([
+      fs.promises.stat(selectedPath).catch(() => null),
+      new Promise<null>((resolve) => {
+        timer = setTimeout(() => resolve(null), FILE_STAT_TIMEOUT_MS);
+      }),
+    ]);
+  } finally {
+    if (timer) clearTimeout(timer);
+  }
+}
+
+async function describeSelectedFile(
+  selectedPath: string
+): Promise<SelectedFileInfo> {
   const cleanPath = selectedPath.replace(/^file:\/\//, '');
   let isFile = false;
   let isDirectory = false;
-  try {
-    const stat = fs.statSync(cleanPath);
+  const stat = await readSelectedFileStat(cleanPath);
+  if (stat) {
     isDirectory = isDirectorySelection(cleanPath, stat.isDirectory());
     isFile = stat.isFile();
-  } catch {
-    // Active application/window fallbacks are not guaranteed to be files.
   }
   return {
     path: cleanPath,
@@ -96,6 +115,7 @@ function createPlugin() {
   let keyboardRegisterTimer: ReturnType<typeof setTimeout> | null = null;
 
   function clearMouseRegistration() {
+    setNativeMouseButtonSuppression(null);
     if (longPressTimer) {
       clearTimeout(longPressTimer);
       longPressTimer = null;
@@ -142,10 +162,15 @@ function createPlugin() {
         // Finder automation must not change which window supplies the fallback.
         const activeWindowPromise = getActiveWindowSnapshot();
         const { x, y } = screen.getCursorScreenPoint();
-        if (trigger === 'keyboard') {
-          await new Promise((resolve) => setTimeout(resolve, 40));
-        }
-        const copyResult = await getSelectedContent(clipboard, simulateCopy, {
+        const copySelection = async () => {
+          // Direct Shell/UIA reads must start at trigger time. Only defer the
+          // simulated copy until keyboard shortcut modifiers have been released.
+          if (trigger === 'keyboard') {
+            await new Promise((resolve) => setTimeout(resolve, 40));
+          }
+          await simulateCopy();
+        };
+        const copyResult = await getSelectedContent(clipboard, copySelection, {
           readSelectedText: getSelectedText,
           readSelectedFilePaths: getSelectedFilePaths,
           getClipboardChangeToken,
@@ -158,6 +183,7 @@ function createPlugin() {
               source: 'source' in copyResult ? copyResult.source : null,
               hasText: copyResult.text.length > 0,
               fileUrl: copyResult.fileUrl,
+              fileCount: copyResult.fileUrls.length,
             })
           );
         }
@@ -184,24 +210,25 @@ function createPlugin() {
 
         const localPlugins = API.getLocalPlugins();
 
-        const selectedFiles = copyResult.fileUrls.map(describeSelectedFile);
+        // Never synchronously stat every selected item on the Electron main
+        // thread. Network drives or unavailable paths otherwise make a large
+        // Explorer selection look like the Super Panel has frozen.
+        const selectedFiles = await Promise.all(
+          copyResult.fileUrls.map(describeSelectedFile)
+        );
         const selectedFileIsDirectory = selectedFiles[0]?.isDirectory === true;
         let selectedFileDataUrl = '';
         if (selectedFiles.length === 1 && selectedFiles[0].isFile) {
           const selectedPath = selectedFiles[0].path;
-          try {
-            const stat = fs.statSync(selectedPath);
-            if (
-              stat.isFile() &&
-              stat.size <= 20 * 1024 * 1024 &&
-              /\.(png|jpe?g|gif|webp)$/i.test(path.extname(selectedPath))
-            ) {
-              selectedFileDataUrl = nativeImage
-                .createFromPath(selectedPath)
-                .toDataURL();
-            }
-          } catch {
-            /* selected application/window paths are not always filesystem items */
+          const stat = await readSelectedFileStat(selectedPath);
+          if (
+            stat?.isFile() &&
+            stat.size <= 20 * 1024 * 1024 &&
+            /\.(png|jpe?g|gif|webp)$/i.test(path.extname(selectedPath))
+          ) {
+            selectedFileDataUrl = nativeImage
+              .createFromPath(selectedPath)
+              .toDataURL();
           }
         }
 
@@ -320,6 +347,15 @@ function createPlugin() {
             superPanelHotKey === SP_MOUSE.LONG_LEFT ||
             superPanelHotKey === SP_MOUSE.LONG_RIGHT ||
             superPanelHotKey === SP_MOUSE.LONG_MIDDLE;
+
+          // Windows 10 Explorer collapses an existing multi-selection when it
+          // receives a regular middle-button click. The immediate middle-click
+          // trigger is owned by SuperX, so consume it in the native hook before
+          // Explorer can mutate the selection. Long-press gestures continue to
+          // pass through so normal short clicks retain their platform behavior.
+          setNativeMouseButtonSuppression(
+            superPanelHotKey === SP_MOUSE.MIDDLE ? BTN.MIDDLE : null
+          );
 
           removeInputSubscription = onNativeInputEvent((event) => {
             if (event.kind !== 'mouse') return;

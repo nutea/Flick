@@ -1,7 +1,7 @@
 /* eslint-disable */
 import path from 'path';
 import fs from 'fs';
-import { PLUGIN_INSTALL_DIR } from '@/common/constans/main';
+import { resolveInstalledPluginRoot } from '@/main/common/pluginStorage';
 
 declare const __static: string;
 
@@ -9,7 +9,7 @@ function systemPluginDiskRoot(plugin: { name: string }): string {
   if (plugin.name === 'flick-system-super-panel') {
     return path.join(__static, 'superx');
   }
-  return path.resolve(PLUGIN_INSTALL_DIR, 'node_modules', plugin.name);
+  return resolveInstalledPluginRoot(plugin.name);
 }
 
 export default () => {

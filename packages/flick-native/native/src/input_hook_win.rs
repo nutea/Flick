@@ -31,6 +31,7 @@ static TSFN: Mutex<Option<ThreadsafeFunction<String, ErrorStrategy::Fatal>>> =
 static HOOK_THREAD_ID: AtomicU32 = AtomicU32::new(0);
 static RUNNING: AtomicBool = AtomicBool::new(false);
 static JOIN: Mutex<Option<thread::JoinHandle<()>>> = Mutex::new(None);
+static SUPPRESSED_MOUSE_BUTTON: AtomicU32 = AtomicU32::new(0);
 
 static KB_HOOK_PTR: AtomicPtr<c_void> = AtomicPtr::new(std::ptr::null_mut());
 static MOUSE_HOOK_PTR: AtomicPtr<c_void> = AtomicPtr::new(std::ptr::null_mut());
@@ -43,6 +44,25 @@ fn next_kb_hook() -> Option<HHOOK> {
 fn next_mouse_hook() -> Option<HHOOK> {
     let p = MOUSE_HOOK_PTR.load(Ordering::SeqCst);
     (!p.is_null()).then_some(HHOOK(p))
+}
+
+pub fn set_mouse_button_suppression(button: Option<&str>) {
+    let code = match button {
+        Some("left") => 1,
+        Some("right") => 2,
+        Some("middle") => 3,
+        _ => 0,
+    };
+    SUPPRESSED_MOUSE_BUTTON.store(code, Ordering::SeqCst);
+}
+
+fn should_suppress_mouse_message(message: u32) -> bool {
+    match SUPPRESSED_MOUSE_BUTTON.load(Ordering::SeqCst) {
+        1 => message == WM_LBUTTONDOWN || message == WM_LBUTTONUP,
+        2 => message == WM_RBUTTONDOWN || message == WM_RBUTTONUP,
+        3 => message == WM_MBUTTONDOWN || message == WM_MBUTTONUP,
+        _ => false,
+    }
 }
 
 fn push_json(json: String) {
@@ -194,6 +214,15 @@ unsafe extern "system" fn mouse_proc(code: i32, wparam: WPARAM, lparam: LPARAM) 
         _ => {}
     }
 
+    // A configured mouse trigger is an application-owned gesture. In
+    // particular, Windows 10 Explorer collapses an existing multi-selection
+    // when it receives WM_MBUTTONDOWN. Consuming the immediate middle-click
+    // trigger preserves the selection until the asynchronous Shell query has
+    // captured every selected item.
+    if should_suppress_mouse_message(msg) {
+        return LRESULT(1);
+    }
+
     CallNextHookEx(hk, code, wparam, lparam)
 }
 
@@ -296,6 +325,7 @@ pub fn start(env: &Env, callback: JsFunction) -> Result<JsFunction> {
 }
 
 fn stop_hooks() {
+    SUPPRESSED_MOUSE_BUTTON.store(0, Ordering::SeqCst);
     let tid = HOOK_THREAD_ID.load(Ordering::SeqCst);
     if tid != 0 {
         unsafe {

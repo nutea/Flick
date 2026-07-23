@@ -51,11 +51,15 @@ export default {
           PLUGIN_NOT_FOUND: 'Plugin not found',
           NO_PLUGIN_FILES:
             'Plugin folders are missing. Reinstall from the market first.',
+          INCOMPLETE_DEPENDENCIES:
+            'Plugin dependencies are incomplete. Reinstall before exporting.',
           UNKNOWN: 'Export failed',
         },
         importErrors: {
           INVALID_BUNDLE: 'Invalid bundle (use a zip exported by Flick)',
           NOTHING_IMPORTED: 'No plugin folders found inside the bundle',
+          INCOMPLETE_DEPENDENCIES:
+            'The offline bundle is missing plugin dependencies. Export it again.',
           UNKNOWN: 'Import failed',
         },
         tips1: 'There are no plug-ins.',

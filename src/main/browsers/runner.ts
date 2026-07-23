@@ -2,7 +2,6 @@ import { app, BrowserView, BrowserWindow, session } from 'electron';
 import path from 'path';
 import { fileURLToPath } from 'url';
 import commonConst from '../../common/utils/commonConst';
-import { PLUGIN_INSTALL_DIR as baseDir } from '@/common/constans/main';
 import localConfig from '@/main/common/initLocalConfig';
 import { WINDOW_HEIGHT, WINDOW_PLUGIN_HEIGHT } from '@/common/constans/common';
 import { applyMainWindowContentHeight } from '@/main/common/mainWindowContentResize';
@@ -20,6 +19,7 @@ import {
   normalizeRubickRuntimePlugin,
   rubickRuntimePluginName,
 } from '@/compat/rubick/runtime';
+import { resolveInstalledPluginRoot } from '@/main/common/pluginStorage';
 
 /** 通用插件 API 的编译后 preload；脚本自身会跳过 DevTools 与子 frame。 */
 function flickSessionPreloadPath(): string {
@@ -92,7 +92,7 @@ function assertSafePluginEntryUrl(
         ? path.join(__static, 'superx')
         : plugin.tplPath
           ? path.join(__static, 'tpl')
-          : path.join(baseDir, 'node_modules', name);
+          : resolveInstalledPluginRoot(name);
   if (!isPathInside(allowedRoot, entryPath)) {
     throw new Error('Plugin entry is outside its allowed directory');
   }
@@ -188,7 +188,7 @@ export default () => {
     // 开发环境
     if (commonConst.dev() && development) {
       pluginIndexPath = development;
-      const pluginPath = path.resolve(baseDir, 'node_modules', name);
+      const pluginPath = resolveInstalledPluginRoot(name);
       preloadPath = `file://${path.join(pluginPath, './', main)}`;
     }
     // 系统插件入口由主进程权威决定，不能信任历史记录或渲染进程携带的旧 URL。
@@ -199,7 +199,7 @@ export default () => {
       pluginIndexPath = `file://${path.join(__static, 'superx', main)}`;
     }
     if (!pluginIndexPath) {
-      const pluginPath = path.resolve(baseDir, 'node_modules', name);
+      const pluginPath = resolveInstalledPluginRoot(name);
       pluginIndexPath = `file://${path.join(pluginPath, './', main)}`;
     }
     if (isFlickFeaturePlugin(runtimePlugin)) {

@@ -10,7 +10,7 @@
   "description": "管理插件、超级面板与 Flick 偏好设置",
   "main": "index.html",
   "logo": "./settings-center-logo.png",
-  "version": "0.0.3",
+  "version": "0.0.4",
   "preload": "preload.js",
   "pluginType": "ui",
   "features": [

@@ -59,6 +59,7 @@ import {
 } from '@/common/utils/detachInput';
 import { matchesInputAccelerator } from '@/common/utils/inputAccelerator';
 import localConfig from './initLocalConfig';
+import { resolveInstalledPluginRoot } from './pluginStorage';
 import {
   canonicalRubickPluginName,
   normalizeRubickPluginManifest,
@@ -769,7 +770,7 @@ void window.loadPlugin(${JSON.stringify(plugin)});`
       );
       if (superxHttp) plugin.indexPath = superxHttp;
     } else if (!plugin.indexPath) {
-      const pluginPath = path.resolve(baseDir, 'node_modules', plugin.name);
+      const pluginPath = resolveInstalledPluginRoot(plugin.name);
       plugin.indexPath = `file://${path.join(
         pluginPath,
         './',

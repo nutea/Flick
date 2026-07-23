@@ -111,3 +111,9 @@ export function onNativeInputEvent(
 ): () => void {
   return input.onInputEvent(listener);
 }
+
+export function setNativeMouseButtonSuppression(
+  button: 'left' | 'right' | 'middle' | null
+): void {
+  input.setMouseButtonSuppression(button);
+}

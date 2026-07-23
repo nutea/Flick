@@ -2,12 +2,12 @@ import fs from 'fs';
 import path from 'path';
 import { fileURLToPath, pathToFileURL } from 'url';
 
-import { PLUGIN_INSTALL_DIR } from '@/common/constans/main';
 import {
   imageProtocolSource,
   toImageProtocolUrl,
 } from '@/common/utils/imageProtocol';
 import { normalizeRubickPluginManifest } from '@/compat/rubick/manifest';
+import { resolveInstalledPluginRoot } from '@/main/common/pluginStorage';
 
 export type PluginPresentation = Record<string, unknown> & {
   name?: string;
@@ -22,9 +22,7 @@ const BUILTIN_ROOTS: Record<string, () => string> = {
 
 export function pluginRoot(pluginName: string): string {
   const builtin = BUILTIN_ROOTS[pluginName];
-  return builtin
-    ? builtin()
-    : path.join(PLUGIN_INSTALL_DIR, 'node_modules', ...pluginName.split('/'));
+  return builtin ? builtin() : resolveInstalledPluginRoot(pluginName);
 }
 
 function isInside(root: string, candidate: string): boolean {

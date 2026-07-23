@@ -1,4 +1,6 @@
 import assert from 'node:assert/strict';
+import fs from 'node:fs';
+import path from 'node:path';
 import test from 'node:test';
 import {
   getSelectedContent,
@@ -104,6 +106,20 @@ test('SuperX reads an Explorer selection without touching the clipboard', async 
   assert.equal(result.fileUrl, 'D:\\work\\selected.txt');
   assert.deepEqual(result.fileUrls, ['D:\\work\\selected.txt']);
   assert.equal(copyCalls, 0);
+});
+
+test('SuperX prefers an Explorer file selection over an accessibility label', async () => {
+  const clipboard = createClipboard('unchanged');
+  const result = await getSelectedContent(clipboard.api, async () => {}, {
+    readSelectedText: async () => 'selected.txt',
+    readSelectedFilePaths: async () => ['D:\\work\\selected.txt'],
+    getClipboardChangeToken: () => 12,
+  });
+
+  assert.equal(result.status, 'selected');
+  assert.equal(result.source, 'shell');
+  assert.equal(result.text, '');
+  assert.deepEqual(result.fileUrls, ['D:\\work\\selected.txt']);
 });
 
 test('SuperX preserves multiple selected file paths in order', async () => {
@@ -415,4 +431,50 @@ test('SuperX captures the physical key for macOS Option combinations', () => {
 test('SuperX rejects non-ASCII persisted Electron accelerators', () => {
   assert.equal(normalizeKeyboardShortcut('Alt+∑'), 'Ctrl+W');
   assert.equal(normalizeKeyboardShortcut(' Alt+W '), 'Alt+W');
+});
+
+test('Windows middle-click trigger preserves Explorer multi-selection', () => {
+  const root = process.cwd();
+  const main = fs.readFileSync(
+    path.join(root, 'apps/superx/node-src/main.ts'),
+    'utf8'
+  );
+  const hook = fs.readFileSync(
+    path.join(root, 'packages/flick-native/native/src/input_hook_win.rs'),
+    'utf8'
+  );
+
+  assert.match(
+    main,
+    /superPanelHotKey === SP_MOUSE\.MIDDLE \? BTN\.MIDDLE : null/
+  );
+  assert.match(hook, /SUPPRESSED_MOUSE_BUTTON/);
+  assert.match(hook, /return LRESULT\(1\)/);
+  assert.match(
+    hook,
+    /message == WM_MBUTTONDOWN \|\| message == WM_MBUTTONUP/
+  );
+});
+
+test('Windows keyboard trigger snapshots the native Explorer selection immediately', () => {
+  const root = process.cwd();
+  const main = fs.readFileSync(
+    path.join(root, 'apps/superx/node-src/main.ts'),
+    'utf8'
+  );
+  const native = fs.readFileSync(
+    path.join(root, 'packages/flick-native/native/src/folder_open_path.rs'),
+    'utf8'
+  );
+  const binding = fs.readFileSync(
+    path.join(root, 'packages/flick-native/native/src/lib.rs'),
+    'utf8'
+  );
+
+  assert.match(main, /const copySelection = async \(\) =>/);
+  assert.match(main, /getSelectedContent\(clipboard, copySelection/);
+  assert.match(native, /IFolderView2/);
+  assert.match(native, /GetSelection\(false\)/);
+  assert.match(native, /get_explorer_selected_paths_for_root/);
+  assert.match(binding, /get_foreground_root_handle\(\)/);
 });

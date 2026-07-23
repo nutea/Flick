@@ -6,6 +6,14 @@ import { PLUGIN_INSTALL_DIR as baseDir } from '@/common/constans/main';
 import API from '@/main/common/api';
 import { imageProtocolSource } from '@/common/utils/imageProtocol';
 import { normalizeRubickPluginManifest } from '@/compat/rubick/manifest';
+import {
+  ensurePluginWorkspace,
+  isolatedPluginRoot,
+  isIsolatedPluginInstalled,
+  pluginWorkspaceDir,
+  removeLegacyPluginPackage,
+  resolveInstalledPluginRoot,
+} from '@/main/common/pluginStorage';
 
 declare const __static: string;
 
@@ -51,10 +59,6 @@ function ensureBuiltinPluginsInList(): void {
   }
 }
 
-function pluginNmDir(pluginName: string): string {
-  return path.join(baseDir, 'node_modules', ...pluginName.split('/'));
-}
-
 function pluginDiskRoot(pluginName: string): string {
   if (pluginName === 'flick-system-feature') {
     return path.join(__static, 'feature');
@@ -62,7 +66,7 @@ function pluginDiskRoot(pluginName: string): string {
   if (pluginName === 'flick-system-super-panel') {
     return path.join(__static, 'superx');
   }
-  return pluginNmDir(pluginName);
+  return resolveInstalledPluginRoot(pluginName);
 }
 
 function isHttpUrl(v: unknown): v is string {
@@ -184,7 +188,7 @@ async function normalizeInstalledPluginLogo(
 
   if (isHttpUrl(s)) {
     try {
-      const pluginRoot = pluginNmDir(pluginName);
+      const pluginRoot = resolveInstalledPluginRoot(pluginName);
       fs.mkdirSync(pluginRoot, { recursive: true });
       const parsed = new URL(s);
       const ext = path.extname(parsed.pathname || '').slice(0, 16) || '.png';
@@ -265,104 +269,95 @@ function migrateCatalog(value: unknown): Record<string, unknown>[] {
     .map((plugin) => normalizePluginForStorage(plugin));
 }
 
-/**
- * npm 在 Windows 上常因 .node 被占用报 EPERM；失败时至少从 package.json 与列表中移除，并尽力删目录
- */
-function removeInstalledPluginFromDisk(pluginName: string): void {
-  const pkgPath = path.join(baseDir, 'package.json');
-  if (fs.existsSync(pkgPath)) {
-    const pkg = JSON.parse(fs.readFileSync(pkgPath, 'utf-8')) as {
-      dependencies?: Record<string, string>;
-      optionalDependencies?: Record<string, string>;
-      devDependencies?: Record<string, string>;
-    };
-    let touched = false;
-    for (const key of [
-      'dependencies',
-      'optionalDependencies',
-      'devDependencies',
-    ] as const) {
-      const block = pkg[key];
-      if (block && Object.prototype.hasOwnProperty.call(block, pluginName)) {
-        delete block[pluginName];
-        touched = true;
-      }
-    }
-    if (touched) {
-      fs.writeFileSync(pkgPath, JSON.stringify(pkg));
-    }
+let registryPromise: Promise<string | undefined> | null = null;
+
+function getPluginRegistry(): Promise<string | undefined> {
+  if (!registryPromise) {
+    registryPromise = API.dbGet({
+      data: {
+        id: 'flick-localhost-config',
+      },
+    })
+      .then((res) =>
+        typeof res?.data?.register === 'string' ? res.data.register : undefined
+      )
+      .catch(() => undefined);
   }
-  const modPath = pluginNmDir(pluginName);
-  try {
-    if (fs.existsSync(modPath)) {
-      fs.rmSync(modPath, { recursive: true, force: true });
-    }
-  } catch {
-    // EPERM 等：关闭插件进程或重启应用后再手动删目录
-  }
+  return registryPromise;
 }
 
-let pluginInstancePromise: Promise<PluginHandler> | null = null;
+async function getPluginInstance(pluginName: string): Promise<PluginHandler> {
+  const registry = await getPluginRegistry();
+  return new PluginHandler({
+    baseDir: ensurePluginWorkspace(pluginName),
+    registry,
+  });
+}
 
-function getPluginInstance(): Promise<PluginHandler> {
-  if (!pluginInstancePromise) {
-    pluginInstancePromise = (async () => {
-      let registry: string | undefined;
-      try {
-        const res = await API.dbGet({
-          data: {
-            id: 'flick-localhost-config',
-          },
-        });
-        registry =
-          typeof res?.data?.register === 'string'
-            ? res.data.register
-            : undefined;
-      } catch {
-        // The plugin handler applies the public default registry below.
-      }
-      return new PluginHandler({
-        baseDir,
-        registry,
-      });
-    })();
+function localDevelopmentPackage(pluginPath: string): {
+  path: string;
+  info: Record<string, unknown> & { name: string };
+} {
+  const resolved = path.resolve(pluginPath);
+  const info = JSON.parse(
+    fs.readFileSync(path.join(resolved, 'package.json'), 'utf8')
+  ) as Record<string, unknown> & { name?: unknown };
+  if (typeof info.name !== 'string' || !info.name.trim()) {
+    throw new Error('Development plugin package.json requires a name');
   }
-  return pluginInstancePromise;
+  return {
+    path: resolved,
+    info: { ...info, name: info.name.trim() },
+  };
 }
 
 global.LOCAL_PLUGINS = {
   PLUGINS: [],
   async upgradePlugin(name) {
-    const pluginInstance = await getPluginInstance();
-    await pluginInstance.upgrade(name);
+    const pluginInstance = await getPluginInstance(name);
+    if (isIsolatedPluginInstalled(name)) {
+      await pluginInstance.upgrade(name);
+    } else {
+      await pluginInstance.install([name], { isDev: false });
+      removeLegacyPluginPackage(name);
+    }
   },
   async downloadPlugin(plugin) {
-    const pluginInstance = await getPluginInstance();
-    await pluginInstance.install([plugin.name], { isDev: plugin.isDev });
-    if (plugin.isDev) {
-      // 获取 dev 插件信息
-      const pluginPath = path.resolve(baseDir, 'node_modules', plugin.name);
-      const pluginInfo = JSON.parse(
-        fs.readFileSync(path.join(pluginPath, './package.json'), 'utf8')
-      );
-      plugin = {
-        ...plugin,
-        ...pluginInfo,
-      };
-    }
+    const development = plugin.isDev
+      ? localDevelopmentPackage(plugin.name)
+      : null;
+    const pluginName = development?.info.name || plugin.name;
+    const installTarget = development?.path || pluginName;
+    const pluginInstance = await getPluginInstance(pluginName);
+    await pluginInstance.install([installTarget], { isDev: !!plugin.isDev });
+    const pluginPath = isolatedPluginRoot(pluginName);
+    const pluginInfo = JSON.parse(
+      fs.readFileSync(path.join(pluginPath, 'package.json'), 'utf8')
+    );
+    plugin = {
+      ...plugin,
+      ...pluginInfo,
+      name: pluginName,
+      isDev: !!plugin.isDev,
+    };
+    removeLegacyPluginPackage(pluginName);
     plugin = await normalizeInstalledPluginLogo(plugin);
     global.LOCAL_PLUGINS.addPlugin(plugin);
     return global.LOCAL_PLUGINS.PLUGINS;
   },
   async refreshPlugin(plugin) {
-    // 获取 dev 插件信息
-    const pluginPath = path.resolve(baseDir, 'node_modules', plugin.name);
+    const development = path.isAbsolute(plugin.name)
+      ? localDevelopmentPackage(plugin.name)
+      : null;
+    const pluginName = development?.info.name || plugin.name;
+    const pluginPath = resolveInstalledPluginRoot(pluginName);
     const pluginInfo = JSON.parse(
-      fs.readFileSync(path.join(pluginPath, './package.json'), 'utf8')
+      fs.readFileSync(path.join(pluginPath, 'package.json'), 'utf8')
     );
     plugin = {
       ...plugin,
       ...pluginInfo,
+      name: pluginName,
     };
     plugin = await normalizeInstalledPluginLogo(plugin);
     plugin = normalizePluginForStorage(plugin);
@@ -430,12 +425,25 @@ global.LOCAL_PLUGINS = {
     ) {
       return global.LOCAL_PLUGINS.getLocalPlugins();
     }
-    const pluginInstance = await getPluginInstance();
-    try {
-      await pluginInstance.uninstall([plugin.name], { isDev: plugin.isDev });
-    } catch (_e) {
-      removeInstalledPluginFromDisk(plugin.name);
+    if (isIsolatedPluginInstalled(plugin.name)) {
+      const pluginInstance = await getPluginInstance(plugin.name);
+      try {
+        await pluginInstance.uninstall([plugin.name], {
+          isDev: !!plugin.isDev,
+        });
+      } catch {
+        // Removing the isolated workspace below is the authoritative cleanup.
+      }
+      try {
+        fs.rmSync(pluginWorkspaceDir(plugin.name), {
+          recursive: true,
+          force: true,
+        });
+      } catch {
+        // Windows may keep native modules locked until the plugin view exits.
+      }
     }
+    removeLegacyPluginPackage(plugin.name);
     global.LOCAL_PLUGINS.PLUGINS = global.LOCAL_PLUGINS.PLUGINS.filter(
       (p) => plugin.name !== p.name
     );

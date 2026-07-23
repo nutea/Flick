@@ -219,6 +219,17 @@ exports.input = {
     async sendKeyboardTap(key, modifiers = []) {
         await dispatchChord([...modifiers, key]);
     },
+    setMouseButtonSuppression(button) {
+        const native = tryLoadNativeAddon();
+        if (typeof (native === null || native === void 0 ? void 0 : native.setMouseButtonSuppression) !== 'function')
+            return;
+        try {
+            native.setMouseButtonSuppression(button || undefined);
+        }
+        catch {
+            // Optional native capability; older development builds remain usable.
+        }
+    },
     onInputEvent(listener) {
         listeners.add(listener);
         if (!stopHook) {

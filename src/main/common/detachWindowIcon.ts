@@ -3,7 +3,7 @@ import path from 'path';
 import { fileURLToPath } from 'url';
 import axios from 'axios';
 import { nativeImage } from 'electron';
-import { PLUGIN_INSTALL_DIR as baseDir } from '@/common/constans/main';
+import { resolveInstalledPluginRoot } from '@/main/common/pluginStorage';
 
 const MAX_ICON_BYTES = 5 * 1024 * 1024;
 
@@ -40,7 +40,7 @@ export async function resolveDetachWindowIcon(
   if (!logo || typeof logo !== 'string' || !logo.trim()) return undefined;
   const s = logo.trim();
   const pluginRoot = pluginName
-    ? path.join(baseDir, 'node_modules', ...pluginName.split('/'))
+    ? resolveInstalledPluginRoot(pluginName)
     : undefined;
 
   try {

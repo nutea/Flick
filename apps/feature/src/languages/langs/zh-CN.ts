@@ -48,11 +48,14 @@ export default {
           NO_PLUGINS: '没有可导出的插件（系统内置插件不会导出）',
           PLUGIN_NOT_FOUND: '未找到该插件',
           NO_PLUGIN_FILES: '本地插件目录不存在，请先在插件市场安装或重装插件',
+          INCOMPLETE_DEPENDENCIES:
+            '插件依赖不完整，请重新安装插件后再导出离线包',
           UNKNOWN: '导出失败',
         },
         importErrors: {
           INVALID_BUNDLE: '不是有效的 Flick 离线插件包（需由本应用导出的 zip）',
           NOTHING_IMPORTED: '包内没有可导入的插件目录',
+          INCOMPLETE_DEPENDENCIES: '离线包缺少插件依赖，请重新导出完整离线包',
           UNKNOWN: '导入失败',
         },
         tips1: '暂无任何插件',

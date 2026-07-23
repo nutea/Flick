@@ -56,6 +56,9 @@ declare module '../../native' {
      */
     startInputHook?: (callback: (...args: unknown[]) => void) => () => void;
 
+    /** Consumes the configured Windows mouse gesture before Explorer handles it. */
+    setMouseButtonSuppression?: (button?: string) => void;
+
     /**
      * Reads file paths currently on the OS clipboard (`CF_HDROP`, Finder URLs,
      * or `text/uri-list`). Returns an empty array when no file list is present.

@@ -298,7 +298,10 @@ pub fn get_selected_text_async_napi() -> AsyncTask<GetSelectedTextTask> {
   AsyncTask::new(GetSelectedTextTask)
 }
 
-pub struct GetSelectedFilePathsTask;
+pub struct GetSelectedFilePathsTask {
+  #[cfg(windows)]
+  foreground_root: usize,
+}
 
 impl Task for GetSelectedFilePathsTask {
   type Output = Vec<String>;
@@ -307,7 +310,9 @@ impl Task for GetSelectedFilePathsTask {
   fn compute(&mut self) -> Result<Self::Output> {
     #[cfg(windows)]
     {
-      Ok(folder_open_path::get_explorer_selected_paths())
+      Ok(folder_open_path::get_explorer_selected_paths_for_root(
+        self.foreground_root,
+      ))
     }
     #[cfg(not(windows))]
     {
@@ -322,7 +327,10 @@ impl Task for GetSelectedFilePathsTask {
 
 #[napi(js_name = "getSelectedFilePaths")]
 pub fn get_selected_file_paths_async_napi() -> AsyncTask<GetSelectedFilePathsTask> {
-  AsyncTask::new(GetSelectedFilePathsTask)
+  AsyncTask::new(GetSelectedFilePathsTask {
+    #[cfg(windows)]
+    foreground_root: folder_open_path::get_foreground_root_handle(),
+  })
 }
 
 /// Synchronous variant retained for `event.returnValue` IPC handlers (e.g.
@@ -362,6 +370,19 @@ pub fn start_input_hook_napi(env: Env, callback: JsFunction) -> Result<JsFunctio
   {
     input_hook_unix::start(&env, callback)
   }
+}
+
+#[napi(js_name = "setMouseButtonSuppression")]
+pub fn set_mouse_button_suppression_napi(button: Option<String>) -> Result<()> {
+  #[cfg(windows)]
+  {
+    input_hook_win::set_mouse_button_suppression(button.as_deref());
+  }
+  #[cfg(not(windows))]
+  {
+    let _ = button;
+  }
+  Ok(())
 }
 
 /// Reads file paths from the platform clipboard (`CF_HDROP`, Finder URLs, or
