@@ -16,6 +16,9 @@ export type NativeInputEvent =
       kind: 'mouse';
       state: 'down' | 'up';
       button: NativeMouseButton | 'unknown';
+      source?: 'hook' | 'raw-input';
+      /** Whether the low-level hook observed the same physical Raw Input event. */
+      hookObserved?: boolean;
     }
   | {
       kind: 'mouse-move';
@@ -56,7 +59,32 @@ export interface NativeWindowInfo {
   url?: string;
 }
 
+export interface NativeSelectedFile {
+  path: string;
+  name: string;
+  extension: string;
+  isFile: boolean;
+  isDirectory: boolean;
+}
+
+export interface NativeSelectionSnapshot {
+  source: 'shell' | 'accessibility' | 'none';
+  text: string;
+  files: NativeSelectedFile[];
+  truncated: boolean;
+  foregroundFolder: string;
+  activeWindow: NativeWindowInfo | null;
+  shellMs: number;
+  textMs: number;
+  totalMs: number;
+}
+
 export interface NativeSystemApi {
+  /**
+   * Captures source-window identity and selection from one trigger-time
+   * snapshot. Prefer this over independent selection/window reads.
+   */
+  captureSelection(signal?: AbortSignal): Promise<NativeSelectionSnapshot>;
   getFolderOpenPath(): Promise<string>;
   /** Returns only the foreground Explorer folder, never the desktop. */
   getForegroundFolderPath(): Promise<string>;
@@ -76,6 +104,7 @@ export interface NativeInputApi {
   sendCopyShortcut(): Promise<void>;
   sendKeyboardTap(key: string, modifiers?: string[]): Promise<void>;
   setMouseButtonSuppression(button: NativeMouseButton | null): void;
+  restartInputHook(): void;
   onInputEvent(listener: (event: NativeInputEvent) => void): () => void;
 }
 

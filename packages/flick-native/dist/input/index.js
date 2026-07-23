@@ -4,6 +4,9 @@ exports.input = void 0;
 const platform_chord_1 = require("./platform-chord");
 const listeners = new Set();
 let stopHook = null;
+let hookRetryTimer = null;
+let hookRetryAttempt = 0;
+let configuredMouseSuppression = null;
 /** Normalized names: modifiers `control`|`alt`|`shift`|`super`, plus key tokens (`a`…`z`, `0`…`9`, `f1`…, `enter`, …). */
 const TOKEN_ALIASES = {
     ctrl: 'control',
@@ -24,7 +27,7 @@ const TOKEN_ALIASES = {
     leftsuper: 'super',
     rightsuper: 'super',
     enter: 'enter',
-    'return': 'enter',
+    return: 'enter',
     esc: 'escape',
     escape: 'escape',
     del: 'delete',
@@ -70,7 +73,10 @@ const KNOWN_KEY_NAMES = new Set([
     '`',
 ]);
 const toCanonicalToken = (raw) => {
-    const normalized = raw.trim().toLowerCase().replace(/[\s_-]+/g, '');
+    const normalized = raw
+        .trim()
+        .toLowerCase()
+        .replace(/[\s_-]+/g, '');
     if (!normalized)
         return null;
     if (TOKEN_ALIASES[normalized]) {
@@ -115,7 +121,6 @@ const tryLoadNativeAddon = () => {
         return require('../../native');
     }
     catch (error) {
-        // eslint-disable-next-line no-console
         console.warn('[flick-native] failed to start global input hook', error);
         return null;
     }
@@ -149,7 +154,6 @@ const emit = (event) => {
             listener(event);
         }
         catch (err) {
-            // eslint-disable-next-line no-console
             console.error('[flick-native] input listener threw', err);
         }
     }
@@ -164,16 +168,21 @@ const parseNativeInputPayload = (raw) => {
                 kind: 'key',
                 state: o.state,
                 key: o.key,
-                text: o.text === undefined || o.text === null
-                    ? null
-                    : String(o.text),
+                text: o.text === undefined || o.text === null ? null : String(o.text),
             };
         }
         if (o.kind === 'mouse' &&
             (o.state === 'down' || o.state === 'up') &&
             typeof o.button === 'string') {
             const b = o.button;
-            return { kind: 'mouse', state: o.state, button: b };
+            const source = o.source === 'hook' || o.source === 'raw-input' ? o.source : undefined;
+            return {
+                kind: 'mouse',
+                state: o.state,
+                button: b,
+                source,
+                hookObserved: typeof o.hookObserved === 'boolean' ? o.hookObserved : undefined,
+            };
         }
         if (o.kind === 'mouse-move' &&
             typeof o.x === 'number' &&
@@ -197,7 +206,7 @@ const startSharedHook = () => {
         return null;
     }
     try {
-        return native.startInputHook((...args) => {
+        const stop = native.startInputHook((...args) => {
             // CalleeHandled threadsafe function → (err, payload). Be lenient.
             const payload = args.find((a) => typeof a === 'string');
             if (payload === undefined)
@@ -206,10 +215,46 @@ const startSharedHook = () => {
             if (event)
                 emit(event);
         });
+        if (typeof native.setMouseButtonSuppression === 'function') {
+            native.setMouseButtonSuppression(configuredMouseSuppression || undefined);
+        }
+        return stop;
     }
-    catch {
+    catch (error) {
+        // Hook installation can fail transiently while the Windows shell is still
+        // starting. The caller schedules a retry while subscribers remain.
+        if (hookRetryAttempt === 0 || hookRetryAttempt % 5 === 0) {
+            console.warn('[flick-native] global input hook start failed', error);
+        }
         return null;
     }
+};
+const clearHookRetry = () => {
+    if (hookRetryTimer) {
+        clearTimeout(hookRetryTimer);
+        hookRetryTimer = null;
+    }
+};
+const ensureSharedHook = () => {
+    var _a;
+    if (stopHook || listeners.size === 0)
+        return;
+    const nextStop = startSharedHook();
+    if (nextStop) {
+        stopHook = nextStop;
+        hookRetryAttempt = 0;
+        clearHookRetry();
+        return;
+    }
+    if (hookRetryTimer)
+        return;
+    const delay = Math.min(5000, 250 * 2 ** Math.min(hookRetryAttempt, 4));
+    hookRetryAttempt += 1;
+    hookRetryTimer = setTimeout(() => {
+        hookRetryTimer = null;
+        ensureSharedHook();
+    }, delay);
+    (_a = hookRetryTimer.unref) === null || _a === void 0 ? void 0 : _a.call(hookRetryTimer);
 };
 exports.input = {
     async sendCopyShortcut() {
@@ -220,6 +265,7 @@ exports.input = {
         await dispatchChord([...modifiers, key]);
     },
     setMouseButtonSuppression(button) {
+        configuredMouseSuppression = button;
         const native = tryLoadNativeAddon();
         if (typeof (native === null || native === void 0 ? void 0 : native.setMouseButtonSuppression) !== 'function')
             return;
@@ -230,15 +276,28 @@ exports.input = {
             // Optional native capability; older development builds remain usable.
         }
     },
+    restartInputHook() {
+        clearHookRetry();
+        hookRetryAttempt = 0;
+        const previousStop = stopHook;
+        stopHook = null;
+        try {
+            previousStop === null || previousStop === void 0 ? void 0 : previousStop();
+        }
+        catch (error) {
+            console.warn('[flick-native] failed to stop stale input hook', error);
+        }
+        ensureSharedHook();
+    },
     onInputEvent(listener) {
         listeners.add(listener);
-        if (!stopHook) {
-            stopHook = startSharedHook();
-        }
+        ensureSharedHook();
         return () => {
             listeners.delete(listener);
-            if (listeners.size === 0 && stopHook) {
-                stopHook();
+            if (listeners.size === 0) {
+                clearHookRetry();
+                hookRetryAttempt = 0;
+                stopHook === null || stopHook === void 0 ? void 0 : stopHook();
                 stopHook = null;
             }
         };

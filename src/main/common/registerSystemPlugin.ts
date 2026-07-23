@@ -5,6 +5,21 @@ import { resolveInstalledPluginRoot } from '@/main/common/pluginStorage';
 
 declare const __static: string;
 
+function bundledSuperPanel() {
+  const manifestPath = path.join(__static, 'superx', 'package.json');
+  try {
+    if (!fs.existsSync(manifestPath)) return null;
+    const plugin = JSON.parse(fs.readFileSync(manifestPath, 'utf8'));
+    return plugin?.name === 'flick-system-super-panel' ? plugin : null;
+  } catch (error) {
+    console.error(
+      '[flick] failed to read bundled super panel manifest:',
+      error
+    );
+    return null;
+  }
+}
+
 function systemPluginDiskRoot(plugin: { name: string }): string {
   if (plugin.name === 'flick-system-super-panel') {
     return path.join(__static, 'superx');
@@ -13,8 +28,19 @@ function systemPluginDiskRoot(plugin: { name: string }): string {
 }
 
 export default () => {
-  // 读取所有插件
-  const totalPlugins = global.LOCAL_PLUGINS.getLocalPlugins();
+  // The Super Panel is application runtime, not an optional downloaded
+  // package. Always register the bundled copy even when a clean installation
+  // has not created its mutable plugin catalog yet.
+  const catalogPlugins = global.LOCAL_PLUGINS.getLocalPlugins();
+  const bundled = bundledSuperPanel();
+  const totalPlugins = bundled
+    ? [
+        bundled,
+        ...catalogPlugins.filter(
+          (plugin) => plugin.name !== 'flick-system-super-panel'
+        ),
+      ]
+    : catalogPlugins;
   let systemPlugins = totalPlugins.filter(
     (plugin) => plugin.pluginType === 'system'
   );

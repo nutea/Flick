@@ -66,6 +66,7 @@ export function useSuperPanel() {
     selectedText: '',
     selectedFileUrl: '',
     selectedFiles: [] as SelectedFileItem[],
+    selectionTruncated: false,
     selectedFileIsDirectory: false,
     autoTranslate: false,
     /** 选中文本超过该长度则不发起翻译（与偏好 `translateMaxChars` 一致，默认 2000） */
@@ -370,6 +371,7 @@ export function useSuperPanel() {
         optionPlugin = [],
         selectedFileIsDirectory = false,
         selectedFileDataUrl = '',
+        selectionTruncated = false,
       } = payload;
       refreshUserPlugins(optionPlugin);
       const normalizedFiles = selectedFiles
@@ -401,6 +403,7 @@ export function useSuperPanel() {
         );
       }
       state.selectedFiles = normalizedFiles;
+      state.selectionTruncated = selectionTruncated === true;
       state.selectedText = String(text ?? '');
       state.selectedFileUrl = normalizedFiles[0]?.path || '';
       state.selectedFileIsDirectory =
@@ -491,6 +494,7 @@ export function useSuperPanel() {
   const selectedText = computed(() => state.selectedText);
   const selectedFileUrl = computed(() => state.selectedFileUrl);
   const selectedFiles = computed(() => state.selectedFiles);
+  const selectionTruncated = computed(() => state.selectionTruncated);
   const selectedFileIsDirectory = computed(() => state.selectedFileIsDirectory);
   const matchPlugins = computed(() => state.matchPlugins);
   const userPlugins = computed(() => state.userPlugins);
@@ -565,6 +569,7 @@ export function useSuperPanel() {
     selectedText,
     selectedFileUrl,
     selectedFiles,
+    selectionTruncated,
     selectedFileIsDirectory,
     matchPlugins,
     userPlugins,

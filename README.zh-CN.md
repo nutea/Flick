@@ -17,6 +17,9 @@
 - `apps/guide`：首次引导页
 - `apps/tpl`：模板页面
 
+Windows 超级面板的选区、输入通道、回退顺序与验证基线见
+[Windows 超级面板选取架构](docs/windows-super-panel-selection.md)。
+
 ## 技术栈
 
 - Electron

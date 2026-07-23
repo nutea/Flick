@@ -25,10 +25,9 @@ test('SuperX carries file arrays through capture, IPC and panel state', () => {
 
   assert.match(clipboard, /fileUrls:\s*string\[\]/);
   assert.match(clipboard, /normalizeSelectedPaths\(selectedPaths\)/);
-  assert.match(
-    main,
-    /selectedFiles = await Promise\.all\(\s*copyResult\.fileUrls\.map\(describeSelectedFile\)/
-  );
+  assert.match(main, /copyResult\.selectedFiles/);
+  assert.match(main, /describeSelectedFiles\(copyResult\.fileUrls\)/);
+  assert.match(main, /Math\.min\(8, selectedPaths\.length\)/);
   assert.match(main, /fs\.promises\.stat\(selectedPath\)/);
   assert.doesNotMatch(main, /fs\.statSync\(cleanPath\)/);
   assert.match(main, /selectedFiles,/);

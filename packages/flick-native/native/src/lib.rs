@@ -29,8 +29,15 @@ mod platform_unix;
 
 mod screen_capture;
 
-use napi::bindgen_prelude::{AsyncTask, Buffer, Env, JsFunction, Result, Task};
+use napi::bindgen_prelude::{
+  AbortSignal, AsyncTask, Buffer, Env, JsFunction, Result, Task,
+};
 use napi_derive::napi;
+use std::path::Path;
+use std::sync::atomic::{AtomicBool, Ordering};
+use std::time::Instant;
+
+static SELECTION_CAPTURE_RUNNING: AtomicBool = AtomicBool::new(false);
 
 #[napi(object)]
 pub struct ActiveWindowInfo {
@@ -44,9 +51,49 @@ pub struct ActiveWindowInfo {
   pub height: Option<u32>,
 }
 
+#[napi(object)]
+pub struct SelectedFileInfo {
+  pub path: String,
+  pub name: String,
+  pub extension: String,
+  pub isFile: bool,
+  pub isDirectory: bool,
+}
+
+#[napi(object)]
+pub struct SelectionSnapshot {
+  pub source: String,
+  pub text: String,
+  pub files: Vec<SelectedFileInfo>,
+  pub truncated: bool,
+  pub foregroundFolder: String,
+  pub activeWindow: Option<ActiveWindowInfo>,
+  pub shellMs: u32,
+  pub textMs: u32,
+  pub totalMs: u32,
+}
+
+fn selected_file_info(path: String, is_directory: bool) -> SelectedFileInfo {
+  let parsed = Path::new(&path);
+  SelectedFileInfo {
+    name: parsed
+      .file_name()
+      .map(|name| name.to_string_lossy().to_string())
+      .unwrap_or_else(|| path.clone()),
+    extension: parsed
+      .extension()
+      .map(|extension| format!(".{}", extension.to_string_lossy()))
+      .unwrap_or_default(),
+    path,
+    isFile: !is_directory,
+    isDirectory: is_directory,
+  }
+}
+
 #[cfg(windows)]
 mod windows_impl {
   use super::ActiveWindowInfo;
+  use std::ffi::c_void;
   use std::path::Path;
   use windows::core::PWSTR;
   use windows::Win32::Foundation::{CloseHandle, HANDLE, HWND, RECT};
@@ -146,8 +193,8 @@ mod windows_impl {
     })
   }
 
-  pub fn get_active_window() -> Option<ActiveWindowInfo> {
-    let hwnd = unsafe { GetForegroundWindow() };
+  pub fn get_active_window_for_handle(window_handle: usize) -> Option<ActiveWindowInfo> {
+    let hwnd = HWND(window_handle as *mut c_void);
     if hwnd.is_invalid() {
       return None;
     }
@@ -181,6 +228,11 @@ mod windows_impl {
       width,
       height,
     })
+  }
+
+  pub fn get_active_window() -> Option<ActiveWindowInfo> {
+    let hwnd = unsafe { GetForegroundWindow() };
+    get_active_window_for_handle(hwnd.0 as usize)
   }
 }
 
@@ -333,6 +385,261 @@ pub fn get_selected_file_paths_async_napi() -> AsyncTask<GetSelectedFilePathsTas
   })
 }
 
+pub struct CaptureSelectionTask {
+  owns_slot: bool,
+  #[cfg(windows)]
+  foreground_root: usize,
+  #[cfg(windows)]
+  focused_handle: usize,
+  #[cfg(not(windows))]
+  active_window: Option<ActiveWindowInfo>,
+  #[cfg(target_os = "macos")]
+  source_is_finder: bool,
+  #[cfg(target_os = "macos")]
+  source_element: Option<accessibility_ng::AXUIElement>,
+}
+
+impl Drop for CaptureSelectionTask {
+  fn drop(&mut self) {
+    if self.owns_slot {
+      SELECTION_CAPTURE_RUNNING.store(false, Ordering::Release);
+    }
+  }
+}
+
+impl Task for CaptureSelectionTask {
+  type Output = SelectionSnapshot;
+  type JsValue = SelectionSnapshot;
+
+  fn compute(&mut self) -> Result<Self::Output> {
+    let started_at = Instant::now();
+
+    #[cfg(windows)]
+    {
+      if !self.owns_slot {
+        return Ok(SelectionSnapshot {
+          source: "none".to_string(),
+          text: String::new(),
+          files: Vec::new(),
+          truncated: false,
+          foregroundFolder: String::new(),
+          activeWindow: windows_impl::get_active_window_for_handle(self.foreground_root),
+          shellMs: 0,
+          textMs: 0,
+          totalMs: 0,
+        });
+      }
+      let shell_started_at = Instant::now();
+      let explorer =
+        folder_open_path::get_explorer_snapshot_for_root(self.foreground_root);
+      let shell_ms = shell_started_at.elapsed().as_millis().min(u32::MAX as u128) as u32;
+
+      let text_started_at = Instant::now();
+      // Explorer paths are more specific than an editable item label exposed
+      // through UI Automation. Avoid the extra provider call when Shell has a
+      // concrete filesystem selection.
+      let text = if explorer.selection.files.is_empty() {
+        selection_win::get_selected_text_for_context(
+          self.foreground_root,
+          self.focused_handle,
+        )
+      } else {
+        String::new()
+      };
+      let text_ms = text_started_at.elapsed().as_millis().min(u32::MAX as u128) as u32;
+      let files = explorer
+        .selection
+        .files
+        .into_iter()
+        .map(|file| selected_file_info(file.path, file.is_directory))
+        .collect::<Vec<_>>();
+      let source = if !files.is_empty() {
+        "shell"
+      } else if !text.is_empty() {
+        "accessibility"
+      } else {
+        "none"
+      };
+
+      return Ok(SelectionSnapshot {
+        source: source.to_string(),
+        text,
+        files,
+        truncated: explorer.selection.truncated,
+        foregroundFolder: explorer.folder,
+        activeWindow: windows_impl::get_active_window_for_handle(self.foreground_root),
+        shellMs: shell_ms,
+        textMs: text_ms,
+        totalMs: started_at.elapsed().as_millis().min(u32::MAX as u128) as u32,
+      });
+    }
+
+    #[cfg(target_os = "macos")]
+    {
+      if !self.owns_slot {
+        return Ok(SelectionSnapshot {
+          source: "none".to_string(),
+          text: String::new(),
+          files: Vec::new(),
+          truncated: false,
+          foregroundFolder: String::new(),
+          activeWindow: self.active_window.take(),
+          shellMs: 0,
+          textMs: 0,
+          totalMs: 0,
+        });
+      }
+      let shell_started_at = Instant::now();
+      let finder = platform_unix::capture_finder_selection(self.source_is_finder);
+      let files = finder
+        .files
+        .into_iter()
+        .map(|item| {
+          selected_file_info(item.path, item.is_directory)
+        })
+        .collect::<Vec<_>>();
+      let shell_ms = shell_started_at.elapsed().as_millis().min(u32::MAX as u128) as u32;
+      let text_started_at = Instant::now();
+      let text = if files.is_empty() {
+        platform_unix::get_selected_text_for_source(self.source_element.as_ref())
+      } else {
+        String::new()
+      };
+      let text_ms = text_started_at.elapsed().as_millis().min(u32::MAX as u128) as u32;
+      let source = if !files.is_empty() {
+        "shell"
+      } else if !text.is_empty() {
+        "accessibility"
+      } else {
+        "none"
+      };
+      Ok(SelectionSnapshot {
+        source: source.to_string(),
+        text,
+        files,
+        truncated: finder.truncated,
+        foregroundFolder: finder.folder,
+        activeWindow: self.active_window.take(),
+        shellMs: shell_ms,
+        textMs: text_ms,
+        totalMs: started_at.elapsed().as_millis().min(u32::MAX as u128) as u32,
+      })
+    }
+
+    #[cfg(target_os = "linux")]
+    {
+      if !self.owns_slot {
+        return Ok(SelectionSnapshot {
+          source: "none".to_string(),
+          text: String::new(),
+          files: Vec::new(),
+          truncated: false,
+          foregroundFolder: String::new(),
+          activeWindow: self.active_window.take(),
+          shellMs: 0,
+          textMs: 0,
+          totalMs: 0,
+        });
+      }
+      let shell_started_at = Instant::now();
+      let selected_paths = platform_unix::get_selected_file_paths();
+      let truncated = selected_paths.len() > 100;
+      let files = selected_paths
+        .into_iter()
+        .take(100)
+        .map(|path| {
+          let is_directory = std::fs::metadata(&path)
+            .map(|metadata| metadata.is_dir())
+            .unwrap_or(false);
+          selected_file_info(path, is_directory)
+        })
+        .collect::<Vec<_>>();
+      let foreground_folder = platform_unix::get_folder_open_path(true);
+      let shell_ms = shell_started_at.elapsed().as_millis().min(u32::MAX as u128) as u32;
+      let text_started_at = Instant::now();
+      let text = if files.is_empty() {
+        platform_unix::get_selected_text()
+      } else {
+        String::new()
+      };
+      let text_ms = text_started_at.elapsed().as_millis().min(u32::MAX as u128) as u32;
+      let source = if !files.is_empty() {
+        "shell"
+      } else if !text.is_empty() {
+        "accessibility"
+      } else {
+        "none"
+      };
+      Ok(SelectionSnapshot {
+        source: source.to_string(),
+        text,
+        files,
+        truncated,
+        foregroundFolder: foreground_folder,
+        activeWindow: self.active_window.take(),
+        shellMs: shell_ms,
+        textMs: text_ms,
+        totalMs: started_at.elapsed().as_millis().min(u32::MAX as u128) as u32,
+      })
+    }
+  }
+
+  fn resolve(&mut self, _env: Env, output: Self::Output) -> Result<Self::JsValue> {
+    Ok(output)
+  }
+}
+
+/// Captures source-window identity, file-manager selection and accessible text
+/// as one trigger-time snapshot. The Windows foreground/focus handles or
+/// macOS source application are captured synchronously before libuv schedules
+/// the worker, so panel activation cannot redirect the query back to Flick.
+#[napi(js_name = "captureSelection")]
+pub fn capture_selection_napi(
+  signal: Option<AbortSignal>,
+) -> AsyncTask<CaptureSelectionTask> {
+  let owns_slot = SELECTION_CAPTURE_RUNNING
+    .compare_exchange(false, true, Ordering::AcqRel, Ordering::Acquire)
+    .is_ok();
+  #[cfg(windows)]
+  {
+    let foreground_root = folder_open_path::get_foreground_root_handle();
+    let focused_handle = selection_win::get_focused_window_handle(foreground_root);
+    AsyncTask::with_optional_signal(
+      CaptureSelectionTask {
+        owns_slot,
+        foreground_root,
+        focused_handle,
+      },
+      signal,
+    )
+  }
+  #[cfg(not(windows))]
+  {
+    let active_window = windows_impl::get_active_window();
+    #[cfg(target_os = "macos")]
+    let source_is_finder = platform_unix::is_finder_window(active_window.as_ref());
+    #[cfg(target_os = "macos")]
+    let source_element = if source_is_finder {
+      None
+    } else {
+      Some(platform_unix::get_application_element(
+        active_window.as_ref().and_then(|window| window.processId),
+      ))
+    };
+    AsyncTask::with_optional_signal(
+      CaptureSelectionTask {
+        owns_slot,
+        active_window,
+        #[cfg(target_os = "macos")]
+        source_is_finder,
+        #[cfg(target_os = "macos")]
+        source_element,
+      },
+      signal,
+    )
+  }
+}
+
 /// Synchronous variant retained for `event.returnValue` IPC handlers (e.g.
 /// `registerCdwhereIpc`) that cannot await a Promise. Prefer the async form.
 #[napi(js_name = "getFolderOpenPathSync")]
@@ -378,7 +685,11 @@ pub fn set_mouse_button_suppression_napi(button: Option<String>) -> Result<()> {
   {
     input_hook_win::set_mouse_button_suppression(button.as_deref());
   }
-  #[cfg(not(windows))]
+  #[cfg(target_os = "macos")]
+  {
+    input_hook_macos::set_mouse_button_suppression(button.as_deref());
+  }
+  #[cfg(target_os = "linux")]
   {
     let _ = button;
   }

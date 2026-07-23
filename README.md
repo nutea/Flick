@@ -17,6 +17,10 @@ Current modules in this repository:
 - `apps/guide`: onboarding page
 - `apps/tpl`: template page
 
+See [Windows Super Panel selection architecture](docs/windows-super-panel-selection.md)
+for the native selection pipeline, input channels, fallback order, and release
+verification baseline.
+
 ## Tech Stack
 
 - Electron

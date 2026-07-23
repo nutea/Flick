@@ -21,6 +21,26 @@ declare module '../../native' {
     height?: number;
   }
 
+  export interface NativeAddonSelectedFile {
+    path: string;
+    name: string;
+    extension: string;
+    isFile: boolean;
+    isDirectory: boolean;
+  }
+
+  export interface NativeAddonSelectionSnapshot {
+    source: 'shell' | 'accessibility' | 'none';
+    text: string;
+    files: NativeAddonSelectedFile[];
+    truncated: boolean;
+    foregroundFolder: string;
+    activeWindow: NativeAddonActiveWindow | null;
+    shellMs: number;
+    textMs: number;
+    totalMs: number;
+  }
+
   export interface NativeAddon {
     /**
      * Resolves on the libuv worker pool — does NOT block the Node main thread.
@@ -28,6 +48,11 @@ declare module '../../native' {
      * of milliseconds, hence the async wrapper.
      */
     getActiveWindow?: () => Promise<NativeAddonActiveWindow | null>;
+
+    /** Atomic trigger-time window and selection snapshot. */
+    captureSelection?: (
+      signal?: AbortSignal
+    ) => Promise<NativeAddonSelectionSnapshot>;
 
     /** Async variant. Iterates Explorer windows over COM on a worker thread. */
     getFolderOpenPath?: () => Promise<string>;

@@ -25,6 +25,10 @@ const BUILTIN_PLUGIN_PACKAGES = [
 
 function ensureBuiltinPluginsInList(): void {
   try {
+    // A clean installation has no plugin directory yet. The built-in catalog
+    // is initialized before the regular plugin installer runs, so every write
+    // below must be able to create the very first catalog file itself.
+    fs.mkdirSync(baseDir, { recursive: true });
     if (fs.existsSync(configPath)) {
       const raw = JSON.parse(fs.readFileSync(configPath, 'utf-8'));
       if (Array.isArray(raw) && raw.some((p) => p.name === 'flick-superx')) {

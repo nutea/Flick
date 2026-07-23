@@ -3,10 +3,15 @@ Object.defineProperty(exports, "__esModule", { value: true });
 exports.simulateCopyShortcut = simulateCopyShortcut;
 exports.getSelectedText = getSelectedText;
 exports.getSelectedFilePaths = getSelectedFilePaths;
+exports.captureSelectionSnapshot = captureSelectionSnapshot;
+exports.readClipboardFilePaths = readClipboardFilePaths;
 exports.getClipboardChangeToken = getClipboardChangeToken;
 exports.getActiveWindowSnapshot = getActiveWindowSnapshot;
 exports.getActiveWindowFallbackPath = getActiveWindowFallbackPath;
+exports.getSnapshotFallbackPath = getSnapshotFallbackPath;
 exports.onNativeInputEvent = onNativeInputEvent;
+exports.setNativeMouseButtonSuppression = setNativeMouseButtonSuppression;
+exports.restartNativeInputHook = restartNativeInputHook;
 const flick_native_1 = require("flick-native");
 async function resolveWithin(promise, timeoutMs, fallback) {
     let timer;
@@ -31,6 +36,12 @@ async function getSelectedText() {
 }
 async function getSelectedFilePaths() {
     return flick_native_1.system.getSelectedFilePaths();
+}
+async function captureSelectionSnapshot(signal) {
+    return flick_native_1.system.captureSelection(signal);
+}
+function readClipboardFilePaths() {
+    return flick_native_1.clipboard.readFilePaths();
 }
 function getClipboardChangeToken() {
     return flick_native_1.clipboard.getChangeToken();
@@ -81,6 +92,29 @@ async function getActiveWindowFallbackPath(runtime = flick_native_1.system, snap
     }
     return activePath;
 }
+function getSnapshotFallbackPath(snapshot, platform = process.platform) {
+    var _a, _b, _c, _d;
+    const current = snapshot.activeWindow;
+    const activePath = String((_a = current === null || current === void 0 ? void 0 : current.path) !== null && _a !== void 0 ? _a : '');
+    if (!activePath)
+        return snapshot.foregroundFolder;
+    const executable = (_c = (_b = activePath.split(/[/\\]/).pop()) === null || _b === void 0 ? void 0 : _b.toLowerCase()) !== null && _c !== void 0 ? _c : '';
+    const appName = String((_d = current === null || current === void 0 ? void 0 : current.appName) !== null && _d !== void 0 ? _d : '').toLowerCase();
+    const isWindowsExplorer = executable === 'explorer.exe';
+    const isMacFinder = appName === 'finder' ||
+        executable === 'finder.app' ||
+        /(?:^|[/\\])finder\.app(?:[/\\]|$)/i.test(activePath);
+    const isLinuxManager = isLinuxFileManager(executable, appName, platform);
+    return isWindowsExplorer || isMacFinder || isLinuxManager
+        ? snapshot.foregroundFolder
+        : activePath;
+}
 function onNativeInputEvent(listener) {
     return flick_native_1.input.onInputEvent(listener);
+}
+function setNativeMouseButtonSuppression(button) {
+    flick_native_1.input.setMouseButtonSuppression(button);
+}
+function restartNativeInputHook() {
+    flick_native_1.input.restartInputHook();
 }

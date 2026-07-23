@@ -60,6 +60,7 @@ export interface TriggerSuperPanelPayload {
   optionPlugin?: OptionPlugin[];
   selectedFileIsDirectory?: boolean;
   selectedFileDataUrl?: string;
+  selectionTruncated?: boolean;
 }
 
 export type BuiltinPluginIcon = 'terminal' | 'create-file' | 'copy';

@@ -205,6 +205,14 @@ const registerHotKey = (mainWindow: BrowserWindow): void => {
         mainWindow.webContents.send('global-short-key', sc.value);
       });
     });
+
+    // `unregisterAll()` above also removes the independently configured Super
+    // Panel accelerator. Re-register it after any main-shortcut refresh; mouse
+    // modes use the same hook refresh entry point and are safe to reapply.
+    const runtime = globalThis as typeof globalThis & {
+      __superPanelReregister?: () => void;
+    };
+    runtime.__superPanelReregister?.();
   };
 
   mainWindow.webContents.on('before-input-event', onBeforeInputEvent);

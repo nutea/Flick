@@ -83,8 +83,10 @@ Implemented first:
   IPC callers (letters, digits, `F1`–`F12`, arrows, Enter, Tab, Space, etc.).
 - `input.onInputEvent`
   Global keyboard/mouse/wheel events come from the N-API addon
-  (`startInputHook` → JSON payloads → `NativeInputEvent`). Windows uses low-level
-  Win32 hooks, macOS uses a project-owned CoreGraphics event tap for keyboard,
+  (`startInputHook` → JSON payloads → `NativeInputEvent`). Windows uses Raw
+  Input as the centralized mouse notification channel and low-level hooks for
+  keyboard events, mouse-gesture suppression, and hook-health observation.
+  macOS uses a project-owned CoreGraphics event tap for keyboard,
   wheel, and all mouse buttons, and Linux uses X11. The macOS listener avoids
   background-thread keyboard-layout translation, which is unsafe on current
   macOS releases. macOS
@@ -94,6 +96,13 @@ Implemented first:
   Returns the foreground window title, owning application/process, path, PID,
   and geometry on Windows, macOS, and Linux (X11, KDE, and supported Hyprland
   sessions).
+- `system.captureSelection`
+  Captures the trigger-time source window, accessible text, Explorer/Finder
+  selection, current file-manager folder, native file metadata, truncation
+  state, and timing diagnostics in one snapshot. Windows captures HWNDs before
+  queuing its N-API worker, queries Explorer with
+  `IFolderView2::GetSelection(false)`, and caps native enumeration at 100 items.
+  Callers may pass an `AbortSignal`.
 - `system.getFolderOpenPath`
   Windows resolves the foreground Explorer folder (or last `file:` folder among
   open shell windows) via COM in `native/`, exposed as `getFolderOpenPath` on the
@@ -105,9 +114,9 @@ Implemented first:
   - `file` when file paths are present
   - `text` when plain text is present
   - `null` otherwise
-  Windows file-path reads go through the in-repo N-API
-  (`readClipboardFilePaths` → `CF_HDROP` + `DragQueryFileW`); macOS and Linux
-  accept both native file-list results and Electron pasteboard formats.
+    Windows file-path reads go through the in-repo N-API
+    (`readClipboardFilePaths` → `CF_HDROP` + `DragQueryFileW`); macOS and Linux
+    accept both native file-list results and Electron pasteboard formats.
 - `clipboard.readFilePaths` / `clipboard.writeFilePaths`
   Windows uses `CF_HDROP` (with `Preferred DropEffect = COPY`), macOS uses Finder
   pasteboard file URLs, and Linux uses `text/uri-list` through the active X11 or
@@ -115,14 +124,19 @@ Implemented first:
 
 ## Platform parity
 
-| Capability | Windows | macOS | Linux |
-| --- | --- | --- | --- |
-| Active window metadata | Win32 | AppKit/CoreGraphics | X11/KDE/Hyprland |
-| Global key/mouse/wheel events | low-level hooks | event tap | X11 listener |
-| Synthetic keyboard chords | `SendInput` | CoreGraphics | X11 |
-| Selected text | UI Automation | Accessibility API | primary selection |
-| File-manager folder/selection | Explorer COM | Finder automation | desktop-dependent fallback |
-| File clipboard | `CF_HDROP` | Finder URLs | `text/uri-list` |
+| Capability                    | Windows                     | macOS               | Linux                      |
+| ----------------------------- | --------------------------- | ------------------- | -------------------------- |
+| Active window metadata        | Win32                       | AppKit/CoreGraphics | X11/KDE/Hyprland           |
+| Global key/mouse/wheel events | Raw Input + low-level hooks | event tap           | X11 listener               |
+| Synthetic keyboard chords     | `SendInput`                 | CoreGraphics        | X11                        |
+| Selected text                 | UI Automation               | Accessibility API   | primary selection          |
+| File-manager folder/selection | Explorer COM                | Finder automation   | desktop-dependent fallback |
+| File clipboard                | `CF_HDROP`                  | Finder URLs         | `text/uri-list`            |
+
+Detailed selection architecture:
+
+- [Windows Super Panel selection](../../docs/windows-super-panel-selection.md)
+- [macOS Super Panel selection](../../docs/macos-super-panel-selection.md)
 
 Linux desktop environments deliberately differ here. Under Wayland, global
 input capture is compositor-controlled; clipboard operations prefer

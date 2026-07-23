@@ -91,6 +91,23 @@ function createPanelWindow(ctx) {
         resetPin();
         win.hide();
     };
+    /**
+     * Windows can deny foreground activation to a window shown from an
+     * asynchronous global-hook callback. In that state Electron may not emit a
+     * blur event. Cursor position and the panel's global DIP bounds provide a
+     * deterministic answer without timing against a delayed focus transition.
+     */
+    const dismissAfterPointerDown = (point) => {
+        if (!win || win.isDestroyed() || !win.isVisible() || pinned)
+            return;
+        const bounds = win.getBounds();
+        const isInside = point.x >= bounds.x &&
+            point.x < bounds.x + bounds.width &&
+            point.y >= bounds.y &&
+            point.y < bounds.y + bounds.height;
+        if (!isInside)
+            hideWindow();
+    };
     function needsNewWindow() {
         if (win == null)
             return true;
@@ -390,5 +407,13 @@ function createPanelWindow(ctx) {
         }
     };
     const isPinned = () => pinned;
-    return { init, getWindow, whenReady, beginPlacement, isPinned, resetPin };
+    return {
+        init,
+        getWindow,
+        whenReady,
+        beginPlacement,
+        isPinned,
+        resetPin,
+        dismissAfterPointerDown,
+    };
 }

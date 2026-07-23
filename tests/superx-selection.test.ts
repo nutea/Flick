@@ -1,4 +1,5 @@
 import assert from 'node:assert/strict';
+import { EventEmitter } from 'node:events';
 import fs from 'node:fs';
 import path from 'node:path';
 import test from 'node:test';
@@ -13,6 +14,7 @@ import {
 } from '../apps/superx/node-src/native';
 import { normalizeKeyboardShortcut } from '../apps/superx/node-src/shortcut';
 import { acceleratorKeyFromEvent } from '../apps/feature/src/utils/keyboardAccelerator';
+import createPanelWindow from '../apps/superx/node-src/panel-window';
 
 const emptyImage = {
   isEmpty: () => true,
@@ -108,6 +110,48 @@ test('SuperX reads an Explorer selection without touching the clipboard', async 
   assert.equal(copyCalls, 0);
 });
 
+test('SuperX consumes one native selection snapshot with file metadata', async () => {
+  const clipboard = createClipboard('unchanged');
+  let copyCalls = 0;
+  const selectedFile = {
+    path: 'D:\\work\\a.txt',
+    name: 'a.txt',
+    extension: '.txt',
+    isFile: true,
+    isDirectory: false,
+  };
+  const result = await getSelectedContent(
+    clipboard.api,
+    async () => {
+      copyCalls += 1;
+    },
+    {
+      readSelectionSnapshot: async () => ({
+        source: 'shell',
+        text: '',
+        files: [selectedFile],
+        truncated: false,
+        foregroundFolder: 'D:\\work',
+        activeWindow: {
+          path: 'C:\\Windows\\explorer.exe',
+          appName: 'explorer',
+        },
+        shellMs: 3,
+        textMs: 0,
+        totalMs: 4,
+      }),
+    }
+  );
+
+  assert.equal(result.status, 'selected');
+  assert.deepEqual(result.fileUrls, [selectedFile.path]);
+  assert.deepEqual(
+    result.status === 'selected' ? result.selectedFiles : undefined,
+    [selectedFile]
+  );
+  assert.equal(copyCalls, 0);
+});
+
 test('SuperX prefers an Explorer file selection over an accessibility label', async () => {
   const clipboard = createClipboard('unchanged');
   const result = await getSelectedContent(clipboard.api, async () => {}, {
@@ -154,6 +198,46 @@ test('SuperX bounds oversized file selections before IPC', async () => {
 
   assert.equal(result.fileUrls.length, 100);
   assert.equal(result.fileUrls[99], '/tmp/99.txt');
+});
+
+test('SuperX preserves truncation when macOS falls back to copied file URLs', async () => {
+  const clipboard = createClipboard('unchanged');
+  let token = 1;
+  const result = await getSelectedContent(
+    clipboard.api,
+    async () => {
+      token += 1;
+    },
+    {
+      readSelectionSnapshot: async () => ({
+        source: 'none',
+        text: '',
+        files: [],
+        truncated: false,
+        foregroundFolder: '/Users/NUT/Desktop/',
+        activeWindow: {
+          path: '/System/Library/CoreServices/Finder.app',
+          appName: 'Finder',
+        },
+        shellMs: 450,
+        textMs: 0,
+        totalMs: 450,
+      }),
+      readClipboardFilePaths: () =>
+        Array.from(
+          { length: 101 },
+          (_, index) => `/Users/NUT/Desktop/${index}.txt`
+        ),
+      getClipboardChangeToken: () => token,
+      copyTimeoutMs: 30,
+      pollIntervalMs: 4,
+    }
+  );
+
+  assert.equal(result.status, 'selected');
+  assert.equal(result.source, 'clipboard-copy');
+  assert.equal(result.fileUrls.length, 100);
+  assert.equal(result.truncated, true);
 });
 
 test('SuperX waits for an asynchronous copy update', async () => {
@@ -433,6 +517,40 @@ test('SuperX rejects non-ASCII persisted Electron accelerators', () => {
   assert.equal(normalizeKeyboardShortcut(' Alt+W '), 'Alt+W');
 });
 
+test('macOS captures one trigger-time Finder snapshot without per-file stat calls', () => {
+  const root = process.cwd();
+  const native = fs.readFileSync(
+    path.join(root, 'packages/flick-native/native/src/platform_unix.rs'),
+    'utf8'
+  );
+  const binding = fs.readFileSync(
+    path.join(root, 'packages/flick-native/native/src/lib.rs'),
+    'utf8'
+  );
+  const hook = fs.readFileSync(
+    path.join(root, 'packages/flick-native/native/src/input_hook_macos.rs'),
+    'utf8'
+  );
+
+  assert.match(native, /capture_finder_selection/);
+  assert.match(native, /set selectedItems to get selection/);
+  assert.match(native, /set folderPath to POSIX path/);
+  assert.match(native, /set itemLimit to 100/);
+  assert.match(native, /class of selectedItem is folder/);
+  assert.match(native, /readObjectsForClasses/);
+  assert.match(native, /set_messaging_timeout\(0\.25\)/);
+  assert.doesNotMatch(
+    binding,
+    /capture_finder_selection[\s\S]{0,1000}std::fs::metadata/
+  );
+  assert.match(binding, /active_window = windows_impl::get_active_window\(\)/);
+  assert.match(binding, /source_is_finder/);
+  assert.match(binding, /source_element/);
+  assert.match(hook, /DEFAULT_EVENT_TAP/);
+  assert.match(hook, /SUPPRESSED_MOUSE_BUTTON/);
+  assert.match(hook, /std::ptr::null_mut\(\)/);
+});
+
 test('Windows middle-click trigger preserves Explorer multi-selection', () => {
   const root = process.cwd();
   const main = fs.readFileSync(
@@ -450,10 +568,140 @@ test('Windows middle-click trigger preserves Explorer multi-selection', () => {
   );
   assert.match(hook, /SUPPRESSED_MOUSE_BUTTON/);
   assert.match(hook, /return LRESULT\(1\)/);
+  assert.match(hook, /message == WM_MBUTTONDOWN \|\| message == WM_MBUTTONUP/);
+});
+
+test('SuperX dismisses an unfocused Windows panel after an outside pointer press', async () => {
+  class FakeWebContents extends EventEmitter {
+    id = 1;
+    setWindowOpenHandler() {}
+    send() {}
+    focus() {}
+    isDevToolsOpened() {
+      return false;
+    }
+    openDevTools() {}
+  }
+  class FakeWindow extends EventEmitter {
+    static latest: FakeWindow;
+    webContents = new FakeWebContents();
+    visible = false;
+    focused = false;
+    destroyed = false;
+    bounds = { x: 0, y: 0, width: 240, height: 50 };
+    constructor() {
+      super();
+      FakeWindow.latest = this;
+    }
+    loadURL() {
+      return Promise.resolve();
+    }
+    isDestroyed() {
+      return this.destroyed;
+    }
+    isVisible() {
+      return this.visible;
+    }
+    isFocused() {
+      return this.focused;
+    }
+    hide() {
+      this.visible = false;
+      this.emit('hide');
+    }
+    getBounds() {
+      return this.bounds;
+    }
+    setBounds(bounds: typeof this.bounds) {
+      this.bounds = bounds;
+    }
+  }
+  const ipcMain = Object.assign(new EventEmitter(), {
+    removeHandler() {},
+    handle() {},
+  });
+  const screen = Object.assign(new EventEmitter(), {
+    getDisplayNearestPoint: () => ({
+      workArea: { x: 0, y: 0, width: 1920, height: 1080 },
+    }),
+  });
+  const panel = createPanelWindow({
+    BrowserWindow: FakeWindow,
+    ipcMain,
+    dialog: {},
+    shell: { openExternal() {} },
+    screen,
+  });
+  panel.init();
+  const win = FakeWindow.latest;
+  win.visible = true;
+  panel.dismissAfterPointerDown({ x: 120, y: 20 });
+  assert.equal(win.visible, true);
+  panel.dismissAfterPointerDown({ x: 1919, y: 1079 });
+  assert.equal(win.visible, false);
+
+  const root = process.cwd();
+  const main = fs.readFileSync(
+    path.join(root, 'apps/superx/node-src/main.ts'),
+    'utf8'
+  );
+  const panelWindow = fs.readFileSync(
+    path.join(root, 'apps/superx/node-src/panel-window.ts'),
+    'utf8'
+  );
+
+  assert.match(main, /removeDismissInputSubscription/);
+  assert.match(
+    main,
+    /panelInstance\.dismissAfterPointerDown\(\s*screen\.getCursorScreenPoint\(\)\s*\)/
+  );
+  assert.match(
+    panelWindow,
+    /const dismissAfterPointerDown = \(point: Point\) =>/
+  );
+  assert.match(panelWindow, /const isInside =/);
+  assert.match(panelWindow, /hideWindow\(\)/);
+});
+
+test('SuperX recovers Windows input through Raw Input and hook restart', () => {
+  const root = process.cwd();
+  const input = fs.readFileSync(
+    path.join(root, 'packages/flick-native/src/input/index.ts'),
+    'utf8'
+  );
+  const hook = fs.readFileSync(
+    path.join(root, 'packages/flick-native/native/src/input_hook_win.rs'),
+    'utf8'
+  );
+  const main = fs.readFileSync(
+    path.join(root, 'apps/superx/node-src/main.ts'),
+    'utf8'
+  );
+
+  assert.match(input, /const ensureSharedHook = \(\): void =>/);
+  assert.match(input, /hookRetryTimer = setTimeout/);
+  assert.match(input, /restartInputHook\(\): void/);
+  assert.match(input, /configuredMouseSuppression/);
+  assert.match(hook, /HOOK_READY_STATE/);
+  assert.match(hook, /RegisterRawInputDevices/);
+  assert.match(hook, /RIDEV_INPUTSINK/);
+  assert.match(hook, /raw-input/);
+  assert.match(hook, /RAW_INPUT_READY/);
+  assert.match(hook, /hookObserved/);
+  assert.match(input, /hookObserved:/);
+  assert.doesNotMatch(input, /lastMouseDelivery/);
+  assert.match(hook, /STOP_REQUESTED/);
   assert.match(
     hook,
-    /message == WM_MBUTTONDOWN \|\| message == WM_MBUTTONUP/
+    /KB_HOOK_PTR\.load\(Ordering::SeqCst\)\.is_null\(\)[\s\S]*\|\|[\s\S]*MOUSE_HOOK_PTR/
   );
+  assert.match(hook, /failed to install Windows keyboard and mouse hooks/);
+  assert.match(main, /ctx\.powerMonitor\?\.on\('resume'/);
+  assert.match(main, /ctx\.powerMonitor\?\.on\('unlock-screen'/);
+  assert.match(main, /event\.source === 'raw-input'/);
+  assert.match(main, /event\.hookObserved === false/);
+  assert.match(main, /setTimeout\(restartNativeInputHook, 0\)/);
+  assert.match(main, /triggerPromise/);
 });
 
 test('Windows keyboard trigger snapshots the native Explorer selection immediately', () => {
@@ -473,8 +721,18 @@ test('Windows keyboard trigger snapshots the native Explorer selection immediate
 
   assert.match(main, /const copySelection = async \(\) =>/);
   assert.match(main, /getSelectedContent\(clipboard, copySelection/);
+  assert.match(main, /readSelectionSnapshot: captureSelectionSnapshot/);
   assert.match(native, /IFolderView2/);
   assert.match(native, /GetSelection\(false\)/);
   assert.match(native, /get_explorer_selected_paths_for_root/);
+  assert.match(native, /MAX_SELECTED_ITEMS/);
   assert.match(binding, /get_foreground_root_handle\(\)/);
+  assert.match(binding, /capture_selection_napi/);
+  assert.match(binding, /SELECTION_CAPTURE_RUNNING/);
+  assert.match(binding, /impl Drop for CaptureSelectionTask/);
+  assert.match(binding, /focused_handle/);
+  assert.match(
+    binding,
+    /activeWindow: windows_impl::get_active_window_for_handle/
+  );
 });

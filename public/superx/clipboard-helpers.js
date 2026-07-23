@@ -137,14 +137,28 @@ function normalizeSelectedPaths(paths) {
         .filter(Boolean))).slice(0, MAX_SELECTED_FILES);
 }
 /** 从当前剪贴板解析为面板用的 text / 文件路径（路径优先） */
-function readClipboardPayload(clipboard) {
+function readClipboardPayload(clipboard, readNativeFilePaths) {
+    var _a;
     const text = clipboard.readText('clipboard') || '';
-    const fileUrls = normalizeSelectedPaths(getFilePathFromClipboard(clipboard));
+    let nativePaths = [];
+    try {
+        nativePaths = (_a = readNativeFilePaths === null || readNativeFilePaths === void 0 ? void 0 : readNativeFilePaths()) !== null && _a !== void 0 ? _a : [];
+    }
+    catch {
+        nativePaths = [];
+    }
+    const normalizedCandidates = Array.from(new Set((nativePaths.length ? nativePaths : getFilePathFromClipboard(clipboard))
+        .filter((value) => typeof value === 'string')
+        .map((value) => value.trim())
+        .filter(Boolean))).slice(0, MAX_SELECTED_FILES + 1);
+    const truncated = normalizedCandidates.length > MAX_SELECTED_FILES;
+    const fileUrls = normalizedCandidates.slice(0, MAX_SELECTED_FILES);
     const fileUrl = fileUrls[0] || '';
     return {
         text: fileUrl ? '' : text,
         fileUrl,
         fileUrls,
+        truncated,
     };
 }
 const wait = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
@@ -152,11 +166,15 @@ async function readDirectValue(reader, timeoutMs, fallback) {
     if (!reader)
         return fallback;
     let timer;
+    const controller = new AbortController();
     try {
         return await Promise.race([
-            reader().catch(() => fallback),
+            reader(controller.signal).catch(() => fallback),
             new Promise((resolve) => {
-                timer = setTimeout(() => resolve(fallback), timeoutMs);
+                timer = setTimeout(() => {
+                    controller.abort();
+                    resolve(fallback);
+                }, timeoutMs);
             }),
         ]);
     }
@@ -166,24 +184,45 @@ async function readDirectValue(reader, timeoutMs, fallback) {
     }
 }
 async function getSelectedContent(clipboard, simulateCopy, options = {}) {
-    var _a, _b, _c, _d, _e;
+    var _a, _b, _c, _d, _e, _f, _g;
+    const snapshot = await readDirectValue(options.readSelectionSnapshot, (_a = options.directFileReadTimeoutMs) !== null && _a !== void 0 ? _a : 450, null);
+    if (snapshot) {
+        const files = snapshot.files.slice(0, MAX_SELECTED_FILES);
+        if (files.length) {
+            const fileUrls = normalizeSelectedPaths(files.map((file) => file.path));
+            return {
+                status: 'selected',
+                source: 'shell',
+                text: '',
+                fileUrl: (_b = fileUrls[0]) !== null && _b !== void 0 ? _b : '',
+                fileUrls,
+                truncated: snapshot.truncated,
+                selectedFiles: files,
+                snapshot,
+            };
+        }
+        if (snapshot.text) {
+            return {
+                status: 'selected',
+                source: 'accessibility',
+                text: snapshot.text,
+                fileUrl: '',
+                fileUrls: [],
+                truncated: snapshot.truncated,
+                snapshot,
+            };
+        }
+    }
     // The two platform reads are independent. Running them together keeps the
     // Finder/Explorer path capability without adding its process/COM latency to
     // every text selection. Both are bounded because automation providers can
     // stall behind a permission prompt or an unresponsive file manager.
-    const [directText, selectedPaths] = await Promise.all([
-        readDirectValue(options.readSelectedText, (_a = options.directReadTimeoutMs) !== null && _a !== void 0 ? _a : 120, ''),
-        readDirectValue(options.readSelectedFilePaths, (_b = options.directFileReadTimeoutMs) !== null && _b !== void 0 ? _b : 400, []),
-    ]);
-    if (directText.length > 0) {
-        return {
-            status: 'selected',
-            source: 'accessibility',
-            text: directText,
-            fileUrl: '',
-            fileUrls: [],
-        };
-    }
+    const [directText, selectedPaths] = options.readSelectionSnapshot === undefined
+        ? await Promise.all([
+            readDirectValue(options.readSelectedText, (_c = options.directReadTimeoutMs) !== null && _c !== void 0 ? _c : 120, ''),
+            readDirectValue(options.readSelectedFilePaths, (_d = options.directFileReadTimeoutMs) !== null && _d !== void 0 ? _d : 400, []),
+        ])
+        : ['', []];
     const fileUrls = normalizeSelectedPaths(selectedPaths);
     const firstPath = fileUrls[0];
     if (firstPath) {
@@ -193,19 +232,39 @@ async function getSelectedContent(clipboard, simulateCopy, options = {}) {
             text: '',
             fileUrl: firstPath,
             fileUrls,
+            truncated: selectedPaths.length > MAX_SELECTED_FILES,
+        };
+    }
+    // A focused Explorer item can expose its label through UI Automation. The
+    // Shell path is the more specific selection and must win so file plugins
+    // (especially multi-file actions) are not misclassified as text commands.
+    if (directText.length > 0) {
+        return {
+            status: 'selected',
+            source: 'accessibility',
+            text: directText,
+            fileUrl: '',
+            fileUrls: [],
+            truncated: false,
         };
     }
     const getChangeToken = options.getClipboardChangeToken;
-    const beforeToken = (_c = getChangeToken === null || getChangeToken === void 0 ? void 0 : getChangeToken()) !== null && _c !== void 0 ? _c : null;
+    const beforeToken = (_e = getChangeToken === null || getChangeToken === void 0 ? void 0 : getChangeToken()) !== null && _e !== void 0 ? _e : null;
     const beforeSnap = beforeToken === null ? snapshotClipboard(clipboard) : null;
     try {
         await simulateCopy();
     }
     catch {
-        return { status: 'none', text: '', fileUrl: '', fileUrls: [] };
+        return {
+            status: 'none',
+            text: '',
+            fileUrl: '',
+            fileUrls: [],
+            ...(snapshot ? { snapshot } : {}),
+        };
     }
-    const timeoutMs = (_d = options.copyTimeoutMs) !== null && _d !== void 0 ? _d : 250;
-    const pollIntervalMs = Math.max(4, (_e = options.pollIntervalMs) !== null && _e !== void 0 ? _e : 10);
+    const timeoutMs = (_f = options.copyTimeoutMs) !== null && _f !== void 0 ? _f : 250;
+    const pollIntervalMs = Math.max(4, (_g = options.pollIntervalMs) !== null && _g !== void 0 ? _g : 10);
     const deadline = Date.now() + timeoutMs;
     while (Date.now() <= deadline) {
         let changed = false;
@@ -217,7 +276,7 @@ async function getSelectedContent(clipboard, simulateCopy, options = {}) {
             changed = !clipboardSnapsEqual(beforeSnap, snapshotClipboard(clipboard));
         }
         if (changed) {
-            const payload = readClipboardPayload(clipboard);
+            const payload = readClipboardPayload(clipboard, options.readClipboardFilePaths);
             // Some applications empty the clipboard and publish the new formats in
             // separate steps. Do not treat the intermediate empty state as a copy.
             if (!payload.text && payload.fileUrls.length === 0) {
@@ -228,11 +287,18 @@ async function getSelectedContent(clipboard, simulateCopy, options = {}) {
                 status: 'selected',
                 source: 'clipboard-copy',
                 ...payload,
+                ...(snapshot ? { snapshot } : {}),
             };
         }
         await wait(pollIntervalMs);
     }
-    return { status: 'timeout', text: '', fileUrl: '', fileUrls: [] };
+    return {
+        status: 'timeout',
+        text: '',
+        fileUrl: '',
+        fileUrls: [],
+        ...(snapshot ? { snapshot } : {}),
+    };
 }
 /**
  * Electron `screen.getCursorScreenPoint()` 返回的已是 DIP，与 `BrowserWindow.setPosition` / `getBounds`

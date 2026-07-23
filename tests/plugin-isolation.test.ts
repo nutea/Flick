@@ -30,19 +30,11 @@ test('plugin dependency bundles preserve nested package instances', async (t) =>
   });
   writePackage(path.join(nm, 'readable-stream'), 'readable-stream');
   writePackage(
-    path.join(
-      nm,
-      'concat-stream',
-      'node_modules',
-      'readable-stream'
-    ),
+    path.join(nm, 'concat-stream', 'node_modules', 'readable-stream'),
     'readable-stream',
     { 'process-nextick-args': '2.0.1' }
   );
-  writePackage(
-    path.join(nm, 'process-nextick-args'),
-    'process-nextick-args'
-  );
+  writePackage(path.join(nm, 'process-nextick-args'), 'process-nextick-args');
 
   const result = await collectResolvedDependencyClosure(nm, 'legacy-plugin');
   const relative = result.packageDirs.map((dir) =>
@@ -72,9 +64,7 @@ test('plugin dependency validation reports a missing transitive package', async 
   });
 
   const result = await collectResolvedDependencyClosure(nm, 'legacy-plugin');
-  assert.deepEqual(result.missing, [
-    'readable-stream -> process-nextick-args',
-  ]);
+  assert.deepEqual(result.missing, ['readable-stream -> process-nextick-args']);
 });
 
 test('plugin runtime paths go through the isolated-storage resolver', () => {
@@ -102,4 +92,29 @@ test('plugin runtime paths go through the isolated-storage resolver', () => {
   assert.match(storage, /ISOLATED_PLUGIN_DIR/);
   assert.match(storage, /resolveInstalledPluginRoot/);
   assert.match(storage, /legacyPluginRoot/);
+});
+
+test('clean installs can persist and register the bundled Super Panel', () => {
+  const root = process.cwd();
+  const catalog = fs.readFileSync(
+    path.join(root, 'src/common/utils/localPlugin.ts'),
+    'utf8'
+  );
+  const registration = fs.readFileSync(
+    path.join(root, 'src/main/common/registerSystemPlugin.ts'),
+    'utf8'
+  );
+  const shortcuts = fs.readFileSync(
+    path.join(root, 'src/main/common/registerHotKey.ts'),
+    'utf8'
+  );
+
+  assert.match(catalog, /fs\.mkdirSync\(baseDir, \{ recursive: true \}\)/);
+  assert.match(registration, /function bundledSuperPanel\(\)/);
+  assert.match(
+    registration,
+    /path\.join\(__static, 'superx', 'package\.json'\)/
+  );
+  assert.match(registration, /const totalPlugins = bundled/);
+  assert.match(shortcuts, /runtime\.__superPanelReregister\?\.\(\)/);
 });

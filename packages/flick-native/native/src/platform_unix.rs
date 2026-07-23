@@ -3,6 +3,8 @@
 use crate::ActiveWindowInfo;
 #[cfg(target_os = "macos")]
 use std::io::Read;
+#[cfg(target_os = "macos")]
+use std::ffi::CStr;
 #[cfg(target_os = "linux")]
 use std::path::Path;
 use std::process::Command;
@@ -21,6 +23,37 @@ use accessibility_sys_ng::{kAXFocusedUIElementAttribute, kAXSelectedTextAttribut
 use core_foundation::string::CFString;
 #[cfg(target_os = "macos")]
 use objc::{class, msg_send, sel, sel_impl};
+#[cfg(target_os = "macos")]
+use objc::rc::autoreleasepool;
+#[cfg(target_os = "macos")]
+use objc::runtime::Object;
+
+#[cfg(target_os = "macos")]
+#[link(name = "AppKit", kind = "framework")]
+extern "C" {}
+
+#[cfg(target_os = "macos")]
+const MAX_SELECTED_ITEMS: usize = 100;
+#[cfg(target_os = "macos")]
+const FINDER_RECORD_SEPARATOR: char = '\u{001e}';
+#[cfg(target_os = "macos")]
+const FINDER_FIELD_SEPARATOR: char = '\u{001f}';
+#[cfg(target_os = "macos")]
+const MAX_SELECTED_TEXT_CHARS: usize = 262_144;
+
+#[cfg(target_os = "macos")]
+pub struct FinderSelectedItem {
+    pub path: String,
+    pub is_directory: bool,
+}
+
+#[cfg(target_os = "macos")]
+#[derive(Default)]
+pub struct FinderSelectionSnapshot {
+    pub files: Vec<FinderSelectedItem>,
+    pub truncated: bool,
+    pub folder: String,
+}
 
 #[cfg(target_os = "linux")]
 fn command_output(command: &str, args: &[&str]) -> Option<String> {
@@ -31,6 +64,7 @@ fn command_output(command: &str, args: &[&str]) -> Option<String> {
     String::from_utf8(output.stdout).ok()
 }
 
+#[cfg(target_os = "linux")]
 pub fn get_active_window() -> Option<ActiveWindowInfo> {
     let window = active_win_pos_rs::get_active_window().ok()?;
     let path = window.process_path.to_string_lossy().to_string();
@@ -43,6 +77,52 @@ pub fn get_active_window() -> Option<ActiveWindowInfo> {
         y: Some(window.position.y.round() as i32),
         width: Some(window.position.width.max(0.0).round() as u32),
         height: Some(window.position.height.max(0.0).round() as u32),
+    })
+}
+
+#[cfg(target_os = "macos")]
+unsafe fn nsstring_to_string(value: *mut Object) -> String {
+    if value.is_null() {
+        return String::new();
+    }
+    let utf8: *const std::os::raw::c_char = msg_send![value, UTF8String];
+    if utf8.is_null() {
+        return String::new();
+    }
+    CStr::from_ptr(utf8).to_string_lossy().into_owned()
+}
+
+#[cfg(target_os = "macos")]
+pub fn get_active_window() -> Option<ActiveWindowInfo> {
+    autoreleasepool(|| unsafe {
+        let workspace: *mut Object = msg_send![class!(NSWorkspace), sharedWorkspace];
+        if workspace.is_null() {
+            return None;
+        }
+        let application: *mut Object = msg_send![workspace, frontmostApplication];
+        if application.is_null() {
+            return None;
+        }
+        let process_id: i32 = msg_send![application, processIdentifier];
+        let localized_name: *mut Object = msg_send![application, localizedName];
+        let app_name = nsstring_to_string(localized_name);
+        let bundle_url: *mut Object = msg_send![application, bundleURL];
+        let bundle_path = if bundle_url.is_null() {
+            String::new()
+        } else {
+            let path: *mut Object = msg_send![bundle_url, path];
+            nsstring_to_string(path)
+        };
+        Some(ActiveWindowInfo {
+            title: (!app_name.is_empty()).then(|| app_name.clone()),
+            path: (!bundle_path.is_empty()).then_some(bundle_path),
+            processId: u32::try_from(process_id).ok(),
+            appName: (!app_name.is_empty()).then_some(app_name),
+            x: None,
+            y: None,
+            width: None,
+            height: None,
+        })
     })
 }
 
@@ -93,75 +173,201 @@ pub fn get_folder_open_path(foreground_only: bool) -> String {
         ""
     };
     apple_script(&format!(
-    "tell application \"Finder\"\n{foreground_guard}if (count of Finder windows) is 0 then return POSIX path of (desktop as alias)\nreturn POSIX path of (target of front Finder window as alias)\nend tell"
+    "tell application \"Finder\"\n{foreground_guard}if (count of Finder windows) is 0 then return POSIX path of (desktop as alias)\nreturn POSIX path of ((target of front Finder window) as alias)\nend tell"
   ))
 }
 
 #[cfg(target_os = "macos")]
-pub fn get_selected_file_paths() -> Vec<String> {
-    let script = r#"tell application "Finder"
-if not frontmost then return ""
-set oldDelimiters to AppleScript's text item delimiters
-set AppleScript's text item delimiters to linefeed
-set selectedPaths to {}
+pub fn is_finder_window(window: Option<&ActiveWindowInfo>) -> bool {
+    let Some(window) = window else {
+        return false;
+    };
+    window
+        .appName
+        .as_deref()
+        .is_some_and(|value| value.eq_ignore_ascii_case("finder"))
+        || window.path.as_deref().is_some_and(|value| {
+            value
+                .to_ascii_lowercase()
+                .contains("/finder.app/")
+                || value.to_ascii_lowercase().ends_with("/finder.app")
+        })
+}
+
+#[cfg(target_os = "macos")]
+fn finder_snapshot_script() -> &'static str {
+    r#"tell application "Finder"
+set recordSeparator to ASCII character 30
+set fieldSeparator to ASCII character 31
+set outputRecords to {}
+set folderPath to ""
+try
+  if (count of Finder windows) is 0 then
+    set folderPath to POSIX path of (desktop as alias)
+  else
+    set folderPath to POSIX path of (target of front Finder window as alias)
+  end if
+end try
+set end of outputRecords to "F" & fieldSeparator & folderPath
 set selectedItems to get selection
-repeat with selectedItem in selectedItems
+set selectedCount to count of selectedItems
+if selectedCount > 100 then
+  set end of outputRecords to "T" & fieldSeparator & "1"
+  set itemLimit to 100
+else
+  set end of outputRecords to "T" & fieldSeparator & "0"
+  set itemLimit to selectedCount
+end if
+repeat with itemIndex from 1 to itemLimit
   try
+    set selectedItem to item itemIndex of selectedItems
     set selectedPath to POSIX path of ((selectedItem as text) as alias)
-    copy selectedPath to end of selectedPaths
+    if class of selectedItem is folder then
+      set directoryFlag to "1"
+    else
+      set directoryFlag to "0"
+    end if
+    set end of outputRecords to "I" & fieldSeparator & directoryFlag & fieldSeparator & selectedPath
   end try
 end repeat
-set output to selectedPaths as text
+set oldDelimiters to AppleScript's text item delimiters
+set AppleScript's text item delimiters to recordSeparator
+set output to outputRecords as text
 set AppleScript's text item delimiters to oldDelimiters
 return output
-end tell"#;
-    apple_script(script)
-        .lines()
-        .map(str::trim)
-        .filter(|value| !value.is_empty())
-        .map(str::to_string)
+end tell"#
+}
+
+#[cfg(target_os = "macos")]
+fn parse_finder_snapshot_output(output: &str) -> FinderSelectionSnapshot {
+    let mut snapshot = FinderSelectionSnapshot::default();
+    for record in output.split(FINDER_RECORD_SEPARATOR) {
+        let mut fields = record.splitn(3, FINDER_FIELD_SEPARATOR);
+        match fields.next().unwrap_or_default() {
+            "F" => snapshot.folder = fields.next().unwrap_or_default().to_string(),
+            "T" => snapshot.truncated = fields.next() == Some("1"),
+            "I" => {
+                let is_directory = fields.next() == Some("1");
+                let path = fields.next().unwrap_or_default();
+                if !path.is_empty() && snapshot.files.len() < MAX_SELECTED_ITEMS {
+                    snapshot.files.push(FinderSelectedItem {
+                        path: path.to_string(),
+                        is_directory,
+                    });
+                }
+            }
+            _ => {}
+        }
+    }
+    snapshot
+}
+
+/// Reads the Finder folder and its selection in one Apple event. The caller
+/// decides whether Finder owned the trigger-time foreground; the script does
+/// not re-check `frontmost`, because focus can move while the async task is
+/// waiting for a worker.
+#[cfg(target_os = "macos")]
+pub fn capture_finder_selection(source_is_finder: bool) -> FinderSelectionSnapshot {
+    if !source_is_finder {
+        return FinderSelectionSnapshot::default();
+    }
+    parse_finder_snapshot_output(&apple_script(finder_snapshot_script()))
+}
+
+#[cfg(target_os = "macos")]
+pub fn get_selected_file_paths() -> Vec<String> {
+    let active_window = get_active_window();
+    capture_finder_selection(is_finder_window(active_window.as_ref()))
+        .files
+        .into_iter()
+        .map(|item| item.path)
         .collect()
 }
 
 #[cfg(target_os = "macos")]
-pub fn get_selected_text() -> String {
-    let system = AXUIElement::system_wide();
+pub fn get_application_element(process_id: Option<u32>) -> AXUIElement {
+    let source = process_id
+        .and_then(|value| i32::try_from(value).ok())
+        .map(AXUIElement::application)
+        .unwrap_or_else(AXUIElement::system_wide);
+    // Accessibility providers are out-of-process. Bound a stalled target so a
+    // hung application cannot monopolize the native selection worker.
+    let _ = source.set_messaging_timeout(0.25);
+    source
+}
+
+#[cfg(target_os = "macos")]
+pub fn get_selected_text_for_source(source: Option<&AXUIElement>) -> String {
+    let Some(source) = source else {
+        return String::new();
+    };
     let focused_attribute =
         AXAttribute::new(&CFString::from_static_string(kAXFocusedUIElementAttribute));
-    let selected_attribute =
-        AXAttribute::new(&CFString::from_static_string(kAXSelectedTextAttribute));
-
-    system
+    let focused = source
         .attribute(&focused_attribute)
         .ok()
-        .and_then(|value| value.downcast_into::<AXUIElement>())
+        .and_then(|value| value.downcast_into::<AXUIElement>());
+    let selected_attribute =
+        AXAttribute::new(&CFString::from_static_string(kAXSelectedTextAttribute));
+    let value = focused
+        .as_ref()
         .and_then(|element| element.attribute(&selected_attribute).ok())
         .and_then(|value| value.downcast_into::<CFString>())
         .map(|value| value.to_string())
-        .unwrap_or_default()
+        .unwrap_or_default();
+    if value.chars().count() <= MAX_SELECTED_TEXT_CHARS {
+        value
+    } else {
+        value.chars().take(MAX_SELECTED_TEXT_CHARS).collect()
+    }
+}
+
+#[cfg(target_os = "macos")]
+pub fn get_selected_text() -> String {
+    let source = get_application_element(None);
+    get_selected_text_for_source(Some(&source))
 }
 
 #[cfg(target_os = "macos")]
 pub fn read_clipboard_file_paths() -> Result<Vec<String>, String> {
-    let script = r#"use framework "AppKit"
-set pb to current application's NSPasteboard's generalPasteboard()
-set urls to pb's readObjectsForClasses:{current application's NSURL} options:(missing value)
-if urls is missing value then return ""
-set oldDelimiters to AppleScript's text item delimiters
-set AppleScript's text item delimiters to linefeed
-set paths to {}
-repeat with fileUrl in urls
-  if (fileUrl's isFileURL()) as boolean then set end of paths to (fileUrl's |path|()) as text
-end repeat
-set output to paths as text
-set AppleScript's text item delimiters to oldDelimiters
-return output"#;
-    Ok(apple_script(script)
-        .lines()
-        .map(str::trim)
-        .filter(|value| !value.is_empty())
-        .map(str::to_string)
-        .collect())
+    autoreleasepool(|| unsafe {
+        let pasteboard: *mut Object = msg_send![class!(NSPasteboard), generalPasteboard];
+        if pasteboard.is_null() {
+            return Ok(Vec::new());
+        }
+        let classes: *mut Object = msg_send![class!(NSArray), arrayWithObject: class!(NSURL)];
+        let options: *mut Object = std::ptr::null_mut();
+        let urls: *mut Object =
+            msg_send![pasteboard, readObjectsForClasses: classes options: options];
+        if urls.is_null() {
+            return Ok(Vec::new());
+        }
+        let count: usize = msg_send![urls, count];
+        // Return one sentinel item beyond the panel limit so JS can preserve
+        // an accurate truncation indicator during the clipboard fallback.
+        let clipboard_limit = MAX_SELECTED_ITEMS + 1;
+        let mut paths = Vec::with_capacity(count.min(clipboard_limit));
+        for index in 0..count.min(clipboard_limit) {
+            let url: *mut Object = msg_send![urls, objectAtIndex: index];
+            if url.is_null() {
+                continue;
+            }
+            let is_file_url: bool = msg_send![url, isFileURL];
+            if !is_file_url {
+                continue;
+            }
+            let path: *mut Object = msg_send![url, path];
+            if path.is_null() {
+                continue;
+            }
+            let utf8: *const std::os::raw::c_char = msg_send![path, UTF8String];
+            if utf8.is_null() {
+                continue;
+            }
+            paths.push(CStr::from_ptr(utf8).to_string_lossy().into_owned());
+        }
+        Ok(paths)
+    })
 }
 
 fn escape_apple_script(value: &str) -> String {
@@ -383,6 +589,62 @@ pub fn write_clipboard_file_paths(files: &[String]) -> Result<(), String> {
 #[cfg(target_os = "linux")]
 pub fn get_clipboard_change_token() -> u32 {
     0
+}
+
+#[cfg(all(test, target_os = "macos"))]
+mod macos_tests {
+    use super::{
+        is_finder_window, parse_finder_snapshot_output, ActiveWindowInfo,
+        FINDER_FIELD_SEPARATOR, FINDER_RECORD_SEPARATOR, MAX_SELECTED_ITEMS,
+    };
+
+    #[test]
+    fn parses_atomic_finder_snapshot_and_package_items() {
+        let output = format!(
+            "F{field}/Users/flick/Desktop/{record}T{field}1{record}I{field}1{field}/Users/flick/Desktop/Folder{record}I{field}0{field}/Applications/Notes.app",
+            field = FINDER_FIELD_SEPARATOR,
+            record = FINDER_RECORD_SEPARATOR
+        );
+        let snapshot = parse_finder_snapshot_output(&output);
+        assert_eq!(snapshot.folder, "/Users/flick/Desktop/");
+        assert!(snapshot.truncated);
+        assert_eq!(snapshot.files.len(), 2);
+        assert!(snapshot.files[0].is_directory);
+        assert!(!snapshot.files[1].is_directory);
+    }
+
+    #[test]
+    fn caps_untrusted_finder_output() {
+        let records = (0..MAX_SELECTED_ITEMS + 5)
+            .map(|index| {
+                format!(
+                    "I{field}0{field}/tmp/{index}",
+                    field = FINDER_FIELD_SEPARATOR
+                )
+            })
+            .collect::<Vec<_>>()
+            .join(&FINDER_RECORD_SEPARATOR.to_string());
+        assert_eq!(
+            parse_finder_snapshot_output(&records).files.len(),
+            MAX_SELECTED_ITEMS
+        );
+    }
+
+    #[test]
+    fn identifies_finder_from_trigger_window_identity() {
+        let finder = ActiveWindowInfo {
+            title: Some("Desktop".into()),
+            path: Some("/System/Library/CoreServices/Finder.app/Contents/MacOS/Finder".into()),
+            processId: Some(123),
+            appName: Some("Finder".into()),
+            x: None,
+            y: None,
+            width: None,
+            height: None,
+        };
+        assert!(is_finder_window(Some(&finder)));
+        assert!(!is_finder_window(None));
+    }
 }
 
 #[cfg(all(test, target_os = "linux"))]

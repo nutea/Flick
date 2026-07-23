@@ -163,18 +163,38 @@ function normalizeSelectedPaths(paths: unknown[]): string[] {
 }
 
 /** 从当前剪贴板解析为面板用的 text / 文件路径（路径优先） */
-export function readClipboardPayload(clipboard: ClipboardApi): {
+export function readClipboardPayload(
+  clipboard: ClipboardApi,
+  readNativeFilePaths?: () => string[]
+): {
   text: string;
   fileUrl: string;
   fileUrls: string[];
+  truncated: boolean;
 } {
   const text = clipboard.readText('clipboard') || '';
-  const fileUrls = normalizeSelectedPaths(getFilePathFromClipboard(clipboard));
+  let nativePaths: string[] = [];
+  try {
+    nativePaths = readNativeFilePaths?.() ?? [];
+  } catch {
+    nativePaths = [];
+  }
+  const normalizedCandidates = Array.from(
+    new Set(
+      (nativePaths.length ? nativePaths : getFilePathFromClipboard(clipboard))
+        .filter((value): value is string => typeof value === 'string')
+        .map((value) => value.trim())
+        .filter(Boolean)
+    )
+  ).slice(0, MAX_SELECTED_FILES + 1);
+  const truncated = normalizedCandidates.length > MAX_SELECTED_FILES;
+  const fileUrls = normalizedCandidates.slice(0, MAX_SELECTED_FILES);
   const fileUrl = fileUrls[0] || '';
   return {
     text: fileUrl ? '' : text,
     fileUrl,
     fileUrls,
+    truncated,
   };
 }
 
@@ -185,17 +205,48 @@ export type SelectedContentResult =
       text: string;
       fileUrl: string;
       fileUrls: string[];
+      truncated: boolean;
+      selectedFiles?: DirectSelectedFile[];
+      snapshot?: DirectSelectionSnapshot;
     }
   | {
       status: 'none' | 'timeout';
       text: '';
       fileUrl: '';
       fileUrls: [];
+      snapshot?: DirectSelectionSnapshot;
     };
 
+export interface DirectSelectedFile {
+  path: string;
+  name: string;
+  extension: string;
+  isFile: boolean;
+  isDirectory: boolean;
+}
+
+export interface DirectSelectionSnapshot {
+  source: 'shell' | 'accessibility' | 'none';
+  text: string;
+  files: DirectSelectedFile[];
+  truncated: boolean;
+  foregroundFolder: string;
+  activeWindow: {
+    path?: string;
+    appName?: string;
+  } | null;
+  shellMs: number;
+  textMs: number;
+  totalMs: number;
+}
+
 export interface SelectedContentOptions {
+  readSelectionSnapshot?: (
+    signal?: AbortSignal
+  ) => Promise<DirectSelectionSnapshot>;
   readSelectedText?: () => Promise<string>;
   readSelectedFilePaths?: () => Promise<string[]>;
+  readClipboardFilePaths?: () => string[];
   getClipboardChangeToken?: () => number | null;
   directReadTimeoutMs?: number;
   directFileReadTimeoutMs?: number;
@@ -207,17 +258,21 @@ const wait = (ms: number) =>
   new Promise<void>((resolve) => setTimeout(resolve, ms));
 
 async function readDirectValue<T>(
-  reader: (() => Promise<T>) | undefined,
+  reader: ((signal?: AbortSignal) => Promise<T>) | undefined,
   timeoutMs: number,
   fallback: T
 ): Promise<T> {
   if (!reader) return fallback;
   let timer: ReturnType<typeof setTimeout> | undefined;
+  const controller = new AbortController();
   try {
     return await Promise.race([
-      reader().catch(() => fallback),
+      reader(controller.signal).catch(() => fallback),
       new Promise<T>((resolve) => {
-        timer = setTimeout(() => resolve(fallback), timeoutMs);
+        timer = setTimeout(() => {
+          controller.abort();
+          resolve(fallback);
+        }, timeoutMs);
       }),
     ]);
   } finally {
@@ -230,22 +285,58 @@ export async function getSelectedContent(
   simulateCopy: () => Promise<void>,
   options: SelectedContentOptions = {}
 ): Promise<SelectedContentResult> {
+  const snapshot = await readDirectValue(
+    options.readSelectionSnapshot,
+    options.directFileReadTimeoutMs ?? 450,
+    null as DirectSelectionSnapshot | null
+  );
+  if (snapshot) {
+    const files = snapshot.files.slice(0, MAX_SELECTED_FILES);
+    if (files.length) {
+      const fileUrls = normalizeSelectedPaths(files.map((file) => file.path));
+      return {
+        status: 'selected',
+        source: 'shell',
+        text: '',
+        fileUrl: fileUrls[0] ?? '',
+        fileUrls,
+        truncated: snapshot.truncated,
+        selectedFiles: files,
+        snapshot,
+      };
+    }
+    if (snapshot.text) {
+      return {
+        status: 'selected',
+        source: 'accessibility',
+        text: snapshot.text,
+        fileUrl: '',
+        fileUrls: [],
+        truncated: snapshot.truncated,
+        snapshot,
+      };
+    }
+  }
+
   // The two platform reads are independent. Running them together keeps the
   // Finder/Explorer path capability without adding its process/COM latency to
   // every text selection. Both are bounded because automation providers can
   // stall behind a permission prompt or an unresponsive file manager.
-  const [directText, selectedPaths] = await Promise.all([
-    readDirectValue(
-      options.readSelectedText,
-      options.directReadTimeoutMs ?? 120,
-      ''
-    ),
-    readDirectValue(
-      options.readSelectedFilePaths,
-      options.directFileReadTimeoutMs ?? 400,
-      [] as string[]
-    ),
-  ]);
+  const [directText, selectedPaths] =
+    options.readSelectionSnapshot === undefined
+      ? await Promise.all([
+          readDirectValue(
+            options.readSelectedText,
+            options.directReadTimeoutMs ?? 120,
+            ''
+          ),
+          readDirectValue(
+            options.readSelectedFilePaths,
+            options.directFileReadTimeoutMs ?? 400,
+            [] as string[]
+          ),
+        ])
+      : ['', [] as string[]];
   const fileUrls = normalizeSelectedPaths(selectedPaths);
   const firstPath = fileUrls[0];
   if (firstPath) {
@@ -255,6 +346,7 @@ export async function getSelectedContent(
       text: '',
       fileUrl: firstPath,
       fileUrls,
+      truncated: selectedPaths.length > MAX_SELECTED_FILES,
     };
   }
 
@@ -268,6 +360,7 @@ export async function getSelectedContent(
       text: directText,
       fileUrl: '',
       fileUrls: [],
+      truncated: false,
     };
   }
 
@@ -278,7 +371,13 @@ export async function getSelectedContent(
   try {
     await simulateCopy();
   } catch {
-    return { status: 'none', text: '', fileUrl: '', fileUrls: [] };
+    return {
+      status: 'none',
+      text: '',
+      fileUrl: '',
+      fileUrls: [],
+      ...(snapshot ? { snapshot } : {}),
+    };
   }
 
   const timeoutMs = options.copyTimeoutMs ?? 250;
@@ -295,7 +394,10 @@ export async function getSelectedContent(
     }
 
     if (changed) {
-      const payload = readClipboardPayload(clipboard);
+      const payload = readClipboardPayload(
+        clipboard,
+        options.readClipboardFilePaths
+      );
       // Some applications empty the clipboard and publish the new formats in
       // separate steps. Do not treat the intermediate empty state as a copy.
       if (!payload.text && payload.fileUrls.length === 0) {
@@ -306,12 +408,19 @@ export async function getSelectedContent(
         status: 'selected',
         source: 'clipboard-copy',
         ...payload,
+        ...(snapshot ? { snapshot } : {}),
       };
     }
     await wait(pollIntervalMs);
   }
 
-  return { status: 'timeout', text: '', fileUrl: '', fileUrls: [] };
+  return {
+    status: 'timeout',
+    text: '',
+    fileUrl: '',
+    fileUrls: [],
+    ...(snapshot ? { snapshot } : {}),
+  };
 }
 
 /**

@@ -33,6 +33,8 @@ unsafe fn global_free(h_mem: HGLOBAL) {
 const DROPEFFECT_COPY: u32 = 1;
 const OPEN_RETRIES: u32 = 5;
 const OPEN_RETRY_SLEEP_MS: u64 = 20;
+// One item beyond the panel limit lets the JS fallback report truncation.
+const MAX_CLIPBOARD_FILES: u32 = 101;
 
 /// RAII guard that closes the clipboard when dropped.
 struct ClipboardSession;
@@ -82,8 +84,9 @@ pub fn read_file_paths() -> Result<Vec<String>, String> {
         return Ok(Vec::new());
     }
 
-    let mut paths = Vec::with_capacity(count as usize);
-    for i in 0..count {
+    let bounded_count = count.min(MAX_CLIPBOARD_FILES);
+    let mut paths = Vec::with_capacity(bounded_count as usize);
+    for i in 0..bounded_count {
         let needed = unsafe { DragQueryFileW(hdrop, i, None) };
         if needed == 0 {
             continue;

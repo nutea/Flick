@@ -1,5 +1,9 @@
 import { clipboard, input, system } from 'flick-native';
-import type { NativeInputEvent, NativeWindowInfo } from 'flick-native';
+import type {
+  NativeInputEvent,
+  NativeSelectionSnapshot,
+  NativeWindowInfo,
+} from 'flick-native';
 
 async function resolveWithin<T>(
   promise: Promise<T>,
@@ -29,6 +33,16 @@ export async function getSelectedText(): Promise<string> {
 
 export async function getSelectedFilePaths(): Promise<string[]> {
   return system.getSelectedFilePaths();
+}
+
+export async function captureSelectionSnapshot(
+  signal?: AbortSignal
+): Promise<NativeSelectionSnapshot> {
+  return system.captureSelection(signal);
+}
+
+export function readClipboardFilePaths(): string[] {
+  return clipboard.readFilePaths();
 }
 
 export function getClipboardChangeToken(): number | null {
@@ -106,6 +120,30 @@ export async function getActiveWindowFallbackPath(
   return activePath;
 }
 
+export function getSnapshotFallbackPath(
+  snapshot: {
+    activeWindow: { path?: string; appName?: string } | null;
+    foregroundFolder: string;
+  },
+  platform: NodeJS.Platform = process.platform
+): string {
+  const current = snapshot.activeWindow;
+  const activePath = String(current?.path ?? '');
+  if (!activePath) return snapshot.foregroundFolder;
+
+  const executable = activePath.split(/[/\\]/).pop()?.toLowerCase() ?? '';
+  const appName = String(current?.appName ?? '').toLowerCase();
+  const isWindowsExplorer = executable === 'explorer.exe';
+  const isMacFinder =
+    appName === 'finder' ||
+    executable === 'finder.app' ||
+    /(?:^|[/\\])finder\.app(?:[/\\]|$)/i.test(activePath);
+  const isLinuxManager = isLinuxFileManager(executable, appName, platform);
+  return isWindowsExplorer || isMacFinder || isLinuxManager
+    ? snapshot.foregroundFolder
+    : activePath;
+}
+
 export function onNativeInputEvent(
   listener: (event: NativeInputEvent) => void
 ): () => void {
@@ -116,4 +154,8 @@ export function setNativeMouseButtonSuppression(
   button: 'left' | 'right' | 'middle' | null
 ): void {
   input.setMouseButtonSuppression(button);
+}
+
+export function restartNativeInputHook(): void {
+  input.restartInputHook();
 }

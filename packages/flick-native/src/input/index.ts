@@ -7,6 +7,9 @@ import { sendKeyboardChordDarwinLinux } from './platform-chord';
 
 const listeners = new Set<(event: NativeInputEvent) => void>();
 let stopHook: (() => void) | null = null;
+let hookRetryTimer: ReturnType<typeof setTimeout> | null = null;
+let hookRetryAttempt = 0;
+let configuredMouseSuppression: NativeMouseButton | null = null;
 
 /** Normalized names: modifiers `control`|`alt`|`shift`|`super`, plus key tokens (`a`…`z`, `0`…`9`, `f1`…, `enter`, …). */
 const TOKEN_ALIASES: Record<string, string> = {
@@ -28,7 +31,7 @@ const TOKEN_ALIASES: Record<string, string> = {
   leftsuper: 'super',
   rightsuper: 'super',
   enter: 'enter',
-  'return': 'enter',
+  return: 'enter',
   esc: 'escape',
   escape: 'escape',
   del: 'delete',
@@ -77,7 +80,10 @@ const KNOWN_KEY_NAMES = new Set([
 ]);
 
 const toCanonicalToken = (raw: string): string | null => {
-  const normalized = raw.trim().toLowerCase().replace(/[\s_-]+/g, '');
+  const normalized = raw
+    .trim()
+    .toLowerCase()
+    .replace(/[\s_-]+/g, '');
   if (!normalized) return null;
 
   if (TOKEN_ALIASES[normalized]) {
@@ -132,7 +138,6 @@ const tryLoadNativeAddon = () => {
   try {
     return require('../../native');
   } catch (error) {
-    // eslint-disable-next-line no-console
     console.warn('[flick-native] failed to start global input hook', error);
     return null;
   }
@@ -172,7 +177,6 @@ const emit = (event: NativeInputEvent): void => {
     try {
       listener(event);
     } catch (err) {
-      // eslint-disable-next-line no-console
       console.error('[flick-native] input listener threw', err);
     }
   }
@@ -190,10 +194,7 @@ const parseNativeInputPayload = (raw: string): NativeInputEvent | null => {
         kind: 'key',
         state: o.state,
         key: o.key,
-        text:
-          o.text === undefined || o.text === null
-            ? null
-            : String(o.text),
+        text: o.text === undefined || o.text === null ? null : String(o.text),
       };
     }
 
@@ -203,7 +204,16 @@ const parseNativeInputPayload = (raw: string): NativeInputEvent | null => {
       typeof o.button === 'string'
     ) {
       const b = o.button as NativeMouseButton | 'unknown';
-      return { kind: 'mouse', state: o.state, button: b };
+      const source =
+        o.source === 'hook' || o.source === 'raw-input' ? o.source : undefined;
+      return {
+        kind: 'mouse',
+        state: o.state,
+        button: b,
+        source,
+        hookObserved:
+          typeof o.hookObserved === 'boolean' ? o.hookObserved : undefined,
+      };
     }
 
     if (
@@ -235,18 +245,53 @@ const startSharedHook = (): (() => void) | null => {
   }
 
   try {
-    return native.startInputHook((...args: unknown[]) => {
+    const stop = native.startInputHook((...args: unknown[]) => {
       // CalleeHandled threadsafe function → (err, payload). Be lenient.
-      const payload = args.find(
-        (a): a is string => typeof a === 'string'
-      );
+      const payload = args.find((a): a is string => typeof a === 'string');
       if (payload === undefined) return;
       const event = parseNativeInputPayload(payload);
       if (event) emit(event);
     });
-  } catch {
+    if (typeof native.setMouseButtonSuppression === 'function') {
+      native.setMouseButtonSuppression(configuredMouseSuppression || undefined);
+    }
+    return stop;
+  } catch (error) {
+    // Hook installation can fail transiently while the Windows shell is still
+    // starting. The caller schedules a retry while subscribers remain.
+    if (hookRetryAttempt === 0 || hookRetryAttempt % 5 === 0) {
+      console.warn('[flick-native] global input hook start failed', error);
+    }
     return null;
   }
+};
+
+const clearHookRetry = (): void => {
+  if (hookRetryTimer) {
+    clearTimeout(hookRetryTimer);
+    hookRetryTimer = null;
+  }
+};
+
+const ensureSharedHook = (): void => {
+  if (stopHook || listeners.size === 0) return;
+
+  const nextStop = startSharedHook();
+  if (nextStop) {
+    stopHook = nextStop;
+    hookRetryAttempt = 0;
+    clearHookRetry();
+    return;
+  }
+
+  if (hookRetryTimer) return;
+  const delay = Math.min(5000, 250 * 2 ** Math.min(hookRetryAttempt, 4));
+  hookRetryAttempt += 1;
+  hookRetryTimer = setTimeout(() => {
+    hookRetryTimer = null;
+    ensureSharedHook();
+  }, delay);
+  hookRetryTimer.unref?.();
 };
 
 export const input: NativeInputApi = {
@@ -258,6 +303,7 @@ export const input: NativeInputApi = {
     await dispatchChord([...modifiers, key]);
   },
   setMouseButtonSuppression(button: NativeMouseButton | null): void {
+    configuredMouseSuppression = button;
     const native = tryLoadNativeAddon();
     if (typeof native?.setMouseButtonSuppression !== 'function') return;
     try {
@@ -266,17 +312,28 @@ export const input: NativeInputApi = {
       // Optional native capability; older development builds remain usable.
     }
   },
+  restartInputHook(): void {
+    clearHookRetry();
+    hookRetryAttempt = 0;
+    const previousStop = stopHook;
+    stopHook = null;
+    try {
+      previousStop?.();
+    } catch (error) {
+      console.warn('[flick-native] failed to stop stale input hook', error);
+    }
+    ensureSharedHook();
+  },
   onInputEvent(listener: (event: NativeInputEvent) => void): () => void {
     listeners.add(listener);
-
-    if (!stopHook) {
-      stopHook = startSharedHook();
-    }
+    ensureSharedHook();
 
     return () => {
       listeners.delete(listener);
-      if (listeners.size === 0 && stopHook) {
-        stopHook();
+      if (listeners.size === 0) {
+        clearHookRetry();
+        hookRetryAttempt = 0;
+        stopHook?.();
         stopHook = null;
       }
     };

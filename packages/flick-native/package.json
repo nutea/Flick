@@ -1,6 +1,6 @@
 {
   "name": "flick-native",
-  "version": "0.0.4",
+  "version": "0.0.5",
   "private": true,
   "description": "In-repo native runtime package for Flick, implemented from scratch.",
   "main": "./dist/index.js",

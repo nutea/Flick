@@ -8,12 +8,12 @@
 
 use std::collections::HashSet;
 use std::ffi::c_void;
-use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicI64, AtomicPtr, Ordering};
 use std::sync::Mutex;
 use std::thread;
 use std::time::Duration;
 
-use core_graphics::event::{CGEvent, CGEventTapLocation, CGEventType, EventField};
+use core_graphics::event::{CGEventTapLocation, CGEventType, EventField};
 
 use crate::input_hook_unix::{debug_enabled, has_subscriber, push_json};
 
@@ -22,9 +22,11 @@ type CFRunLoopRef = *mut c_void;
 type CFRunLoopSourceRef = *mut c_void;
 type CFRunLoopMode = *mut c_void;
 type CGEventTapProxy = *mut c_void;
+type CGEventRef = *mut c_void;
 type CGEventMask = u64;
 
 const HEAD_INSERT_EVENT_TAP: u32 = 0;
+const DEFAULT_EVENT_TAP: u32 = 0;
 const LISTEN_ONLY: u32 = 1;
 const INPUT_MASK: CGEventMask = (1 << CGEventType::LeftMouseDown as u64)
     | (1 << CGEventType::LeftMouseUp as u64)
@@ -38,17 +40,19 @@ const INPUT_MASK: CGEventMask = (1 << CGEventType::LeftMouseDown as u64)
     | (1 << CGEventType::ScrollWheel as u64);
 
 static STARTED: AtomicBool = AtomicBool::new(false);
+static CAN_SUPPRESS: AtomicBool = AtomicBool::new(false);
+static CURRENT_TAP: AtomicPtr<c_void> = AtomicPtr::new(std::ptr::null_mut());
+static SUPPRESSED_MOUSE_BUTTON: AtomicI64 = AtomicI64::new(-1);
 static PRESSED_MODIFIERS: Mutex<Option<HashSet<i64>>> = Mutex::new(None);
 
 type EventTapCallback = unsafe extern "C" fn(
     proxy: CGEventTapProxy,
     event_type: CGEventType,
-    event: CGEvent,
+    event: CGEventRef,
     user_info: *mut c_void,
-) -> CGEvent;
+) -> CGEventRef;
 
 #[link(name = "CoreGraphics", kind = "framework")]
-#[link(name = "CoreFoundation", kind = "framework")]
 extern "C" {
     fn CGEventTapCreate(
         tap: CGEventTapLocation,
@@ -59,6 +63,11 @@ extern "C" {
         user_info: *mut c_void,
     ) -> CFMachPortRef;
     fn CGEventTapEnable(tap: CFMachPortRef, enable: bool);
+    fn CGEventGetIntegerValueField(event: CGEventRef, field: u32) -> i64;
+}
+
+#[link(name = "CoreFoundation", kind = "framework")]
+extern "C" {
     fn CFMachPortCreateRunLoopSource(
         allocator: *const c_void,
         tap: CFMachPortRef,
@@ -68,6 +77,16 @@ extern "C" {
     fn CFRunLoopAddSource(run_loop: CFRunLoopRef, source: CFRunLoopSourceRef, mode: CFRunLoopMode);
     fn CFRunLoopRun();
     static kCFRunLoopCommonModes: CFRunLoopMode;
+}
+
+pub fn set_mouse_button_suppression(button: Option<&str>) {
+    let value = match button {
+        Some("left") => 0,
+        Some("right") => 1,
+        Some("middle") => 2,
+        _ => -1,
+    };
+    SUPPRESSED_MOUSE_BUTTON.store(value, Ordering::SeqCst);
 }
 
 fn button_name(button_number: i64) -> &'static str {
@@ -171,9 +190,20 @@ fn modifier_state(key_code: i64) -> &'static str {
 unsafe extern "C" fn callback(
     _proxy: CGEventTapProxy,
     event_type: CGEventType,
-    event: CGEvent,
+    event: CGEventRef,
     _user_info: *mut c_void,
-) -> CGEvent {
+) -> CGEventRef {
+    if matches!(
+        event_type,
+        CGEventType::TapDisabledByTimeout | CGEventType::TapDisabledByUserInput
+    ) {
+        let tap = CURRENT_TAP.load(Ordering::SeqCst);
+        if !tap.is_null() {
+            CGEventTapEnable(tap, true);
+        }
+        return event;
+    }
+    let mut suppress = false;
     match event_type {
         CGEventType::LeftMouseDown | CGEventType::LeftMouseUp => {
             let state = if matches!(event_type, CGEventType::LeftMouseDown) {
@@ -201,11 +231,13 @@ unsafe extern "C" fn callback(
             } else {
                 "up"
             };
-            let button =
-                button_name(event.get_integer_value_field(EventField::MOUSE_EVENT_BUTTON_NUMBER));
+            let button_number =
+                CGEventGetIntegerValueField(event, EventField::MOUSE_EVENT_BUTTON_NUMBER);
+            let button = button_name(button_number);
             push_json(format!(
                 r#"{{"kind":"mouse","state":"{state}","button":"{button}"}}"#
             ));
+            suppress = SUPPRESSED_MOUSE_BUTTON.load(Ordering::SeqCst) == button_number;
         }
         CGEventType::KeyDown | CGEventType::KeyUp => {
             let state = if matches!(event_type, CGEventType::KeyDown) {
@@ -213,13 +245,15 @@ unsafe extern "C" fn callback(
             } else {
                 "up"
             };
-            let key = key_name(event.get_integer_value_field(EventField::KEYBOARD_EVENT_KEYCODE));
+            let key_code =
+                CGEventGetIntegerValueField(event, EventField::KEYBOARD_EVENT_KEYCODE);
+            let key = key_name(key_code);
             push_json(format!(
                 r#"{{"kind":"key","state":"{state}","key":"{key}"}}"#
             ));
         }
         CGEventType::FlagsChanged => {
-            let code = event.get_integer_value_field(EventField::KEYBOARD_EVENT_KEYCODE);
+            let code = CGEventGetIntegerValueField(event, EventField::KEYBOARD_EVENT_KEYCODE);
             let state = modifier_state(code);
             let key = key_name(code);
             push_json(format!(
@@ -227,32 +261,53 @@ unsafe extern "C" fn callback(
             ));
         }
         CGEventType::ScrollWheel => {
-            let delta_y =
-                event.get_integer_value_field(EventField::SCROLL_WHEEL_EVENT_POINT_DELTA_AXIS_1);
-            let delta_x =
-                event.get_integer_value_field(EventField::SCROLL_WHEEL_EVENT_POINT_DELTA_AXIS_2);
+            let delta_y = CGEventGetIntegerValueField(
+                event,
+                EventField::SCROLL_WHEEL_EVENT_POINT_DELTA_AXIS_1,
+            );
+            let delta_x = CGEventGetIntegerValueField(
+                event,
+                EventField::SCROLL_WHEEL_EVENT_POINT_DELTA_AXIS_2,
+            );
             push_json(format!(
                 r#"{{"kind":"wheel","deltaX":{delta_x},"deltaY":{delta_y}}}"#
             ));
         }
         _ => {}
     }
-    event
+    if suppress && CAN_SUPPRESS.load(Ordering::SeqCst) {
+        std::ptr::null_mut()
+    } else {
+        event
+    }
 }
 
 fn listen() -> Result<(), ()> {
     unsafe {
-        let tap = CGEventTapCreate(
+        let mut tap = CGEventTapCreate(
             CGEventTapLocation::HID,
             HEAD_INSERT_EVENT_TAP,
-            LISTEN_ONLY,
+            DEFAULT_EVENT_TAP,
             INPUT_MASK,
             callback,
             std::ptr::null_mut(),
         );
+        let can_suppress = !tap.is_null();
+        if tap.is_null() {
+            tap = CGEventTapCreate(
+                CGEventTapLocation::HID,
+                HEAD_INSERT_EVENT_TAP,
+                LISTEN_ONLY,
+                INPUT_MASK,
+                callback,
+                std::ptr::null_mut(),
+            );
+        }
         if tap.is_null() {
             return Err(());
         }
+        CAN_SUPPRESS.store(can_suppress, Ordering::SeqCst);
+        CURRENT_TAP.store(tap as *mut c_void, Ordering::SeqCst);
         let source = CFMachPortCreateRunLoopSource(std::ptr::null(), tap, 0);
         if source.is_null() {
             return Err(());
@@ -261,7 +316,9 @@ fn listen() -> Result<(), ()> {
         CFRunLoopAddSource(run_loop, source, kCFRunLoopCommonModes);
         CGEventTapEnable(tap, true);
         if debug_enabled() {
-            eprintln!("[flick-native] macOS input hook started");
+            eprintln!(
+                "[flick-native] macOS input hook started (suppression={can_suppress})"
+            );
         }
         CFRunLoopRun();
     }
@@ -279,7 +336,7 @@ pub fn start() {
                 break;
             }
             attempts += 1;
-            if debug_enabled() && (attempts == 1 || attempts % 10 == 0) {
+            if debug_enabled() && (attempts == 1 || attempts.is_multiple_of(10)) {
                 eprintln!("[flick-native] macOS input hook unavailable; retry attempt {attempts}");
             }
             thread::sleep(Duration::from_secs(1));
@@ -290,7 +347,11 @@ pub fn start() {
 
 #[cfg(test)]
 mod tests {
-    use super::{button_name, key_name};
+    use super::{
+        button_name, key_name, set_mouse_button_suppression,
+        SUPPRESSED_MOUSE_BUTTON,
+    };
+    use std::sync::atomic::Ordering;
 
     #[test]
     fn maps_macos_auxiliary_button_numbers() {
@@ -298,6 +359,14 @@ mod tests {
         assert_eq!(button_name(3), "back");
         assert_eq!(button_name(4), "forward");
         assert_eq!(button_name(8), "unknown");
+    }
+
+    #[test]
+    fn configures_owned_middle_click_suppression() {
+        set_mouse_button_suppression(Some("middle"));
+        assert_eq!(SUPPRESSED_MOUSE_BUTTON.load(Ordering::SeqCst), 2);
+        set_mouse_button_suppression(None);
+        assert_eq!(SUPPRESSED_MOUSE_BUTTON.load(Ordering::SeqCst), -1);
     }
 
     #[test]

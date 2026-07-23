@@ -3,12 +3,13 @@ import * as fs from 'fs';
 import * as path from 'path';
 import createPanelWindow from './panel-window';
 import {
+  captureSelectionSnapshot,
   getActiveWindowFallbackPath,
-  getActiveWindowSnapshot,
   getClipboardChangeToken,
-  getSelectedFilePaths,
-  getSelectedText,
+  getSnapshotFallbackPath,
   onNativeInputEvent,
+  readClipboardFilePaths,
+  restartNativeInputHook,
   setNativeMouseButtonSuppression,
   simulateCopyShortcut,
 } from './native';
@@ -99,6 +100,40 @@ async function describeSelectedFile(
   };
 }
 
+function basicSelectedFile(selectedPath: string): SelectedFileInfo {
+  const cleanPath = selectedPath.replace(/^file:\/\//, '');
+  return {
+    path: cleanPath,
+    name: path.basename(cleanPath) || cleanPath,
+    extension: path.extname(cleanPath),
+    // Clipboard file lists do not carry attributes. Treat an unresolved item
+    // as a regular file rather than blocking every item behind a network stat.
+    isFile: true,
+    isDirectory: false,
+  };
+}
+
+async function describeSelectedFiles(
+  selectedPaths: string[]
+): Promise<SelectedFileInfo[]> {
+  const results = selectedPaths.map(basicSelectedFile);
+  let nextIndex = 0;
+  const deadline = Date.now() + FILE_STAT_TIMEOUT_MS;
+  const workers = Array.from(
+    { length: Math.min(8, selectedPaths.length) },
+    async () => {
+      while (Date.now() < deadline) {
+        const index = nextIndex;
+        nextIndex += 1;
+        if (index >= selectedPaths.length) return;
+        results[index] = await describeSelectedFile(selectedPaths[index]);
+      }
+    }
+  );
+  await Promise.all(workers);
+  return results;
+}
+
 function isMouseTrigger(s: string): boolean {
   return Object.values(SP_MOUSE).includes(
     s as (typeof SP_MOUSE)[keyof typeof SP_MOUSE]
@@ -110,9 +145,13 @@ type FlickCtx = any;
 function createPlugin() {
   let lastRegisteredKey: string | null = null;
   let removeInputSubscription: (() => void) | null = null;
+  let removeDismissInputSubscription: (() => void) | null = null;
   let longPressTimer: ReturnType<typeof setTimeout> | null = null;
   let longPressButton: TriggerButton | null = null;
   let keyboardRegisterTimer: ReturnType<typeof setTimeout> | null = null;
+  let triggerPromise: Promise<void> | null = null;
+  let lastRawInputFallbackLogAt = 0;
+  let lastRawInputRecoveryAt = 0;
 
   function clearMouseRegistration() {
     setNativeMouseButtonSuppression(null);
@@ -131,6 +170,12 @@ function createPlugin() {
     async onReady(ctx: FlickCtx) {
       const { clipboard, screen, globalShortcut, API, ipcMain, nativeImage } =
         ctx;
+      const restartInputAfterSystemResume = () => {
+        if (process.platform !== 'win32') return;
+        restartNativeInputHook();
+      };
+      ctx.powerMonitor?.on('resume', restartInputAfterSystemResume);
+      ctx.powerMonitor?.on('unlock-screen', restartInputAfterSystemResume);
 
       ctx.app?.once('before-quit', () => {
         requestSequence += 1;
@@ -147,20 +192,42 @@ function createPlugin() {
         }
         lastRegisteredKey = null;
         clearMouseRegistration();
+        removeDismissInputSubscription?.();
+        removeDismissInputSubscription = null;
+        ctx.powerMonitor?.removeListener(
+          'resume',
+          restartInputAfterSystemResume
+        );
+        ctx.powerMonitor?.removeListener(
+          'unlock-screen',
+          restartInputAfterSystemResume
+        );
       });
 
       const panelInstance = createPanelWindow(ctx);
       panelInstance.init();
+      // `blur` remains the primary lifecycle signal. The native pointer
+      // subscription covers Windows windows that were shown but denied
+      // foreground activation, for which Electron has no blur transition.
+      if (process.platform === 'win32') {
+        removeDismissInputSubscription = onNativeInputEvent((event) => {
+          if (event.kind === 'mouse' && event.state === 'down') {
+            panelInstance.dismissAfterPointerDown(
+              screen.getCursorScreenPoint()
+            );
+          }
+        });
+      }
       let requestSequence = 0;
 
       const showSuperPanel = async (trigger: 'keyboard' | 'mouse') => {
+        const startedAt = Date.now();
         if (process.env.FLICK_NATIVE_DEBUG) {
           console.info(`[flick-system-super-panel] triggered: ${trigger}`);
         }
         const requestId = ++requestSequence;
         // Capture the source application immediately. Clipboard simulation and
         // Finder automation must not change which window supplies the fallback.
-        const activeWindowPromise = getActiveWindowSnapshot();
         const { x, y } = screen.getCursorScreenPoint();
         const copySelection = async () => {
           // Direct Shell/UIA reads must start at trigger time. Only defer the
@@ -171,8 +238,8 @@ function createPlugin() {
           await simulateCopy();
         };
         const copyResult = await getSelectedContent(clipboard, copySelection, {
-          readSelectedText: getSelectedText,
-          readSelectedFilePaths: getSelectedFilePaths,
+          readSelectionSnapshot: captureSelectionSnapshot,
+          readClipboardFilePaths,
           getClipboardChangeToken,
         });
         if (process.env.FLICK_NATIVE_DEBUG) {
@@ -184,16 +251,26 @@ function createPlugin() {
               hasText: copyResult.text.length > 0,
               fileUrl: copyResult.fileUrl,
               fileCount: copyResult.fileUrls.length,
+              truncated:
+                copyResult.status === 'selected'
+                  ? copyResult.truncated
+                  : (copyResult.snapshot?.truncated ?? false),
+              nativeTiming: copyResult.snapshot
+                ? {
+                    shellMs: copyResult.snapshot.shellMs,
+                    textMs: copyResult.snapshot.textMs,
+                    totalMs: copyResult.snapshot.totalMs,
+                  }
+                : null,
             })
           );
         }
         if (requestId !== requestSequence) return;
 
         if (!copyResult.text && copyResult.fileUrls.length === 0) {
-          copyResult.fileUrl = await getActiveWindowFallbackPath(
-            undefined,
-            await activeWindowPromise
-          );
+          copyResult.fileUrl = copyResult.snapshot
+            ? getSnapshotFallbackPath(copyResult.snapshot)
+            : await getActiveWindowFallbackPath();
           copyResult.fileUrls = copyResult.fileUrl ? [copyResult.fileUrl] : [];
         }
         if (requestId !== requestSequence) return;
@@ -213,9 +290,10 @@ function createPlugin() {
         // Never synchronously stat every selected item on the Electron main
         // thread. Network drives or unavailable paths otherwise make a large
         // Explorer selection look like the Super Panel has frozen.
-        const selectedFiles = await Promise.all(
-          copyResult.fileUrls.map(describeSelectedFile)
-        );
+        const selectedFiles =
+          (copyResult.status === 'selected'
+            ? copyResult.selectedFiles
+            : undefined) ?? (await describeSelectedFiles(copyResult.fileUrls));
         const selectedFileIsDirectory = selectedFiles[0]?.isDirectory === true;
         let selectedFileDataUrl = '';
         if (selectedFiles.length === 1 && selectedFiles[0].isFile) {
@@ -236,7 +314,7 @@ function createPlugin() {
         panelInstance.beginPlacement(requestId, cursor);
 
         await new Promise<void>((resolve) => {
-          const ms = 800;
+          const ms = 160;
           const timer = setTimeout(() => {
             ipcMain.removeListener('superPanel-content-applied', onApplied);
             resolve();
@@ -264,6 +342,10 @@ function createPlugin() {
             selectedFiles,
             selectedFileIsDirectory,
             selectedFileDataUrl,
+            selectionTruncated:
+              copyResult.status === 'selected'
+                ? copyResult.truncated
+                : (copyResult.snapshot?.truncated ?? false),
           });
         });
         if (requestId !== requestSequence) return;
@@ -271,6 +353,12 @@ function createPlugin() {
         win.setAlwaysOnTop(true);
         win.show();
         win.focus();
+        win.webContents.focus();
+        if (process.env.FLICK_NATIVE_DEBUG) {
+          console.info(
+            `[flick-system-super-panel] shown after ${Date.now() - startedAt}ms`
+          );
+        }
 
         if (process.env.FLICK_SUPER_PANEL_SMOKE === '1') {
           const result = await win.webContents.executeJavaScript(`({
@@ -299,6 +387,22 @@ function createPlugin() {
             );
           }
         }
+      };
+
+      const requestSuperPanel = (trigger: 'keyboard' | 'mouse') => {
+        // Selection reads mutate the clipboard only in their final fallback.
+        // Serialize every trigger source so a keyboard repeat and mouse event
+        // cannot race and restore/consume each other's clipboard generation.
+        if (triggerPromise) return;
+        const pending = showSuperPanel(trigger).catch((error) => {
+          console.error(
+            `[flick-system-super-panel] ${trigger} trigger failed:`,
+            error
+          );
+        });
+        triggerPromise = pending.finally(() => {
+          triggerPromise = null;
+        });
       };
 
       let isFirstRegister = true;
@@ -362,8 +466,30 @@ function createPlugin() {
             if (event.button !== wantBtn) return;
 
             if (event.state === 'down') {
+              if (
+                event.source === 'raw-input' &&
+                event.hookObserved === false &&
+                Date.now() - lastRawInputFallbackLogAt > 60_000
+              ) {
+                lastRawInputFallbackLogAt = Date.now();
+                console.warn(
+                  '[flick-system-super-panel] low-level mouse hook missed an event; Raw Input recovered the trigger'
+                );
+              }
+              if (
+                event.source === 'raw-input' &&
+                event.hookObserved === false &&
+                Date.now() - lastRawInputRecoveryAt > 5_000
+              ) {
+                lastRawInputRecoveryAt = Date.now();
+                // Raw Input remains available when Windows silently removes a
+                // low-level hook. Rebuild the hook after dispatch so the next
+                // Explorer middle click is suppressed before it can collapse
+                // a multi-selection.
+                setTimeout(restartNativeInputHook, 0);
+              }
               if (!isLong) {
-                void showSuperPanel('mouse');
+                requestSuperPanel('mouse');
                 return;
               }
 
@@ -372,7 +498,7 @@ function createPlugin() {
               longPressTimer = setTimeout(() => {
                 longPressTimer = null;
                 longPressButton = null;
-                void showSuperPanel('mouse');
+                requestSuperPanel('mouse');
               }, LONG_PRESS_MS);
               return;
             }
@@ -396,7 +522,7 @@ function createPlugin() {
           keyboardRegisterTimer = null;
           try {
             const registered = globalShortcut.register(superPanelHotKey, () => {
-              void showSuperPanel('keyboard');
+              requestSuperPanel('keyboard');
             });
             if (!registered) {
               console.warn(
@@ -428,7 +554,7 @@ function createPlugin() {
       await register();
 
       if (!ctx.app?.isPackaged && process.env.FLICK_SUPER_PANEL_SMOKE === '1') {
-        setTimeout(() => void showSuperPanel('keyboard'), 1400);
+        setTimeout(() => requestSuperPanel('keyboard'), 1400);
       }
     },
   };

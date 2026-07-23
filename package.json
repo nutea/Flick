@@ -1,6 +1,6 @@
 {
   "name": "flick",
-  "version": "0.0.4",
+  "version": "0.0.5",
   "description": "A lightweight, extensible desktop launcher and plugin platform.",
   "author": "nutea <nutgeek@gmail.com>",
   "private": true,

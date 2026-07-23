@@ -114,6 +114,7 @@ const {
   selectedText,
   selectedFileUrl,
   selectedFiles,
+  selectionTruncated,
   selectedFileIsDirectory,
   matchPlugins,
   userPlugins,
@@ -153,9 +154,11 @@ const selectedPreview = computed(() => {
       .join('、');
     return {
       kind: 'file',
-      typeLabel: `${selectedFiles.value.length} 个项目`,
+      typeLabel: `${selectedFiles.value.length}${selectionTruncated.value ? '+' : ''} 个项目`,
       title: `${firstName} 等`,
-      subtitle: summary,
+      subtitle: selectionTruncated.value
+        ? `${summary}（仅处理前 ${selectedFiles.value.length} 项）`
+        : summary,
     };
   }
 
